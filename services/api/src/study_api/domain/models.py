@@ -39,6 +39,11 @@ class StudySessionStatus(StrEnum):
     ACTIVE = "active"
 
 
+class CaptureStatus(StrEnum):
+    NEEDS_CORRECTION = "needs_correction"
+    CORRECTED = "corrected"
+
+
 class SyncEventKind(StrEnum):
     RECORD_ATTEMPT = "record_attempt"
 
@@ -115,6 +120,44 @@ class StudySession(BaseModel):
 
 class StartStudySessionRequest(BaseModel):
     expected_task_version: int = Field(ge=1)
+
+
+class Capture(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: UUID
+    household_id: UUID
+    child_id: UUID
+    session_id: UUID
+    media_type: Literal["image/jpeg", "image/png"]
+    byte_size: int = Field(ge=1, le=8_000_000)
+    content_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    status: CaptureStatus
+    version: int = Field(ge=1)
+    created_at: datetime
+
+
+class CreateCaptureRequest(BaseModel):
+    media_type: Literal["image/jpeg", "image/png"]
+    byte_size: int = Field(ge=1, le=8_000_000)
+    content_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class CaptureCorrection(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: UUID
+    capture_id: UUID
+    household_id: UUID
+    child_id: UUID
+    sequence: int = Field(ge=1)
+    corrected_text: str = Field(min_length=1, max_length=1000)
+    created_at: datetime
+
+
+class CorrectCaptureRequest(BaseModel):
+    expected_capture_version: int = Field(ge=1)
+    corrected_text: str = Field(min_length=1, max_length=1000)
 
 
 class Attempt(BaseModel):

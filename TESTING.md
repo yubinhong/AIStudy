@@ -47,16 +47,16 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | Web E2E | `cd apps/web && pnpm e2e` | 用户流程变更/P1 门槛 | 不可运行 |
 | Web 构建 | `cd apps/web && pnpm build` | 合并前 | 通过（2026-07-12） |
 | API 安装 | `cd services/api && uv sync --locked` | 锁文件变化/干净环境 | 通过（2026-07-13；锁定 SQLAlchemy 2.0.51、Alembic 1.18.5、Psycopg 3.3.4） |
-| API 格式 | `cd services/api && uv run ruff format --check .` | 每次 API 变更 | 通过（2026-07-13；19 files） |
+| API 格式 | `cd services/api && uv run ruff format --check .` | 每次 API 变更 | 通过（2026-07-13；25 files） |
 | API Lint | `cd services/api && uv run ruff check .` | 每次 API 变更 | 通过（2026-07-13） |
-| API 类型 | `cd services/api && uv run mypy src tests` | 每次 API 变更 | 通过（2026-07-13；17 source files） |
-| API 单元 | `cd services/api && uv run pytest -m "not integration"` | 每次 API 变更 | 通过（11 tests，2026-07-13；含 Household、任务版本、Attempt 幂等与离线批次） |
+| API 类型 | `cd services/api && uv run mypy src tests` | 每次 API 变更 | 通过（2026-07-13；22 source files） |
+| API 单元 | `cd services/api && uv run pytest -m "not integration"` | 每次 API 变更 | 通过（14 tests，2026-07-13；含 Household、任务版本、Attempt 幂等、离线批次与 Capture 校正） |
 | Compose 配置 | `docker compose -f infra/compose/compose.yml config` | Compose 变更 | 通过（2026-07-13；仅确认 local-only 配置） |
 | 集成环境 | `docker compose -f infra/compose/compose.yml up -d postgres` | API/数据/跨模块变更 | 通过（2026-07-13；Docker Desktop 29.2.1，postgres:16.10 healthy，端口 5432，synthetic local 配置） |
-| API 集成 | `cd services/api && uv run pytest -m integration` | 跨模块/数据变更 | 通过（4 tests，2026-07-13；migration schema、持久化幂等、批次原子性、连接池重连和并发版本冲突） |
+| API 集成 | `cd services/api && uv run pytest -m integration` | 跨模块/数据变更 | 通过（5 tests，2026-07-13；migration schema、Learning/Capture 持久化幂等、批次原子性、连接池重连和并发版本冲突） |
 | API 镜像 | `docker compose -f infra/compose/compose.yml build api` | 合并/发布前 | 不可运行 |
 | AI eval | `TBD（P0 在 evals/ 建立稳定入口）` | 模型/Prompt/Policy/路由变更 | 阻塞：仅有占位边界，无模型/评测集 |
-| 契约结构/差异 | `ruby -ryaml -e '...'`（见任务记录） | OpenAPI/Schema 变更 | 通过（2026-07-13）：健康、Profile/Device、Learning `0.3.0` 路径与 Schema 已检查；SDK 生成器未决定 |
+| 契约结构/差异 | `ruby -ryaml -e '...'`（见任务记录） | OpenAPI/Schema 变更 | 通过（2026-07-13）：健康、Profile/Device、Learning 与 Capture `0.4.0` 路径和 Schema 已检查；SDK 生成器未决定 |
 | 安全扫描 | `TBD（按 Flutter/pnpm/uv/镜像工具链建立）` | 合并/发布前 | 阻塞：无依赖/镜像 |
 
 耗时预算必须在命令首次进入 CI 后用实际数据补充，不在无代码阶段猜测。

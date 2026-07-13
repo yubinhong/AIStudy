@@ -50,6 +50,8 @@ class LearningRepository(Protocol):
         idempotency_key: str,
     ) -> tuple[StudySession, bool]: ...
 
+    def get_session(self, household_id: UUID, session_id: UUID) -> StudySession | None: ...
+
     def record_attempt(
         self,
         household_id: UUID,
@@ -113,6 +115,20 @@ class PostgresLearningRepository:
         )
         with self._engine.connect() as connection:
             return [self._task(row) for row in connection.execute(statement).mappings()]
+
+    def get_session(self, household_id: UUID, session_id: UUID) -> StudySession | None:
+        with self._engine.connect() as connection:
+            row = (
+                connection.execute(
+                    select(self._sessions).where(
+                        self._sessions.c.id == session_id,
+                        self._sessions.c.household_id == household_id,
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        return self._session(row) if row is not None else None
 
     def create_task(
         self, household_id: UUID, request: CreateTaskRequest, idempotency_key: str

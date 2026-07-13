@@ -28,7 +28,7 @@ SLO 必须在 staging 获得基线后由产品/技术 Owner 批准，不在零�
 
 ### 当前环境
 
-- local：`infra/compose/compose.yml` 已定义 PostgreSQL、Redis 与 MinIO；2026-07-13 已在 Docker Desktop 29.2.1 上启动仅 PostgreSQL 16.10，用于 synthetic migration/integration 测试。Redis 与 MinIO 未启动；API 尚未定义为 Compose 服务。
+- local：`infra/compose/compose.yml` 已定义 PostgreSQL、Redis 与 MinIO；2026-07-13 已在 Docker Desktop 29.2.1 上启动仅 PostgreSQL 16.10，用于 synthetic migration/integration 测试。MinIO 是 ADR-0010 批准的私有 Capture 存储，但尚未启动/接入；Redis 未启动；API 尚未定义为 Compose 服务。
 - staging：未建立。
 - production：未建立且未获部署授权。
 

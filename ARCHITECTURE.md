@@ -6,7 +6,7 @@
 - Owner：`TBD（技术负责人确认）`
 - 最后更新：`2026-07-12`
 - 设计基线：`家庭AI学习助手_架构设计_v1.0.docx`
-- 相关决策：`DECISIONS.md`（ADR-0001～0009 已 Accepted；ADR-0009 固定 Learning 持久化依赖）
+- 相关决策：`DECISIONS.md`（ADR-0001～0012 已 Accepted；ADR-0010～0012 固定 Capture 存储、保留与 OCR 默认路线）
 
 ## 1. 架构目标
 
@@ -15,7 +15,7 @@
 - 规模假设：P0/P1 先服务单一或少量家庭；用户数、峰值 RPS、图片量、AI 调用量和数据保留规模均为 `TBD`，应在原型测量后写入容量模型。
 - 主要约束：复用四类现有设备；华为端不依赖 GMS；模块化单体起步；OpenAPI/Schema 契约优先；离线可用；模型可替换；儿童数据最小化；未授权教材/题库不入库。
 
-当前实现状态：P0 健康端点、Household-scoped ChildProfile/Device 与 P1 Task/StudySession/Attempt/SyncBatch API、OpenAPI 增量、Flutter 待同步队列边界、本地 PostgreSQL migration 和 Learning 事务仓储已实现；真实认证、Profile/Device 持久化、SQLite 落盘及其余领域仍为目标设计。
+当前实现状态：P0 健康端点、Household-scoped ChildProfile/Device 与 P1 Task/StudySession/Attempt/SyncBatch/Capture API、OpenAPI 增量、Flutter 待同步队列边界、两份本地 PostgreSQL migration 和 Learning/Capture 事务仓储已实现；真实认证、Profile/Device 持久化、媒体上传/OCR、SQLite 落盘及其余领域仍为目标设计。
 
 ## 2. 系统上下文
 
@@ -50,14 +50,14 @@ flowchart LR
 | API/BFF | `services/api` | 鉴权、家庭边界、业务编排、契约实现 | PostgreSQL 中 Learning 业务事实 | 客户端、数据层、Worker、AI | 健康 + 合成 Profile/Device API；Learning 可切换 PostgreSQL 仓储；真实认证未实现 |
 | Identity/Profile | `services/api` 内模块 | Household、User、ChildProfile、Device 和权限 | 身份、家庭归属、设备凭证 | API、所有领域模块 | 合成 principal + 内存仓储；非生产认证 |
 | Plan/Task/Session | `services/api` 内模块 | 计划、任务、会话、Attempt 和同步合并 | 学习任务与过程记录 | 客户端、Report、Mistake | PostgreSQL 事务仓储、Alembic schema、反向授权/幂等/并发测试已实现；SQLite 未实现 |
-| Capture | `services/api` 内模块 | 签名上传、OCR、结构化、置信度和人工校正 | Capture 元数据；文件在对象存储 | 对象存储、AI Provider、Tutor | 未创建 |
+| Capture | `services/api` 内模块 | 受限媒体声明、人工校正、签名上传/OCR/结构化 | Capture 元数据与追加校正；文件在私有 MinIO | 对象存储、AI Provider、Tutor | `0.4.0` 元数据/人工校正、事务与迁移已实现；MinIO/PaddleOCR 架构已接受，依赖与 Adapter 未实现 |
 | Tutor | `services/api` 内模块 | Provider 路由、Tutor Policy、提示层级、Schema 校验、成本控制 | TutorTurn、模型/Prompt/Policy 版本和审计 | Capture、AI Provider、Mistake | 未创建 |
 | Mistake/Mastery/Report | `services/api` 内模块 | 错因、知识点、复习调度、掌握度快照、周报 | MistakeRecord、ReviewSchedule、MasterySnapshot、WeeklyReport | Session/Tutor、家长端 | 未创建 |
 | Notification | `services/api` 内模块 | 应用内提醒和可替换推送适配器 | 通知状态 | Report/Task、HMS | 未创建 |
 | 跨端契约 | `packages/contracts` | OpenAPI、AI JSON Schema、生成 SDK | 接口/Schema 的唯一事实来源 | API、Flutter、Web、evals | 健康 + Profile/Device + Learning 0.3 合同；SDK 生成器实现待选择 |
 | AI 评测 | `evals` | 固定样本与质量/安全/延迟/成本回归 | 合成或脱敏评测数据 | Tutor、CI | 占位边界；无评测集 |
-| 本地基础设施 | `infra/compose` | PostgreSQL、Redis、MinIO、API/Worker 本地编排 | 本地合成数据 | 开发/集成测试 | PostgreSQL 16.10 已启动用于 migration/integration；Redis/MinIO 未启动 |
-| ADR | `docs/adr` | 不可逆或跨模块决策记录 | 架构决策历史 | `DECISIONS.md` | ADR-0001～0009 Accepted |
+| 本地基础设施 | `infra/compose` | PostgreSQL、Redis、MinIO、API/Worker 本地编排 | 本地合成数据 | 开发/集成测试 | PostgreSQL 16.10 已启动用于 migration/integration；MinIO 是批准的 Capture 对象存储但尚未启动/接入；Redis 未启动 |
+| ADR | `docs/adr` | 不可逆或跨模块决策记录 | 架构决策历史 | `DECISIONS.md` | ADR-0001～0012 Accepted |
 
 模块间禁止直接绕过业务接口修改其他模块表。模块化单体内部边界和依赖方向需在 P0 代码结构中验证。
 
@@ -65,10 +65,14 @@ flowchart LR
 
 ### 4.1 任务、作答与离线同步
 
+以下为目标数据流；第 3～4 步的 MinIO/PaddleOCR Adapter 尚未实现，当前 Capture 仅提供元数据与人工校正。
+
 1. 家长通过 Web/手机创建任务，API 校验 Household 权限后写入 PostgreSQL。
 2. 孩子端同步今日任务到 SQLite，开始 StudySession；断网时将 Attempt、状态变化和上传意图写入追加队列。
-3. 重连后客户端按顺序提交，写接口携带 `idempotency-key`；Attempt/AuditEvent 追加写，任务状态使用服务端版本号检测/合并冲突。
-4. API 返回逐项结果；失败项保留可重试和用户可理解状态，不静默丢弃或用最后写入覆盖历史。
+3. Capture 上传由 API 在授权后签发私有 MinIO 的短期预签名 URL；客户端不持有存储密钥，上传后仅提交受限元数据。
+4. 本地 PaddleOCR 通过 Provider Adapter 产生候选结果；任何结果必须人工确认，低置信度或失败保留校正路径。
+5. 重连后客户端按顺序提交，写接口携带 `idempotency-key`；Attempt/AuditEvent 追加写，任务状态使用服务端版本号检测/合并冲突。
+6. API 返回逐项结果；失败项保留可重试和用户可理解状态，不静默丢弃或用最后写入覆盖历史。
 
 - 信任边界：设备令牌、客户端时间、离线事件和幂等键均不可信，服务端必须验证家庭、设备、Schema 和版本。
 - 一致性：学习事实追加写；派生状态可重算；任务状态使用显式版本/冲突策略。
@@ -122,7 +126,7 @@ flowchart LR
 | Household/User/ChildProfile/Device | PostgreSQL（目标）；本轮内存合成仓储 | UUID；全部业务行含 Household 边界 | 账户期 + 批准的删除策略；精确期限 `TBD` | `TBD` | Confidential/Restricted |
 | Plan/Task/Session/Attempt | PostgreSQL | UUID；Attempt 追加写 | 学习记录期限 `TBD` | `TBD` | Confidential |
 | Capture 元数据 | PostgreSQL | Capture UUID | 与图片策略联动 | `TBD` | Confidential |
-| 单题图片 | S3/MinIO | 随机对象键，不含儿童身份 | 默认短期；具体期限 `TBD` | 默认不做长期业务备份，待安全决策 | Restricted |
+| 单题图片 | 私有 MinIO / S3 Adapter | 随机对象键，不含儿童身份 | 原图 24 小时；OCR 失败最多 7 天；裁剪题目 30 天，家长可保存/删除 | 默认不做长期业务备份，备份擦除待真实数据前确定 | Restricted |
 | TutorTurn/AI 审计 | PostgreSQL | UUID + 版本字段 | 原始敏感内容最小化；期限 `TBD` | `TBD` | Confidential |
 | Mistake/Review/Mastery/Report | PostgreSQL | UUID；报告按时间窗口/版本 | 与源记录/家庭删除保持一致 | `TBD` | Confidential |
 | 缓存/队列 | Redis | 非业务主键 | 短期 TTL；可重建 | 不作为恢复源 | Internal/Confidential |
@@ -193,7 +197,7 @@ flowchart TD
 | 项目 | 当前影响 | 触发改造的阈值 | 目标方向 | 跟踪 |
 | --- | --- | --- | --- | --- |
 | 核心领域多数未实现 | 任务/会话、Capture、Tutor、离线与生产路径不可运行 | P1 实现前 | 按已起草 ADR 的审批和后续 TODO 分阶段实现 | `TODO-007`～`TODO-010` |
-| 核心技术/安全决策未批准 | 不能将工具链、身份、数据或部署作为长期基线 | 实现对应边界前 | 具名 Owner 审批 ADR-0001～0008 | `TODO-002` |
+| 核心技术/安全决策已批准、部分未实现 | 实现仍须锁定 SDK/运行时、验证安全与成本 | 接入对应边界前 | ADR-0001～0012；实现依赖须另行审查 | `TASK-0006`、`TODO-005` |
 | 无已接受 ADR | 设计选择缺少可追溯批准和替代方案 | 开始实现核心边界前 | 至少覆盖模块化单体、契约、离线同步、AI 与儿童数据 | `DECISIONS.md` |
 | SLO、容量、RPO/RTO、成本阈值未知 | 无法设置告警和发布门槛 | staging 建立并获得基线 | 用测量值批准目标 | `TODO-004` |
 | 数据保留/法域未决 | 真实儿童数据和生产部署被阻塞 | 任何真实数据进入前 | 完成安全/法务决策和删除/备份策略 | `TODO-005` |

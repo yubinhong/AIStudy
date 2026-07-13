@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 家庭 AI 学习助手 API
-  version: 0.3.0
+  version: 0.4.0
   description: Synthetic local/CI household and learning contract vertical slices.
 servers:
   - url: http://localhost:8000
@@ -361,6 +361,128 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/IdempotencyConflict'
+  /households/{household_id}/sessions/{session_id}/captures:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - $ref: '#/components/parameters/SessionId'
+    get:
+      operationId: listCaptures
+      summary: List Capture metadata visible to the bound child in a study session
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+          DemoChild: []
+      responses:
+        '200':
+          description: Capture metadata. This endpoint never returns media bytes or object URLs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Capture'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createCapture
+      summary: Register bounded image metadata and require manual correction
+      description: No image bytes, signed URLs, object keys, or OCR Provider calls are accepted in this contract version.
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+          DemoChild: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCaptureRequest'
+      responses:
+        '201':
+          description: Capture metadata registered with needs_correction status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capture'
+        '200':
+          description: Idempotent Capture-create replay.
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                const: 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capture'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+  /households/{household_id}/captures/{capture_id}/corrections:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: capture_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: correctCapture
+      summary: Append a manual correction for a Capture owned by the bound child
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+          DemoChild: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CorrectCaptureRequest'
+      responses:
+        '201':
+          description: Manual correction appended.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureCorrection'
+        '200':
+          description: Idempotent correction replay.
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                const: 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureCorrection'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Capture version or idempotency conflict.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   parameters:
     HouseholdId:
@@ -422,7 +544,7 @@ components:
           const: study-api
         version:
           type: string
-          const: 0.3.0
+          const: 0.4.0
     CreateChildRequest:
       type: object
       additionalProperties: false
@@ -592,6 +714,92 @@ components:
           type: string
           const: active
         started_at:
+          type: string
+          format: date-time
+    CreateCaptureRequest:
+      type: object
+      additionalProperties: false
+      required: [media_type, byte_size, content_sha256]
+      properties:
+        media_type:
+          type: string
+          enum: [image/jpeg, image/png]
+        byte_size:
+          type: integer
+          minimum: 1
+          maximum: 8000000
+        content_sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+    Capture:
+      type: object
+      additionalProperties: false
+      required: [id, household_id, child_id, session_id, media_type, byte_size, content_sha256, status, version, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        household_id:
+          type: string
+          format: uuid
+        child_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        media_type:
+          type: string
+          enum: [image/jpeg, image/png]
+        byte_size:
+          type: integer
+        content_sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        status:
+          type: string
+          enum: [needs_correction, corrected]
+        version:
+          type: integer
+          minimum: 1
+        created_at:
+          type: string
+          format: date-time
+    CorrectCaptureRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_capture_version, corrected_text]
+      properties:
+        expected_capture_version:
+          type: integer
+          minimum: 1
+        corrected_text:
+          type: string
+          minLength: 1
+          maxLength: 1000
+    CaptureCorrection:
+      type: object
+      additionalProperties: false
+      required: [id, capture_id, household_id, child_id, sequence, corrected_text, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        capture_id:
+          type: string
+          format: uuid
+        household_id:
+          type: string
+          format: uuid
+        child_id:
+          type: string
+          format: uuid
+        sequence:
+          type: integer
+          minimum: 1
+        corrected_text:
+          type: string
+        created_at:
           type: string
           format: date-time
     RecordAttemptRequest:

@@ -26,7 +26,7 @@
 | TODO-005 | 完成儿童数据法域、同意、保留、导出/删除和备份决策 | 解除真实儿童数据和 production 阻塞 | P0 | `TBD（安全/法务/产品）` | Owner 与目标法域明确 |
 | TODO-006 | 修复设计稿跨环境中文字体渲染 | 当前 LibreOffice 渲染缺字，影响后续设计稿维护/发布 | P2 | `TBD` | 确认目标阅读/发布环境 |
 | TODO-007 | 实现任务/会话/Attempt 与离线同步 | 建立学习过程和断网不丢的核心底座 | P1 | Codex（执行） | ADR-0003 Accepted | Done（TASK-0005；synthetic PostgreSQL 事务与队列边界，真实设备离线待后续） |
-| TODO-008 | 实现 Capture/OCR/人工校正 | 支持数学单题输入且控制低置信度风险 | P1 | `TBD` | 文件/保留策略批准；Provider ADR |
+| TODO-008 | 实现 Capture/OCR/人工校正 | 支持数学单题输入且控制低置信度风险 | P1 | Codex（执行） | ADR-0010～0012 Accepted；真实儿童图片/生产法域仍阻塞 | In progress（TASK-0006；MinIO/PaddleOCR 实现待锁定运行时依赖） |
 | TODO-009 | 实现 Tutor Policy、Provider Adapter 和固定 AI eval | 提供分级提示并控制安全、Schema 和成本 | P1 | `TBD` | AI Provider/预算/评测阈值批准 |
 | TODO-010 | 实现错题、复习和可追溯周报 | 完成孩子学习到家长反馈的闭环 | P1 | `TBD` | Session/Tutor 数据稳定 |
 

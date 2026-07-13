@@ -2,7 +2,7 @@
 
 ## 文档信息
 
-- 状态：`ACTIVE`（产品与目标架构已形成 v1.0 设计，P0 骨架和合成 Profile/Device 切片已完成；核心 ADR 正在起草）
+- 状态：`ACTIVE`（产品与目标架构已形成 v1.0 设计；P0 骨架、合成 Learning/Capture 切片和 ADR-0001～0012 已完成/接受）
 - Owner：`TBD（项目发起人确认）`
 - 最后更新：`2026-07-12`
 - 项目仓库：本地 Git 仓库 `/Users/ybh/PycharmProjects/study`；远程地址 `TBD（项目 Owner 确认）`
@@ -95,7 +95,7 @@
 | API/Worker | Python + FastAPI + 异步 Worker | Python `3.12`、FastAPI `0.136.3`（`ADR-0007` Accepted） | 模块化单体；模块包括 identity、profile、plan、task、capture、tutor、mistake、mastery、report、notification |
 | 业务数据 | PostgreSQL + pgvector | `TBD（P0 锁定）` | PostgreSQL 是业务事实来源；pgvector 仅用于知识检索，不替代关系数据 |
 | 缓存/队列 | Redis | `TBD（P0 锁定）` | 不作为长期业务事实来源 |
-| 文件 | S3 兼容对象存储 / MinIO | `TBD（P0 锁定）` | 使用短期签名 URL；学习图片默认短期保存 |
+| 文件 | 本地 MinIO / S3 兼容 Adapter | MinIO `RELEASE.2025-09-07T16-13-09Z`；SDK 待实现时锁定 | 私有 Bucket、短期预签名 URL；保留策略见 ADR-0010/0011 |
 | 端侧数据 | SQLite | 随 Flutter 依赖锁定 | 缓存今日任务、学习会话和上传队列 |
 | 交付/可观测性 | Docker Compose、CI、OpenTelemetry | `TBD（P0 锁定）` | CI 覆盖 lint、test、契约测试与 AI eval；模型和 Prompt/Policy 版本化 |
 
@@ -107,7 +107,7 @@
 | staging | 集成、设备、AI 评测和迁移/恢复验证 | `TBD（P0/P1 建立）` | sanitized/synthetic | CI 产物，禁止从个人工作区直接发布 |
 | production | 家庭正式使用 | `TBD（发布方案和 RUNBOOK 批准后建立）` | restricted | 仅允许已通过发布门槛的版本化产物 |
 
-当前事实：Git 已初始化在 `master` 分支，但尚无任何提交；P0 目标目录、入口、最小测试、Compose 配置、CI、三类锁文件、Profile/Device 合成 API 以及 Task/Session/Attempt/SyncBatch 合同/语义已创建。ADR-0001～0009 已 Accepted；Learning PostgreSQL migration/事务仓储已验证，真实认证、Profile/Device 持久化、SQLite 落盘、AI、部署和真实儿童数据处理仍未完成。
+当前事实：Git 已初始化在 `master` 分支，但尚无任何提交；P0 目标目录、入口、最小测试、Compose 配置、CI、三类锁文件、Profile/Device 合成 API 以及 Learning/Capture `0.4.0` 合同/语义已创建。ADR-0001～0012 已 Accepted；Learning/Capture PostgreSQL migration/事务仓储已验证。本地 MinIO 和 PaddleOCR 架构已批准但尚未接入依赖；真实认证、Profile/Device 持久化、SQLite 落盘、生产部署和真实儿童数据处理仍未完成。
 
 ## 8. 仓库与服务边界
 

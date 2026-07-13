@@ -1,61 +1,47 @@
-# TASK.md — TASK-0005 任务、会话、Attempt 与离线同步基础
-
-> `TASK-0004` / `TODO-002` 已于 2026-07-13 完成：项目 Owner（用户）接受 ADR-0001～0008。本文是当前唯一活动任务，承接 `TODO-007`。
+# TASK.md — TASK-0006 Capture 与人工校正安全基础
 
 ## 任务元数据
 
-- 状态：`COMPLETE`
+- 状态：`IN_PROGRESS`
 - 类型：`FEATURE`
 - 优先级：`P1`
-- Owner：Codex（执行）；项目 Owner（用户，已批准架构方向）
+- Owner：Codex（执行）；项目 Owner（用户，明确要求继续 TODO-008）
 - 创建/更新：`2026-07-13`
-- 基线分支/提交：`master`；无 commit；工作区含既有未提交骨架与合成 Profile/Device 切片
-- 关联：`TODO-007`、`PLAN-0005`、`ADR-0001`、`ADR-0002`、`ADR-0003`、`ADR-0005`、`ADR-0006`
+- 基线分支/提交：`master`；无 commit；工作区含既有未提交骨架和 synthetic Learning 持久化切片
+- 关联：`TODO-008`、`PLAN-0006`、`ADR-0001`、`ADR-0002`、`ADR-0004`、`ADR-0005`、`ADR-0006`、`ADR-0009`
 
 ## 1. 目标与范围
 
-实现 P1 学习过程的第一阶段：家庭内家长可创建/读取数学任务，孩子可开始 StudySession、追加 Attempt，并通过版本化同步批次提交离线事件。服务端为每个事件执行 Household/角色/设备边界、幂等和显式冲突处理；客户端只保存待同步操作，不把本地状态作为业务事实。
+实现 Capture 与低置信度人工校正的安全基础：孩子只能在自己的 Household/StudySession 内登记一份图片采集元数据，服务端不把未验证 OCR 结果当作事实；在没有获准 OCR Provider 时，Capture 必须进入人工校正状态，校正记录以追加写保存。
 
-本阶段包含：OpenAPI 增量、API 模块边界、领域状态机/事件模型、合成数据测试实现、反向授权/幂等/冲突测试，以及 Flutter 端不含真实数据的队列最小入口。
+本任务包含：Capture OpenAPI 增量、API 领域/仓储/迁移、Household/child 授权、版本冲突与幂等、合成 PostgreSQL 集成测试，以及必要的架构/安全/运行记录。
 
-本阶段不包含：真实 IdP、PIN/设备令牌、真实儿童数据、Capture/Tutor、AI Provider、错题/周报、生产部署。PostgreSQL 迁移与持久仓储已在本任务完成；内存仓储只保留给 local/CI 单元测试，不得描述为业务事实源。
+本任务不包含：真实儿童图片、生产对象存储/密钥、商业 OCR Provider、真实设备相机/SQLite UI 或 Tutor。按 ADR-0010～0012，本任务后续可只使用 synthetic 图片接入本地 MinIO 预签名上传与本地 PaddleOCR；S3 SDK、PaddleOCR 运行时/模型版本、EXIF/魔数/尺寸解析仍须先锁定并验证。
 
-## 2. 安全与实现假设
+## 2. 已知冲突与实施假设
 
-- `ASSUMPTION-01`：保留现有 demo principal 仅用于 local/CI；所有新增资源继续按 Household 不匹配返回 404，不能用客户端隐藏代替授权。
-- `ASSUMPTION-02`：阶段一使用模块化内存仓储验证契约和合并语义；PostgreSQL 与版本化迁移在同一任务后续阶段替换它，且需要迁移/集成验证。
-- Attempt/AuditEvent 只追加；任务派生状态通过服务端版本、允许状态机和已应用事件 ID 合并。相同幂等键/等价载荷返回原结果，同键不同载荷拒绝并审计。
-- 只使用 `Synthetic` 任务、会话和作答 fixture；日志、响应与测试不包含真实儿童资料、题目全文或设备令牌。
+- `CONFLICT-01`：新版 `AGENTS.md` 的“当前仓库阶段”仍称业务实现和数据库迁移不存在；实际代码、`0001_learning_event_foundation` 与 15 项 API 测试已存在。按仓库规则，以可运行代码、锁文件和测试为事实，本任务不回退现有实现。
+- `ASSUMPTION-01`：在 OCR Provider、数据处理条款与预算未批准前，所有新 Capture 都以 `needs_correction` 状态创建，不调用外部服务，也不产生伪造 OCR 内容。
+- `ASSUMPTION-02`：本阶段仅接收受限的媒体声明（类型、大小、不可逆内容哈希），不接收原始图片、对象键、签名 URL 或完整题目文本；人工校正内容只进入业务库，永不写入审计事件或错误响应。
+- `ASSUMPTION-03`：校正是追加事件；Capture 的派生状态以服务端 `version` 明确合并，不能用最后写入覆盖已有校正。
 
 ## 3. 验收标准
 
-- [x] `packages/contracts/openapi.yaml` 定义 Task、StudySession、Attempt 与同步批次的版本化请求/响应/错误，且 API 契约结构检查覆盖。
-- [x] 家长可创建/读取自身 Household 任务；孩子只可读取分配任务、开始会话并追加 Attempt；跨 Household、角色不足、缺失主体和 ID 枚举均被拒绝。
-- [x] Attempt 与审计事件可追加；重复/冲突离线事件符合 ADR-0003，且不会覆盖历史或产生重复副作用。
-- [x] Flutter 端有空安全的本地待同步队列边界与单元/Widget 测试，不手写重复的公共 OpenAPI 领域模型。
-- [x] PostgreSQL 迁移/持久仓储、连接池重连、并发版本冲突与回滚/前滚演练已完成；真实设备断网和 SQLite 落盘仍属于后续端侧工作。
+- [ ] OpenAPI 定义 Capture、人工校正、版本化请求/响应、错误与兼容策略；不引入手工漂移的跨端公共模型。
+- [ ] 仅绑定孩子可为自己的 Session 创建、读取、校正 Capture；跨 Household、同家庭其他孩子、无绑定主体和枚举 ID 均被拒绝。
+- [ ] Capture 初始必须要求校正；校正追加写、幂等重放和版本冲突可验证，审计中无原始题目或校正文本。
+- [ ] PostgreSQL 迁移和仓储在同一事务处理 Capture、校正、幂等记录与审计；验证迁移回滚/前滚、重复请求和并发校正。
+- [ ] 记录真实媒体、OCR Provider、设备权限/离线 SQLite 与生产生命周期仍未实现的原因、回滚方式和下一步。
 
-## 4. 验证记录
+## 4. 验证与回滚
 
-- 计划命令：API `ruff format/check`、`mypy`、`pytest`；OpenAPI 结构/契约检查；Flutter format/analyze/test；后续 PostgreSQL 集成、重复请求、并发、断网重连与迁移验证。
-- 每个阶段需记录未运行项、替代验证、残余风险和精确下一步；不得以重跑掩盖 flaky 或授权失败。
+- 计划验证：OpenAPI 结构检查、API Ruff/Mypy/单元与 local PostgreSQL 集成测试、Alembic downgrade/upgrade；不运行真实 Provider 或真实图片。
+- 回滚：合同仅新增；优先关闭 Capture 路由或前向修复迁移。不得删除 CaptureCorrection/AuditEvent、不得把校正文本写进日志、不得清空客户端队列。
 
-## 5. 回滚与剩余风险
+## 5. 当前进度
 
-- 回滚：以向后兼容合同为先；新增事件类型和字段只增不改。持久化阶段优先前向修复，禁止删除 Attempt/AuditEvent 或清空客户端队列。
-- 当前风险：demo principal 不是生产认证；Profile/Device 仍是合成内存切片；SDK 生成器、Flutter SQLite 落盘、真实设备断网、staging 迁移恢复与实际多端并发尚未验证。
-
-## 6. 当前进度
-
-- `2026-07-13`：OpenAPI `0.3.0` 已新增 Task、StudySession、Attempt 与 SyncBatch；API 以独立 Learning 模块实现 synthetic 授权、任务版本、Attempt/Audit 追加、幂等和离线批次预检。
-- `2026-07-13`：Flutter 新增通用离线队列边界；它仅保留 transport JSON、event ID 和 idempotency key，并在服务端 applied/replayed 后确认删除。
-- 验证：OpenAPI 学习路径结构检查通过；API Ruff/Mypy/11 项单元测试通过；Flutter analyze 与 4 项测试通过；交互式 `flutter doctor -v` 全绿。
-- `2026-07-13`：ADR-0009 已接受；Docker Desktop 29.2.1 与 local PostgreSQL 16.10 已验证，SQLAlchemy 2.0.51、Alembic 1.18.5、Psycopg 3.3.4 已锁定；首个 learning schema 的 upgrade/downgrade/upgrade 演练通过。
-- `2026-07-13`：`PostgresLearningRepository` 已接入 API（设置 `STUDY_API_LEARNING_REPOSITORY=postgres`），对 Task 版本、Attempt/AuditEvent、幂等记录使用同一 PostgreSQL 事务；内存实现保留给未配置数据库的 local/CI 单元测试。
-- 验证：OpenAPI 结构检查通过；API Ruff/Mypy 与 15 项测试通过（11 单元、4 PostgreSQL 集成，覆盖持久化、幂等、批次原子性、连接池重连和并发版本冲突）；Alembic 位于 `0001_learning_event_foundation (head)`；Flutter analyze 与 4 项测试通过。
-
-## 7. 完成记录
-
-- 状态：`COMPLETE`（2026-07-13）。
-- 未执行项：未运行真实设备断网、Flutter SQLite 落盘/重启恢复、staging 备份恢复或生产迁移；这些不以本地 synthetic PostgreSQL 验证替代。
-- 回滚：保持 `0.3.0` 合同兼容；发现持久化问题时优先关闭 `STUDY_API_LEARNING_REPOSITORY=postgres` 写路径或发布前向修复迁移，绝不删除 Attempt/AuditEvent、清空队列或回滚含数据的生产迁移。
+- `2026-07-13`：项目 Owner 明确授权执行 `TODO-008`；已复核 PRD、架构、安全、测试、ADR 和现有 Learning 持久化边界，建立本任务与计划。
+- `2026-07-13`：OpenAPI `0.4.0` 已增加 Capture 元数据、人工校正和显式版本冲突合同。Capture 创建只接收 MIME、大小和 SHA-256 声明，且始终进入 `needs_correction`；不接收原始媒体或调用 OCR Provider。
+- `2026-07-13`：API 已实现 child-only Capture 创建/查询和追加校正；`0002_capture_manual_correction` 在 PostgreSQL 中保存 Capture/Correction、幂等记录和无原文审计事件。19 项 API 测试及 migration downgrade/upgrade 演练通过。
+- `2026-07-13`：项目 Owner 已接受 ADR-0010（本地 MinIO/私有 Bucket/预签名上传）、ADR-0011（24 小时/7 天/30 天保留、家长控制、级联删除）与 ADR-0012（本地 PaddleOCR、人工确认、外部默认 0 元）。
+- 下一步：选择并锁定 S3 SDK 与 PaddleOCR 运行时/模型版本，实施签名上传和本地 OCR Adapter；本任务保持 `IN_PROGRESS`，且不接入真实儿童图片。

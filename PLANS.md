@@ -264,3 +264,39 @@ git diff --check
 - `TASK-0005` / `TODO-007` 已完成：`0.3.0` Learning 合同、Household/角色边界、追加 Attempt/Audit、幂等同步队列、Alembic schema 和可选 PostgreSQL 仓储均已交付。
 - 验证包含 11 项 API 单元测试、4 项本地 PostgreSQL 集成测试、迁移 downgrade/upgrade、OpenAPI 结构检查和 Flutter 4 项测试；只使用 synthetic 数据。
 - 未包含真实认证、Flutter SQLite 持久化、真实设备离线或 staging/production 恢复演练；后续必须以新任务处理。
+
+---
+
+# PLANS.md — PLAN-0006 Capture 与人工校正安全基础
+
+## 计划元数据
+
+- 计划 ID：`PLAN-0006`
+- 关联任务：`TASK-0006` / `TODO-008`
+- 状态：`IN_PROGRESS`
+- Owner：Codex（执行）；项目 Owner（用户，明确授权 TODO-008）
+- 创建/更新：`2026-07-13`
+
+## 目标与边界
+
+建立 Capture 的服务端安全数据流：受限媒体声明 → 必须人工校正 → 追加校正事件；随后按 ADR-0010～0012 接入本地 MinIO 与本地 PaddleOCR。真实儿童图片、生产保留/备份、商业 Provider 仍不在范围内。
+
+## 阶段
+
+- [x] 1. 复核 PRD、架构、安全、测试、已接受 ADR、工作区和现有 Learning 代码，记录文档与代码基线冲突。
+- [x] 2. 在 `packages/contracts` 增加向后兼容 Capture/Correction `0.4.0` 合同和结构检查。
+- [x] 3. 在 API 建立 Capture 领域模型、child-only 授权路由、内存参考仓储与 PostgreSQL 事务仓储，禁止原始媒体/文本进入审计。
+- [x] 4. 新增版本化迁移与 local PostgreSQL 集成测试，覆盖家庭隔离、幂等、校正追加和 downgrade/upgrade；真实多请求并发仍待下一里程碑。
+- [ ] 5. 选择并锁定 S3 SDK 与本地 PaddleOCR 运行时/模型版本，实施私有 MinIO 预签名上传、本地 OCR Adapter、人工确认与固定 synthetic eval。
+- [ ] 6. 执行相关质量门槛、安全审查和文档同步；记录真实设备、备份/法域和商业 Provider 的未完成项。
+
+## 不变量
+
+- Capture 属于 Household、孩子和 StudySession；跨 Household 或未绑定孩子统一返回 404。
+- 新 Capture 在无获准 OCR Provider 时必须为 `needs_correction`；不得伪造可信 OCR 结果。
+- 原始媒体、对象键、签名 URL、完整题目和校正文本不得进入审计、错误响应、日志或测试输出。
+- Correction 追加写；同键同载荷重放原结果，同键异载荷冲突；派生版本由服务端控制。
+
+## 回滚
+
+保持 OpenAPI 兼容增量。发生安全问题时关闭 Capture 路由或前向修复；不删除校正/审计记录，不把错误恢复建立在清空数据上。

@@ -6,7 +6,7 @@
 
 - 项目：家庭 AI 学习助手
 - 一句话目标：复用家庭现有设备，提供“任务 → 作答 → 分步提示 → 错题/复习 → 家长反馈”的开源、可控、可离线学习闭环。
-- 当前阶段：`P1 TASK/SESSION/OFFLINE FOUNDATION`
+- 当前阶段：`P1 CAPTURE/CORRECTION FOUNDATION`
 - 主要用户：小学阶段孩子与家长/监护人；辅助角色为家庭内容维护者和项目维护者。
 - 生产状态：`NOT_DEPLOYED`
 - 当前版本：`0.0.0（尚无产品发布）`
@@ -14,12 +14,12 @@
 
 ## 2. 当前工作状态
 
-- 活动任务：无（`TASK-0005` 已完成）
-- 最近完成：`TASK-0005` / `TODO-007` — 任务、会话、Attempt 与离线同步基础
+- 活动任务：`TASK-0006` — Capture 与人工校正安全基础
+- 任务状态：`IN_PROGRESS（2026-07-13）`
 - 当前分支：`master`；Git 已初始化但没有提交，全部文件未跟踪。
-- 当前重点：保持 TASK-0005 完成记录可复现；ADR-0001～0009 已于 2026-07-13 接受。
-- 阻塞项：真实认证、SDK 生成器、Flutter SQLite 落盘、真实设备断网、法域/保留/Provider/预算/SLO/RPO/RTO 仍待后续任务或确认。
-- 下一检查点：由项目 Owner 选择下一项任务；不得把 local synthetic PostgreSQL 当作 staging/production 或真实儿童数据授权。
+- 当前重点：按 ADR-0010～0012 实现 TODO-008 的本地 MinIO/PaddleOCR Capture 路径；ADR-0001～0012 已于 2026-07-13 接受。
+- 阻塞项：S3 SDK、PaddleOCR 运行时/模型版本、Flutter 相机/SQLite、真实认证、法域/备份/SLO/RPO/RTO 仍待后续实现或确认。
+- 下一检查点：锁定并审查本地 SDK/运行时依赖后，仅以 synthetic 图片验证上传与 OCR；不得接入真实儿童图片或默认外部 OCR。
 
 ## 3. 已验证的仓库事实
 
@@ -35,13 +35,13 @@
 | --- | --- | --- |
 | 项目目标、范围、设备、环境 | `PROJECT.md` | Active；目标与现状已分离 |
 | P1 产品需求与验收 | `PRD.md` | Draft；待产品 Owner 审批 |
-| 当前任务 | `TASK.md` | TASK-0005 已完成：Task/Session/Attempt 与离线同步基础 |
-| 复杂任务计划 | `PLANS.md` | PLAN-0001～0005 已完成 |
+| 当前任务 | `TASK.md` | TASK-0006 进行中：Capture 与人工校正安全基础 |
+| 复杂任务计划 | `PLANS.md` | PLAN-0001～0005 已完成；PLAN-0006 进行中 |
 | 系统结构、数据流、接口 | `ARCHITECTURE.md` | Draft 目标架构；P0 合成切片已实现 |
 | 测试命令和质量门槛 | `TESTING.md` | API/Web/Flutter 质量命令已有验证；原生构建结果以最新记录为准 |
 | 儿童数据、权限与 AI 安全 | `SECURITY.md` | 基线草案；生产开放项未决 |
 | 部署、回滚、告警与恢复 | `RUNBOOK.md` | Not deployed；仅生产前契约 |
-| 架构决策 | `DECISIONS.md`、`docs/adr/` | ADR-0001～0009 Accepted；仍保留真实数据/生产前置条件 |
+| 架构决策 | `DECISIONS.md`、`docs/adr/` | ADR-0001～0012 Accepted；仍保留真实数据/生产前置条件 |
 | 工作队列 | `TODO.md` | TODO-001、TODO-003、TODO-007 已完成；后续任务待批准 |
 | 已发布变化 | `CHANGELOG.md` | 无产品发布 |
 | 原始设计基线 | `家庭AI学习助手_架构设计_v1.0.docx` | v1.0；后续 ADR 可替代 |
@@ -62,11 +62,11 @@
 | --- | --- | --- |
 | `apps/child_flutter` | 孩子学习、拍题、提示交互、离线队列 | P0 骨架、平台目录和锁文件；通用待同步队列边界与 4 项测试已写，SQLite 未实现 |
 | `apps/web` | 家长、内容维护、Windows Web/PWA | 合成孩子档案消费入口；质量门槛已通过 |
-| `services/api` | FastAPI 模块化单体和 Worker | Profile/Device 合成 API；Learning 可切换至 PostgreSQL 事务仓储；Alembic 首迁移与 15 项 API 测试已验证 |
-| `packages/contracts` | OpenAPI、JSON Schema、生成 SDK | 健康 + Profile/Device + Learning `0.3.0` 合同已写 |
+| `services/api` | FastAPI 模块化单体和 Worker | Profile/Device 合成 API；Learning/Capture 可切换至 PostgreSQL 事务仓储；两份 Alembic 迁移与 19 项 API 测试已验证 |
+| `packages/contracts` | OpenAPI、JSON Schema、生成 SDK | 健康 + Profile/Device + Learning/Capture `0.4.0` 合同已写 |
 | `evals` | 固定 AI 质量/安全/成本评测 | 占位边界已写，无真实数据 |
-| `infra/compose` | 本地 PostgreSQL/Redis/MinIO/API 编排 | Docker Desktop 已准备；PostgreSQL 16.10 已启动且 healthy，Redis/MinIO 未启动 |
-| `docs/adr` | 架构决策 | 模板 + ADR-0001～0009 Accepted |
+| `infra/compose` | 本地 PostgreSQL/Redis/MinIO/API 编排 | Docker Desktop 已准备；PostgreSQL 16.10 已启动且 healthy，MinIO 是批准的 Capture 存储但尚未启动/接入，Redis 未启动 |
+| `docs/adr` | 架构决策 | 模板 + ADR-0001～0012 Accepted |
 | `prompts` | Codex 工作流启动器 | 已存在 |
 
 ## 7. 不可违反的约束
@@ -92,11 +92,11 @@
 
 ## 9. 决策、风险与下一步
 
-- ADR-0001～0009 已由项目 Owner（用户）于 2026-07-13 接受；设计稿仍不替代 ADR。
+- ADR-0001～0012 已由项目 Owner（用户）于 2026-07-13 接受；设计稿仍不替代 ADR。
 - 已接受决策覆盖模块边界、契约、离线、AI、身份、数据生命周期、工具链和部署恢复；真实数据、Provider、法域与 production 前置条件仍未解除。
 - 最高风险：AI 错误/代答、儿童数据泄露、离线记录覆盖、四端范围失控、P0 骨架与目标架构漂移。
 - 生产阻塞：法域/同意/保留、身份、密钥/加密、Provider 数据条款、SLO/RPO/RTO、告警/恢复。
-- 最近完成：`TASK-0005` / `TODO-007`；仅实现 synthetic 数据的 Learning 持久化切片，不进入真实认证或儿童数据。
+- 最近完成：`TASK-0005` / `TODO-007`；`TASK-0006` 正在实现 synthetic Capture/人工校正基础，不进入真实认证或儿童数据。
 
 ## 10. 更新规则
 

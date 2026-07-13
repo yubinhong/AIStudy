@@ -26,7 +26,7 @@ OCR、视觉和推理模型都可能误识别、直接给答案、泄露敏感�
 
 ## Decision
 
-提议选择选项 3。Capture/Tutor 只依赖内部 Provider Adapter；每次调用由版本化 Tutor Policy 决定允许的提示层级、最少上下文、模型路由、超时和成本上限。输出必须先通过固定 JSON Schema、敏感内容和直接代答检查；低置信度 OCR/推理必须请求用户校正。所有调用记录不可逆标识、Provider/模型/Prompt/Policy/Schema 版本、摘要指纹、延迟、token/成本、置信度与结果，不记录原始儿童内容。Provider、评测门槛、预算、数据区域和训练退出仍须具名批准。
+选择选项 3。Capture/Tutor 只依赖内部 Provider Adapter；每次调用由版本化 Tutor Policy 决定允许的提示层级、最少上下文、模型路由、超时和成本上限。输出必须先通过固定 JSON Schema、敏感内容和直接代答检查；低置信度 OCR/推理必须请求用户校正。所有调用记录不可逆标识、Provider/模型/Prompt/Policy/Schema 版本、摘要指纹、延迟、token/成本、置信度与结果，不记录原始儿童内容。默认 OCR 路由、外部成本上限和商业插件边界由 ADR-0012 细化；具体模型运行时、固定评测门槛和商业 Provider 条款仍须在实现前完成。
 
 ## Consequences
 

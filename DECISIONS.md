@@ -1,6 +1,6 @@
 # DECISIONS.md
 
-> 决策索引。完整决策使用 `docs/adr/NNNN-title.md`；项目 Owner（用户）已于 2026-07-13 批准 ADR-0001～0008 执行。每份 ADR 内保留的真实数据、Provider、法域和生产前置条件仍然有效。
+> 决策索引。完整决策使用 `docs/adr/NNNN-title.md`；项目 Owner（用户）已于 2026-07-13 批准 ADR-0001～0012。每份 ADR 内保留的真实数据、法域和生产前置条件仍然有效。
 
 ## 决策原则
 
@@ -21,12 +21,15 @@
 | [ADR-0001](docs/adr/0001-modular-monolith-and-domain-boundaries.md) | 模块化单体与领域边界 | 拆服务仍需独立证据与 ADR |
 | [ADR-0002](docs/adr/0002-openapi-contract-and-sdk-generation.md) | OpenAPI、AI Schema 与 SDK 生成 | 首次 SDK 生成前须固定工具、输出目录和 CI 验证 |
 | [ADR-0003](docs/adr/0003-offline-events-idempotency-and-conflict-merge.md) | 离线事件、幂等与冲突合并 | 实现合同须定义事件字段、兼容窗口和合并 UX |
-| [ADR-0004](docs/adr/0004-ai-provider-adapter-tutor-policy-and-evals.md) | Provider Adapter、Tutor Policy、评测 | Provider、条款、预算和阈值仍是接入前阻塞项 |
+| [ADR-0004](docs/adr/0004-ai-provider-adapter-tutor-policy-and-evals.md) | Provider Adapter、Tutor Policy、评测 | 默认 OCR 路由见 ADR-0012；运行时、固定 eval 与商业 Provider 条款仍须实现前审查 |
 | [ADR-0005](docs/adr/0005-parent-child-identity-and-household-authorization.md) | 家长/孩子身份与 Household 授权 | IdP、TTL、MFA/恢复须在真实认证前确定 |
 | [ADR-0006](docs/adr/0006-child-data-media-and-backup-lifecycle.md) | 儿童数据、媒体与备份生命周期 | 法域、同意、保留、备份与 Provider 条款仍阻塞真实儿童数据 |
 | [ADR-0007](docs/adr/0007-toolchain-and-scaffold-baseline.md) | 工具链与骨架基线 | 变更须同步锁文件、验证和 ADR |
 | [ADR-0008](docs/adr/0008-deployment-observability-and-recovery.md) | 部署、可观测性与恢复 | 平台、SLO/RPO/RTO、值班与 Secret Manager 仍阻塞 staging |
 | [ADR-0009](docs/adr/0009-postgresql-persistence-and-migrations.md) | PostgreSQL 持久化与版本化迁移依赖 | 仅限 local synthetic 环境；真实数据与 production 前置条件仍有效 |
+| [ADR-0010](docs/adr/0010-local-minio-private-object-storage.md) | 本地 MinIO 私有对象存储与预签名上传 | 具体 SDK、TTL/CORS/大小限制和生产 Secret Manager 须在实现前锁定 |
+| [ADR-0011](docs/adr/0011-capture-media-retention-and-cascade-deletion.md) | Capture 图片保留、家长控制与级联删除 | 法域、同意、备份擦除和真实数据告知仍阻塞 production |
+| [ADR-0012](docs/adr/0012-local-paddleocr-provider-and-zero-external-cost.md) | 本地 PaddleOCR、人工确认与零外部成本 | 具体运行时/模型版本、许可证审查和固定 eval 须在实现前完成 |
 
 ## Proposed ADR
 

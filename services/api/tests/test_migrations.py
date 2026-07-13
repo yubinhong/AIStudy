@@ -19,4 +19,6 @@ def test_learning_schema_is_at_head_in_local_postgresql() -> None:
         "attempts",
         "idempotency_records",
         "audit_events",
+        "captures",
+        "capture_corrections",
     } <= set(tables)
