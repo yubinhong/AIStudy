@@ -1,0 +1,737 @@
+openapi: 3.1.0
+info:
+  title: 家庭 AI 学习助手 API
+  version: 0.3.0
+  description: Synthetic local/CI household and learning contract vertical slices.
+servers:
+  - url: http://localhost:8000
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      summary: Service health check
+      responses:
+        '200':
+          description: Service is ready to receive requests.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /households/{household_id}/children:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+    get:
+      operationId: listChildren
+      summary: List children in the caller's household
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+      responses:
+        '200':
+          description: Children visible to the caller.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChildProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createChild
+      summary: Create a child profile in the caller's household
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChildRequest'
+      responses:
+        '201':
+          description: Child profile created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChildProfile'
+        '200':
+          description: Idempotent replay of an earlier create request.
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                const: 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChildProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/InvalidRequest'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+  /households/{household_id}/children/{child_id}:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getChild
+      summary: Get a child profile in the caller's household
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+      responses:
+        '200':
+          description: Child profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChildProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /households/{household_id}/devices:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+    get:
+      operationId: listDevices
+      summary: List devices in the caller's household
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+      responses:
+        '200':
+          description: Devices visible to the caller.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Device'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: registerDevice
+      summary: Register a device in the caller's household
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDeviceRequest'
+      responses:
+        '201':
+          description: Device registered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '200':
+          description: Idempotent replay of an earlier registration.
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                const: 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/InvalidRequest'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+  /households/{household_id}/tasks:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+    get:
+      operationId: listTasks
+      summary: List tasks visible to the caller
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+          DemoChild: []
+      responses:
+        '200':
+          description: Tasks visible to the parent or bound child.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StudyTask'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createTask
+      summary: Create a math task for a child in the caller's household
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskRequest'
+      responses:
+        '201':
+          description: Task created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudyTask'
+        '200':
+          description: Idempotent task-create replay.
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                const: 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudyTask'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+  /households/{household_id}/tasks/{task_id}/sessions:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      operationId: startStudySession
+      summary: Start a session for a task assigned to the bound child
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+          DemoChild: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartStudySessionRequest'
+      responses:
+        '201':
+          description: Study session started.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudySession'
+        '200':
+          description: Idempotent start-session replay.
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                const: 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudySession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+  /households/{household_id}/sessions/{session_id}/attempts:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      operationId: recordAttempt
+      summary: Append an attempt to the bound child's active study session
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+          DemoChild: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordAttemptRequest'
+      responses:
+        '201':
+          description: Attempt appended.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attempt'
+        '200':
+          description: Idempotent attempt replay.
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                const: 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Attempt'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+  /households/{household_id}/sync-batches:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+    post:
+      operationId: syncOfflineBatch
+      summary: Apply a versioned batch of offline attempt events atomically
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+          DemoChild: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncBatchRequest'
+      responses:
+        '200':
+          description: Batch applied or replayed without partial writes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncBatchResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+components:
+  parameters:
+    HouseholdId:
+      name: household_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+    TaskId:
+      name: task_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  securitySchemes:
+    DemoHouseholdPrincipal:
+      type: apiKey
+      in: header
+      name: X-Demo-Household-Id
+      description: Synthetic local/CI principal adapter; not production authentication.
+    DemoRole:
+      type: apiKey
+      in: header
+      name: X-Demo-Role
+      description: Synthetic local/CI role adapter; not production authorization.
+    DemoChild:
+      type: apiKey
+      in: header
+      name: X-Demo-Child-Id
+      description: Synthetic child binding for local/CI child-only learning operations; not production authentication.
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status, service, version]
+      properties:
+        status:
+          type: string
+          const: ok
+        service:
+          type: string
+          const: study-api
+        version:
+          type: string
+          const: 0.3.0
+    CreateChildRequest:
+      type: object
+      additionalProperties: false
+      required: [display_name, grade, curriculum_version, subjects]
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        grade:
+          type: integer
+          minimum: 1
+          maximum: 6
+        curriculum_version:
+          type: string
+          minLength: 1
+          maxLength: 80
+        subjects:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [math]
+    ChildProfile:
+      type: object
+      additionalProperties: false
+      required: [id, household_id, display_name, grade, curriculum_version, subjects, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        household_id:
+          type: string
+          format: uuid
+        display_name:
+          type: string
+        grade:
+          type: integer
+        curriculum_version:
+          type: string
+        subjects:
+          type: array
+          items:
+            type: string
+            enum: [math]
+        created_at:
+          type: string
+          format: date-time
+    CreateDeviceRequest:
+      type: object
+      additionalProperties: false
+      required: [kind, platform, display_name]
+      properties:
+        kind:
+          type: string
+          enum: [child, parent]
+        platform:
+          type: string
+          enum: [ios, android, web]
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 80
+    Device:
+      type: object
+      additionalProperties: false
+      required: [id, household_id, kind, platform, display_name, status, registered_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        household_id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          enum: [child, parent]
+        platform:
+          type: string
+          enum: [ios, android, web]
+        display_name:
+          type: string
+        status:
+          type: string
+          const: active
+        registered_at:
+          type: string
+          format: date-time
+    CreateTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [child_id, title, subject, scheduled_for]
+      properties:
+        child_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        subject:
+          type: string
+          enum: [math]
+        scheduled_for:
+          type: string
+          format: date
+    StudyTask:
+      type: object
+      additionalProperties: false
+      required: [id, household_id, child_id, title, subject, scheduled_for, status, version, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        household_id:
+          type: string
+          format: uuid
+        child_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        subject:
+          type: string
+          enum: [math]
+        scheduled_for:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [assigned, in_progress]
+        version:
+          type: integer
+          minimum: 1
+        created_at:
+          type: string
+          format: date-time
+    StartStudySessionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_task_version]
+      properties:
+        expected_task_version:
+          type: integer
+          minimum: 1
+    StudySession:
+      type: object
+      additionalProperties: false
+      required: [id, household_id, child_id, task_id, task_version, status, started_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        household_id:
+          type: string
+          format: uuid
+        child_id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+        task_version:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          const: active
+        started_at:
+          type: string
+          format: date-time
+    RecordAttemptRequest:
+      type: object
+      additionalProperties: false
+      required: [event_id, answer_summary]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        answer_summary:
+          type: string
+          minLength: 1
+          maxLength: 200
+    Attempt:
+      type: object
+      additionalProperties: false
+      required: [id, event_id, household_id, child_id, session_id, sequence, answer_summary, recorded_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        event_id:
+          type: string
+          format: uuid
+        household_id:
+          type: string
+          format: uuid
+        child_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        sequence:
+          type: integer
+          minimum: 1
+        answer_summary:
+          type: string
+        recorded_at:
+          type: string
+          format: date-time
+    SyncEvent:
+      type: object
+      additionalProperties: false
+      required: [event_id, idempotency_key, kind, session_id, answer_summary]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        idempotency_key:
+          type: string
+          minLength: 8
+          maxLength: 128
+        kind:
+          type: string
+          const: record_attempt
+        session_id:
+          type: string
+          format: uuid
+        answer_summary:
+          type: string
+          minLength: 1
+          maxLength: 200
+    SyncBatchRequest:
+      type: object
+      additionalProperties: false
+      required: [schema_version, events]
+      properties:
+        schema_version:
+          type: integer
+          const: 1
+        events:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/SyncEvent'
+    SyncEventResult:
+      type: object
+      additionalProperties: false
+      required: [event_id, status, attempt]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [applied, replayed]
+        attempt:
+          $ref: '#/components/schemas/Attempt'
+    SyncBatchResult:
+      type: object
+      additionalProperties: false
+      required: [schema_version, results]
+      properties:
+        schema_version:
+          type: integer
+          const: 1
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SyncEventResult'
+  responses:
+    Unauthorized:
+      description: Missing or invalid synthetic principal.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Principal role cannot perform this operation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource is not visible in the caller's household.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    IdempotencyConflict:
+      description: Idempotency key was reused with a different payload.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    InvalidRequest:
+      description: Request failed schema validation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
