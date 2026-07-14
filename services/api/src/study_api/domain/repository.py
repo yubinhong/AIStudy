@@ -8,6 +8,7 @@ from typing import TypeVar, cast
 from uuid import UUID, uuid4
 
 from study_api.domain.models import (
+    AuditEvent,
     ChildProfile,
     CreateChildRequest,
     CreateDeviceRequest,
@@ -40,6 +41,8 @@ class InMemoryProfileRepository:
         self._children: dict[UUID, ChildProfile] = {}
         self._devices: dict[UUID, Device] = {}
         self._idempotency: dict[tuple[UUID, str, str], IdempotencyRecord] = {}
+        self._delete_idempotency: set[tuple[UUID, UUID, str]] = set()
+        self._audits: list[AuditEvent] = []
         self._seed()
 
     @staticmethod
@@ -84,6 +87,30 @@ class InMemoryProfileRepository:
     def get_child(self, household_id: UUID, child_id: UUID) -> ChildProfile | None:
         child = self._children.get(child_id)
         return child if child and child.household_id == household_id else None
+
+    def delete_child(
+        self, household_id: UUID, child_id: UUID, idempotency_key: str
+    ) -> tuple[bool, bool]:
+        """Delete one synthetic profile only after media cascade succeeds."""
+
+        key = (household_id, child_id, idempotency_key)
+        if key in self._delete_idempotency:
+            return True, True
+        child = self.get_child(household_id, child_id)
+        if child is None:
+            return False, False
+        del self._children[child_id]
+        self._delete_idempotency.add(key)
+        self._audits.append(
+            AuditEvent(
+                id=uuid4(),
+                household_id=household_id,
+                event_name="child_profile_deleted",
+                resource_id=child_id,
+                recorded_at=self._now(),
+            )
+        )
+        return True, False
 
     def create_child(
         self, household_id: UUID, request: CreateChildRequest, idempotency_key: str

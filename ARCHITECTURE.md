@@ -15,7 +15,7 @@
 - 规模假设：P0/P1 先服务单一或少量家庭；用户数、峰值 RPS、图片量、AI 调用量和数据保留规模均为 `TBD`，应在原型测量后写入容量模型。
 - 主要约束：复用四类现有设备；华为端不依赖 GMS；模块化单体起步；OpenAPI/Schema 契约优先；离线可用；模型可替换；儿童数据最小化；未授权教材/题库不入库。
 
-当前实现状态：P0 健康端点、Household-scoped ChildProfile/Device 与 P1 Task/StudySession/Attempt/SyncBatch/Capture API、OpenAPI 增量、Flutter 待同步队列边界、两份本地 PostgreSQL migration 和 Learning/Capture 事务仓储已实现；真实认证、Profile/Device 持久化、媒体上传/OCR、SQLite 落盘及其余领域仍为目标设计。
+当前实现状态：P0 健康端点、Household-scoped ChildProfile/Device 与 P1 Task/StudySession/Attempt/SyncBatch/Capture API、local/CI 家长删除孩子档案 API、OpenAPI `0.5.0` 增量、Flutter 待同步队列边界、五份本地 PostgreSQL migration、Learning/Capture/OCR 事务仓储、私有 MinIO 上传签发/服务端确认和过期对象清理器、按 Household/Child 原子认领的 Capture 对象级联删除编排、家长保存/立即删除图片入口、PaddleOCR 模型构建期 SHA-256 供应链和预置目录 Adapter、OCR 边界有界读取/图片容器头校验/完整像素解码/无 EXIF 规范化重编码/临时文件执行/文本结果纯解析、候选结果人工确认门和 linux/amd64 synthetic 模型烟测已实现；真实认证、Profile/Device 持久化、Ubuntu 原生性能/真实题型评测、生产数据库/派生对象/备份删除、SQLite 落盘及其余领域仍为目标设计。
 
 ## 2. 系统上下文
 
@@ -50,13 +50,13 @@ flowchart LR
 | API/BFF | `services/api` | 鉴权、家庭边界、业务编排、契约实现 | PostgreSQL 中 Learning 业务事实 | 客户端、数据层、Worker、AI | 健康 + 合成 Profile/Device API；Learning 可切换 PostgreSQL 仓储；真实认证未实现 |
 | Identity/Profile | `services/api` 内模块 | Household、User、ChildProfile、Device 和权限 | 身份、家庭归属、设备凭证 | API、所有领域模块 | 合成 principal + 内存仓储；非生产认证 |
 | Plan/Task/Session | `services/api` 内模块 | 计划、任务、会话、Attempt 和同步合并 | 学习任务与过程记录 | 客户端、Report、Mistake | PostgreSQL 事务仓储、Alembic schema、反向授权/幂等/并发测试已实现；SQLite 未实现 |
-| Capture | `services/api` 内模块 | 受限媒体声明、人工校正、签名上传/OCR/结构化 | Capture 元数据与追加校正；文件在私有 MinIO | 对象存储、AI Provider、Tutor | `0.4.0` 元数据/人工校正、事务与迁移已实现；MinIO/PaddleOCR 架构已接受，依赖与 Adapter 未实现 |
+| Capture | `services/api` 内模块 | 受限媒体声明、人工校正、签名上传/OCR/结构化 | Capture 元数据与追加校正；文件在私有 MinIO；OCR 候选在 PostgreSQL | 对象存储、AI Provider、Tutor | `0.5.0` 元数据/人工校正、私有上传确认、事务/生命周期迁移、过期清理、按 Household/Child 的对象级联删除编排、家长保存/立即删除图片入口和 local/CI 家长删除入口、OCR 前置有界读取/容器头校验/完整像素解码/无 EXIF 规范化重编码/临时文件执行、文本结果纯解析、候选结果事务持久化/人工确认门和 linux/amd64 synthetic 模型烟测已实现；Ubuntu 原生基准/真实题型评测、生产 Profile/派生对象/备份级联未实现 |
 | Tutor | `services/api` 内模块 | Provider 路由、Tutor Policy、提示层级、Schema 校验、成本控制 | TutorTurn、模型/Prompt/Policy 版本和审计 | Capture、AI Provider、Mistake | 未创建 |
 | Mistake/Mastery/Report | `services/api` 内模块 | 错因、知识点、复习调度、掌握度快照、周报 | MistakeRecord、ReviewSchedule、MasterySnapshot、WeeklyReport | Session/Tutor、家长端 | 未创建 |
 | Notification | `services/api` 内模块 | 应用内提醒和可替换推送适配器 | 通知状态 | Report/Task、HMS | 未创建 |
 | 跨端契约 | `packages/contracts` | OpenAPI、AI JSON Schema、生成 SDK | 接口/Schema 的唯一事实来源 | API、Flutter、Web、evals | 健康 + Profile/Device + Learning 0.3 合同；SDK 生成器实现待选择 |
 | AI 评测 | `evals` | 固定样本与质量/安全/延迟/成本回归 | 合成或脱敏评测数据 | Tutor、CI | 占位边界；无评测集 |
-| 本地基础设施 | `infra/compose` | PostgreSQL、Redis、MinIO、API/Worker 本地编排 | 本地合成数据 | 开发/集成测试 | PostgreSQL 16.10 已启动用于 migration/integration；MinIO 是批准的 Capture 对象存储但尚未启动/接入；Redis 未启动 |
+| 本地基础设施 | `infra/compose` | PostgreSQL、Redis、MinIO、API/Worker 本地编排 | 本地合成数据 | 开发/集成测试 | PostgreSQL 16.10 与 MinIO 已启动用于 migration/integration；Redis 未启动 |
 | ADR | `docs/adr` | 不可逆或跨模块决策记录 | 架构决策历史 | `DECISIONS.md` | ADR-0001～0012 Accepted |
 
 模块间禁止直接绕过业务接口修改其他模块表。模块化单体内部边界和依赖方向需在 P0 代码结构中验证。
@@ -65,11 +65,11 @@ flowchart LR
 
 ### 4.1 任务、作答与离线同步
 
-以下为目标数据流；第 3～4 步的 MinIO/PaddleOCR Adapter 尚未实现，当前 Capture 仅提供元数据与人工校正。
+以下为目标数据流；第 3 步的 MinIO 上传签发与服务端对象确认、第 4 步的本地 OCR 输入规范化、执行边界、`LocalOcrJob` Worker 和候选结果事务持久化已实现，但真实调度入口、Ubuntu 原生性能/真实题型实测和客户端确认 UI 尚未实现。
 
 1. 家长通过 Web/手机创建任务，API 校验 Household 权限后写入 PostgreSQL。
 2. 孩子端同步今日任务到 SQLite，开始 StudySession；断网时将 Attempt、状态变化和上传意图写入追加队列。
-3. Capture 上传由 API 在授权后签发私有 MinIO 的短期预签名 URL；客户端不持有存储密钥，上传后仅提交受限元数据。
+3. Capture 上传由 API 在授权后创建 `upload_pending` 元数据并签发私有 MinIO 的短期预签名 URL；客户端不持有存储密钥，API 读取对象 MIME/大小确认后才转入 `needs_correction`。
 4. 本地 PaddleOCR 通过 Provider Adapter 产生候选结果；任何结果必须人工确认，低置信度或失败保留校正路径。
 5. 重连后客户端按顺序提交，写接口携带 `idempotency-key`；Attempt/AuditEvent 追加写，任务状态使用服务端版本号检测/合并冲突。
 6. API 返回逐项结果；失败项保留可重试和用户可理解状态，不静默丢弃或用最后写入覆盖历史。

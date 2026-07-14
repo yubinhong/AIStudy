@@ -138,3 +138,38 @@ def test_capture_cross_household_and_sibling_access_are_not_enumerable() -> None
 
     assert sibling.status_code == 404
     assert other_household.status_code == 404
+
+
+def test_parent_save_and_immediate_delete_are_idempotent_and_child_forbidden() -> None:
+    client = TestClient(create_app())
+    capture = _create_capture(client, str(_session(client)["id"]))
+    save_headers = {**_principal(), "Idempotency-Key": "capture-save-001"}
+    first_save = client.post(
+        f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/save", headers=save_headers
+    )
+    replay_save = client.post(
+        f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/save", headers=save_headers
+    )
+    child_save = client.post(
+        f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/save",
+        headers={
+            **_principal(role="child", child_id=CHILD_A),
+            "Idempotency-Key": "capture-save-child",
+        },
+    )
+    first_delete = client.delete(
+        f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/media",
+        headers={**_principal(), "Idempotency-Key": "capture-delete-001"},
+    )
+    replay_delete = client.delete(
+        f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/media",
+        headers={**_principal(), "Idempotency-Key": "capture-delete-001"},
+    )
+
+    assert first_save.status_code == 204
+    assert replay_save.status_code == 204
+    assert replay_save.headers["Idempotency-Replayed"] == "true"
+    assert child_save.status_code == 403
+    assert first_delete.status_code == 204
+    assert replay_delete.status_code == 204
+    assert replay_delete.headers["Idempotency-Replayed"] == "true"

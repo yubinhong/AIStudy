@@ -6,7 +6,8 @@ experience. The current vertical slice references the shared contract at
 Device types. Authentication is not implemented in this shell yet.
 
 Available synthetic API routes are documented in the contract:
-`GET/POST /households/{household_id}/children` and
+`GET/POST /households/{household_id}/children`,
+`DELETE /households/{household_id}/children/{child_id}` and
 `GET/POST /households/{household_id}/devices`.
 
 ```bash

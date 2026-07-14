@@ -10,7 +10,7 @@
 
 ## Context
 
-Capture 的真实图片需要脱离 API 进程保存，同时必须避免客户端长期持有对象存储凭据或公开读取。项目已经有 local-only MinIO Compose 服务，但尚未接入媒体上传。
+Capture 的真实图片需要脱离 API 进程保存，同时必须避免客户端长期持有对象存储凭据或公开读取。项目已有 local-only MinIO Compose 服务；`TASK-0006` 已接入 synthetic 私有上传签发和服务端对象确认，仍未授权真实儿童图片。
 
 ## Decision Drivers
 
@@ -28,9 +28,9 @@ Capture 的真实图片需要脱离 API 进程保存，同时必须避免客户�
 
 选择选项 3。local 环境使用 MinIO；对象存储通过内部 S3 兼容 Adapter 访问。Bucket 默认私有，对象键为不含儿童身份的随机值并按 Household/Capture 授权校验。
 
-客户端 App 不保存、读取或传递 MinIO/S3 长期密钥。服务端仅从本地安全配置或后续 Secret Manager 读取其最小权限存储凭据，用于生成有界、短期、单对象的预签名上传 URL；精确 TTL、CORS 与对象大小限制在上传实现前写入配置和测试，不在本 ADR 中猜测数值。
+客户端 App 不保存、读取或传递 MinIO/S3 长期密钥。服务端仅从本地安全配置或后续 Secret Manager 读取其最小权限存储凭据，用于生成有界、短期、单对象的预签名上传 URL；local 实现固定为 300 秒、JPEG/PNG、1–8 MB、`captures/` 前缀，CORS 的生产取值仍待 staging 前复核。
 
-S3 SDK 的具体 Python 包尚未加入依赖清单；实现时必须选择并锁定一个维护中的 SDK，记录许可证、替代方案、供应链风险和服务端体积影响，随后更新 `pyproject.toml`、`uv.lock`、测试与本 ADR。
+服务端 S3 对象存储客户端最终锁定为 `boto3==1.43.46`，通过标准 S3 兼容接口连接本地 MinIO；项目不使用 MinIO 专属 SDK。它运行在 API 服务端，客户端不携带该依赖。其传递依赖会增加服务端镜像/锁文件体积和供应链面，必须在 `uv.lock`、SBOM/漏洞扫描与 CI 中审查；许可证和维护状态随锁定依赖清单复核。
 
 ## Consequences
 
@@ -46,7 +46,7 @@ S3 SDK 的具体 Python 包尚未加入依赖清单；实现时必须选择并�
 
 ## Compatibility and Migration
 
-- 当前 `0.4.0` Capture 合同不包含上传 URL 或对象键，后续只能以向后兼容字段/端点增量扩展。
+- `0.5.0` Capture 合同通过独立端点新增短期上传 URL 与服务端确认；对象键仅在 PostgreSQL 内部字段保存，绝不作为业务响应字段或审计字段。后续只能以向后兼容字段/端点增量扩展。
 - 本地 MinIO 不等同于 staging/production 存储批准；云迁移须保持 S3 Adapter 接口并另行验证。
 - 回滚时关闭新的预签名签发入口，保留已存在的 Capture 元数据/删除计划；不得公开 Bucket 或把密钥下发给客户端。
 
@@ -54,4 +54,3 @@ S3 SDK 的具体 Python 包尚未加入依赖清单；实现时必须选择并�
 
 - 使用 synthetic 图片验证私有 Bucket、预签名有效期、单对象范围、类型/大小、跨 Household 拒绝和上传失败恢复。
 - 验证日志、错误和审计不包含存储密钥、预签名 URL、对象键或原始图片。
-

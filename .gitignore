@@ -40,3 +40,6 @@ coverage/
 dist/
 tmp/
 *.log
+*.tar
+*.tar.gz
+services/api/model-cache/

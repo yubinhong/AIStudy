@@ -46,20 +46,22 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | Web 单元 | `cd apps/web && pnpm test` | 每次 Web 变更 | 通过（1 test，2026-07-12） |
 | Web E2E | `cd apps/web && pnpm e2e` | 用户流程变更/P1 门槛 | 不可运行 |
 | Web 构建 | `cd apps/web && pnpm build` | 合并前 | 通过（2026-07-12） |
-| API 安装 | `cd services/api && uv sync --locked` | 锁文件变化/干净环境 | 通过（2026-07-13；锁定 SQLAlchemy 2.0.51、Alembic 1.18.5、Psycopg 3.3.4） |
-| API 格式 | `cd services/api && uv run ruff format --check .` | 每次 API 变更 | 通过（2026-07-13；25 files） |
+| API 安装 | `cd services/api && uv sync --locked` | 锁文件变化/干净环境 | 通过（2026-07-13；锁定 SQLAlchemy 2.0.51、Alembic 1.18.5、Psycopg 3.3.4、boto3 1.43.46、Pillow 12.3.0、PaddleOCR 3.7.0、PaddlePaddle 3.3.1；模型只在镜像构建阶段下载） |
+| API 格式 | `cd services/api && uv run ruff format --check .` | 每次 API 变更 | 通过（2026-07-13；42 files） |
 | API Lint | `cd services/api && uv run ruff check .` | 每次 API 变更 | 通过（2026-07-13） |
-| API 类型 | `cd services/api && uv run mypy src tests` | 每次 API 变更 | 通过（2026-07-13；22 source files） |
-| API 单元 | `cd services/api && uv run pytest -m "not integration"` | 每次 API 变更 | 通过（14 tests，2026-07-13；含 Household、任务版本、Attempt 幂等、离线批次与 Capture 校正） |
+| API 类型 | `cd services/api && uv run mypy src` | 每次 API 变更 | 通过（2026-07-13；21 source files） |
+| API 单元 | `cd services/api && uv run pytest -m "not integration"` | 每次 API 变更 | 通过（60 tests，2026-07-14；含 Household、家长删除授权/幂等/失败保留、家长保存/立即删除授权与重放、任务版本、Attempt 幂等、Capture 校正、私有上传确认、生命周期上限、对象级联删除成功/失败/重试、预签名 URL、对象有界读取、完整像素解码/规范化重编码/EXIF 清理、图片容器头/尺寸/像素数边界、OCR Worker 安全读取/未确认状态拒绝/失败不持久化、OCR 输出形状/置信度/人工确认/临时文件清理/未锁定模型关闭边界、OCR 候选草稿状态/控制字符边界、环境凭据边界、预置模型目录与构建清单边界） |
 | Compose 配置 | `docker compose -f infra/compose/compose.yml config` | Compose 变更 | 通过（2026-07-13；仅确认 local-only 配置） |
-| 集成环境 | `docker compose -f infra/compose/compose.yml up -d postgres` | API/数据/跨模块变更 | 通过（2026-07-13；Docker Desktop 29.2.1，postgres:16.10 healthy，端口 5432，synthetic local 配置） |
-| API 集成 | `cd services/api && uv run pytest -m integration` | 跨模块/数据变更 | 通过（5 tests，2026-07-13；migration schema、Learning/Capture 持久化幂等、批次原子性、连接池重连和并发版本冲突） |
-| API 镜像 | `docker compose -f infra/compose/compose.yml build api` | 合并/发布前 | 不可运行 |
-| AI eval | `TBD（P0 在 evals/ 建立稳定入口）` | 模型/Prompt/Policy/路由变更 | 阻塞：仅有占位边界，无模型/评测集 |
-| 契约结构/差异 | `ruby -ryaml -e '...'`（见任务记录） | OpenAPI/Schema 变更 | 通过（2026-07-13）：健康、Profile/Device、Learning 与 Capture `0.4.0` 路径和 Schema 已检查；SDK 生成器未决定 |
+| 集成环境 | `docker compose -f infra/compose/compose.yml up -d postgres minio` | API/数据/跨模块变更 | 通过（2026-07-13；Docker Desktop 29.2.1，postgres:16.10 与 MinIO healthy，端口 5432/9000，synthetic local 配置） |
+| API 集成 | `cd services/api && uv run pytest -m integration` | 跨模块/数据变更 | 通过（14 tests，2026-07-14；migration schema、Learning/Capture/OCR 持久化幂等、家长保存/立即删除图片、OCR_FAILURE 七天保留、规范化候选/空结果、家庭边界、对象键内部持久化、到期对象认领/删除审计、批次原子性、连接池重连、并发版本冲突，以及 PostgreSQL + MinIO synthetic 端到端上传确认） |
+| API 镜像 | `cd services/api && docker build --platform=linux/amd64 -t study-api:local .` | 合并/发布前 | 通过（2026-07-13；镜像 `study-api:local`，五个官方 PaddleOCR 归档均在构建阶段校验 SHA-256；运行层已包含 OpenCV/Paddle CPU 所需最小系统库，并在无网络容器内完成 1×1 synthetic PNG 真实 CPU 烟测；`paddlepaddle==3.3.1` 当前无 Linux arm64 wheel，运行层不含模型下载工具或网络更新逻辑） |
+| AI eval | `cd services/api && ./.venv/bin/python ../../evals/run_ocr_eval.py` | OCR 解析/Provider/模型路由变更 | 通过（2026-07-14；`ocr-synthetic-v1`，6 cases，0 Provider calls；Tutor/提示层级评测仍待实现） |
+| 契约结构/差异 | `ruby -ryaml -e '...'`（见任务记录） | OpenAPI/Schema 变更 | 通过（2026-07-13）：健康、Profile/Device、Learning 与 Capture `0.5.0` 路径和 Schema 已检查；SDK 生成器未决定 |
 | 安全扫描 | `TBD（按 Flutter/pnpm/uv/镜像工具链建立）` | 合并/发布前 | 阻塞：无依赖/镜像 |
 
 耗时预算必须在命令首次进入 CI 后用实际数据补充，不在无代码阶段猜测。
+
+当前环境备注：本轮用于早期验证的 `/private/tmp/study-uv/bin/uv` 已被临时目录清理；后续格式/Lint/类型/测试以 `services/api/.venv/bin/` 的同等工具入口通过。恢复可发现的 `uv` 命令由 `TODO-011` 跟踪，不应把现有 `.venv` 误报为干净环境安装验证。
 
 ## 4. 最小相关验证规则
 

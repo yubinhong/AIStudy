@@ -10,21 +10,21 @@
 - 主要用户：小学阶段孩子与家长/监护人；辅助角色为家庭内容维护者和项目维护者。
 - 生产状态：`NOT_DEPLOYED`
 - 当前版本：`0.0.0（尚无产品发布）`
-- 最近更新：`2026-07-13`
+- 最近更新：`2026-07-14`
 
 ## 2. 当前工作状态
 
 - 活动任务：`TASK-0006` — Capture 与人工校正安全基础
-- 任务状态：`IN_PROGRESS（2026-07-13）`
-- 当前分支：`master`；Git 已初始化但没有提交，全部文件未跟踪。
+- 任务状态：`IN_PROGRESS（2026-07-14）`
+- 当前分支：`master`；最近提交 `7cfd302`，工作区含未提交的 Capture/对象存储增量。
 - 当前重点：按 ADR-0010～0012 实现 TODO-008 的本地 MinIO/PaddleOCR Capture 路径；ADR-0001～0012 已于 2026-07-13 接受。
-- 阻塞项：S3 SDK、PaddleOCR 运行时/模型版本、Flutter 相机/SQLite、真实认证、法域/备份/SLO/RPO/RTO 仍待后续实现或确认。
-- 下一检查点：锁定并审查本地 SDK/运行时依赖后，仅以 synthetic 图片验证上传与 OCR；不得接入真实儿童图片或默认外部 OCR。
+- 已完成：boto3/PaddleOCR/PaddlePaddle/Pillow 锁定与安装、MinIO 预签名 Adapter、`0.5.0` 上传签发/确认、`0003`～`0005` 生命周期/OCR 迁移、过期对象清理器、按 Household/Child 的 Capture 对象级联删除编排、local/CI 家长 Profile 删除顺序、家长保存/立即删除图片、`LocalOcrJob` Worker 边界、OCR_FAILURE 七天失败保留、构建期模型供应链脚本、五模型 SHA-256 清单、linux/amd64 API 镜像、预置模型目录 OCR Adapter、对象有界读取、SHA-256、JPEG/PNG 容器头校验、完整像素解码/无 EXIF 规范化重编码、OCR 文本结果纯解析、临时文件执行边界、候选结果事务持久化、固定 `ocr-synthetic-v1` 评测和无网络真实模型烟测。仍待后续实现或确认：Ubuntu 原生性能基准/真实题型评测、真实调度器、Tutor/提示层级 eval、生产 Profile/派生对象/备份级联、可发现的 uv 入口（TODO-011）、Flutter 相机/SQLite、真实认证、法域/备份/SLO/RPO/RTO。
+- 下一检查点：只以 synthetic 图片继续验证对象保留与本地 OCR 调度；不得接入真实儿童图片或默认外部 OCR。
 
 ## 3. 已验证的仓库事实
 
 - 仓库根目录：`/Users/ybh/PycharmProjects/study`。
-- Git：分支 `master`，无 commit；当前所有项目文件均为 untracked。
+- Git：分支 `master`，最近提交 `7cfd302`；工作区有本轮未提交的 API、合同、迁移与文档改动。
 - 现有内容：根目录上下文文档、`prompts/` 工作流模板、`docs/adr/0000-template.md`、`家庭AI学习助手_架构设计_v1.0.docx`。
 - 已创建但未完全验证：`apps/`、`services/`、`packages/`、`evals/`、`infra/` 的 P0 骨架、家庭 Profile/Device 合成切片、配置样例、最小测试、Compose 和 CI；三类锁文件已生成，Flutter Android 调试 APK 和 iOS 无签名 Runner.app 已构建。
 - 设计稿：31 个段落、6 个表格、3 页，定义 P0/P1/P2、设备职责、核心实体/API 和发布门槛；本地渲染缺少部分中文字体，但 OOXML 文本可完整提取。
@@ -51,9 +51,9 @@
 - 客户端：Flutter iOS/Android；Next.js + TypeScript Web/PWA；端侧 SQLite。
 - 后端：Python 3.12 + FastAPI 模块化单体 + 异步 Worker。
 - 数据：PostgreSQL 为业务事实源；pgvector 做检索；Redis 做缓存/队列；S3/MinIO 存图片。
-- 契约：`packages/contracts` 已有 P0 健康/Profile/Device 与 P1 Learning `0.3.0` 合同；SDK 生成方向已由 ADR-0002 接受，具体生成器尚未选择。
-- AI：OCR/视觉/推理/低成本模型经 Provider Adapter；Tutor Policy 控制提示层级、安全、Schema 和成本。
-- 交付：P0 Compose/CI 已创建；AI eval、OpenTelemetry 和部署仍未实现。
+- 契约：`packages/contracts` 已有 P0 健康/Profile/Device、P1 Learning 与 Capture `0.5.0` 合同；SDK 生成方向已由 ADR-0002 接受，具体生成器尚未选择。
+- AI：OCR/视觉/推理/低成本模型经 Provider Adapter；OCR 已有固定 synthetic 合同评测，Tutor Policy 控制提示层级、安全、Schema 和成本。
+- 交付：P0 Compose/CI 已创建；OCR synthetic eval 已实现，Tutor eval、OpenTelemetry 和部署仍未实现。
 - 认证：家长拥有 Household；孩子使用 PIN/可撤销设备令牌；具体 IdP/TTL/MFA `TBD`。
 
 ## 6. 仓库地图
@@ -62,10 +62,10 @@
 | --- | --- | --- |
 | `apps/child_flutter` | 孩子学习、拍题、提示交互、离线队列 | P0 骨架、平台目录和锁文件；通用待同步队列边界与 4 项测试已写，SQLite 未实现 |
 | `apps/web` | 家长、内容维护、Windows Web/PWA | 合成孩子档案消费入口；质量门槛已通过 |
-| `services/api` | FastAPI 模块化单体和 Worker | Profile/Device 合成 API；Learning/Capture 可切换至 PostgreSQL 事务仓储；两份 Alembic 迁移与 19 项 API 测试已验证 |
-| `packages/contracts` | OpenAPI、JSON Schema、生成 SDK | 健康 + Profile/Device + Learning/Capture `0.4.0` 合同已写 |
+| `services/api` | FastAPI 模块化单体和 Worker | Profile/Device 合成 API；Learning/Capture/OCR 可切换至 PostgreSQL 事务仓储；local/CI 家长删除顺序、五份 Alembic 迁移、私有上传确认/生命周期清理、Capture 对象级联删除编排、家长保存/立即删除图片、`LocalOcrJob` 安全 Worker、OCR_FAILURE 七天失败保留、OCR 前置有界读取/图片头校验/完整像素解码/规范化重编码/执行、结果纯解析与候选持久化、74 项 API 测试已验证 |
+| `packages/contracts` | OpenAPI、JSON Schema、生成 SDK | 健康 + Profile/Device + Learning/Capture `0.5.0` 合同已写 |
 | `evals` | 固定 AI 质量/安全/成本评测 | 占位边界已写，无真实数据 |
-| `infra/compose` | 本地 PostgreSQL/Redis/MinIO/API 编排 | Docker Desktop 已准备；PostgreSQL 16.10 已启动且 healthy，MinIO 是批准的 Capture 存储但尚未启动/接入，Redis 未启动 |
+| `infra/compose` | 本地 PostgreSQL/Redis/MinIO/API 编排 | Docker Desktop 已准备；PostgreSQL 16.10 与 MinIO 已启动且 healthy，用于 local synthetic migration/integration；Redis 未启动 |
 | `docs/adr` | 架构决策 | 模板 + ADR-0001～0012 Accepted |
 | `prompts` | Codex 工作流启动器 | 已存在 |
 
@@ -96,7 +96,7 @@
 - 已接受决策覆盖模块边界、契约、离线、AI、身份、数据生命周期、工具链和部署恢复；真实数据、Provider、法域与 production 前置条件仍未解除。
 - 最高风险：AI 错误/代答、儿童数据泄露、离线记录覆盖、四端范围失控、P0 骨架与目标架构漂移。
 - 生产阻塞：法域/同意/保留、身份、密钥/加密、Provider 数据条款、SLO/RPO/RTO、告警/恢复。
-- 最近完成：`TASK-0005` / `TODO-007`；`TASK-0006` 正在实现 synthetic Capture/人工校正基础，不进入真实认证或儿童数据。
+- 最近完成：`TASK-0005` / `TODO-007`；`TASK-0006` 已完成 OCR 候选结果、家长图片生命周期和固定 synthetic OCR eval 切片，仍在实现 synthetic Capture/人工校正基础，不进入真实认证或儿童数据。
 
 ## 10. 更新规则
 

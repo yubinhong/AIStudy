@@ -12,6 +12,13 @@ from study_api.domain.learning_repository import InMemoryLearningRepository
 from study_api.domain.repository import InMemoryProfileRepository
 from study_api.domain.sql_capture_repository import PostgresCaptureRepository
 from study_api.domain.sql_learning_repository import LearningRepository, PostgresLearningRepository
+from study_api.object_storage import (
+    CaptureObjectStorage,
+    ObjectStorageConfig,
+    ObjectStorageError,
+    S3ObjectStorage,
+    UnavailableObjectStorage,
+)
 from study_api.routes.captures import router as capture_router
 from study_api.routes.learning import router as learning_router
 from study_api.routes.profiles import router as profile_router
@@ -21,6 +28,7 @@ def create_app(
     repository: InMemoryProfileRepository | None = None,
     learning_repository: LearningRepository | None = None,
     capture_repository: CaptureRepository | None = None,
+    object_storage: CaptureObjectStorage | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="家庭 AI 学习助手 API",
@@ -34,6 +42,7 @@ def create_app(
     app.state.capture_repository = capture_repository or _default_capture_repository(
         app.state.learning_repository
     )
+    app.state.object_storage = object_storage or _default_object_storage()
     app.include_router(profile_router)
     app.include_router(learning_router)
     app.include_router(capture_router)
@@ -74,6 +83,13 @@ def _default_capture_repository(learning_repository: LearningRepository) -> Capt
     if isinstance(learning_repository, PostgresLearningRepository):
         return PostgresCaptureRepository()
     return InMemoryCaptureRepository(learning_repository)
+
+
+def _default_object_storage() -> CaptureObjectStorage:
+    try:
+        return S3ObjectStorage(ObjectStorageConfig.from_environment())
+    except ObjectStorageError:
+        return UnavailableObjectStorage()
 
 
 app = create_app()

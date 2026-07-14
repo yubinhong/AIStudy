@@ -3,7 +3,7 @@
 ## 1. 服务概览
 
 - 服务：家庭 AI 学习助手（目标包括 Flutter 孩子端、Web/PWA、FastAPI/Worker、PostgreSQL、Redis、S3/MinIO 和 AI Provider）。
-- 当前状态：`NOT_DEPLOYED`。仓库已有 P0 API/Web/Flutter 骨架、Compose、CI 草案和 local synthetic PostgreSQL migration，但没有 staging/production、Dashboard 或日志平台；本 Runbook 仅定义生产前必须补齐的运维契约。`ADR-0008` 已 Accepted，仍不构成部署批准。
+- 当前状态：`NOT_DEPLOYED`。仓库已有 P0 API/Web/Flutter 骨架、Compose、CI 草案和 local synthetic PostgreSQL migration/MinIO 上传确认/过期清理器，但没有 staging/production、Dashboard 或日志平台；本 Runbook 仅定义生产前必须补齐的运维契约。`ADR-0008` 已 Accepted，仍不构成部署批准。
 - Owner/值班：`TBD（项目 Owner/运维负责人在 staging 前确认）`。
 - 用户影响：服务中断会阻止同步、拍题、AI 提示和周报；孩子端必须保留离线任务/作答，不能因服务中断丢学习记录。
 - 外部依赖：AI/OCR Provider、HMS（或应用内提醒）、对象存储；具体供应商 `TBD`。
@@ -28,7 +28,7 @@ SLO 必须在 staging 获得基线后由产品/技术 Owner 批准，不在零�
 
 ### 当前环境
 
-- local：`infra/compose/compose.yml` 已定义 PostgreSQL、Redis 与 MinIO；2026-07-13 已在 Docker Desktop 29.2.1 上启动仅 PostgreSQL 16.10，用于 synthetic migration/integration 测试。MinIO 是 ADR-0010 批准的私有 Capture 存储，但尚未启动/接入；Redis 未启动；API 尚未定义为 Compose 服务。
+- local：`infra/compose/compose.yml` 已定义 PostgreSQL、Redis 与 MinIO；2026-07-13 已在 Docker Desktop 29.2.1 上启动 PostgreSQL 16.10 与 MinIO，用于 synthetic migration/integration 测试。MinIO 私有 Bucket、预签名上传、服务端对象确认和过期清理已通过 synthetic 验证；Redis 未启动；API 尚未定义为 Compose 服务。
 - staging：未建立。
 - production：未建立且未获部署授权。
 

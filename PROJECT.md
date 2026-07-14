@@ -92,10 +92,10 @@
 | --- | --- | --- | --- |
 | 孩子/移动端 | Flutter（iOS/Android） | Flutter stable `3.44.6`（`ADR-0007` Accepted） | iPad 为孩子主端；Android 不依赖 Google Play Services；Windows Desktop 后置 |
 | Web/PWA | Next.js + TypeScript | Next.js `16.2.10`（`ADR-0007` Accepted） | 家长、内容维护和运营；Windows 首版入口 |
-| API/Worker | Python + FastAPI + 异步 Worker | Python `3.12`、FastAPI `0.136.3`（`ADR-0007` Accepted） | 模块化单体；模块包括 identity、profile、plan、task、capture、tutor、mistake、mastery、report、notification |
+| API/Worker | Python + FastAPI + 异步 Worker | Python `3.12.x`、FastAPI `0.136.3`、boto3 `1.43.46`、Pillow `12.3.0`、PaddleOCR `3.7.0`、PaddlePaddle CPU `3.3.1` | 模块化单体；Capture 已具备本地 MinIO 私有上传确认、按 Household/Child 的对象级联删除编排、家长保存/立即删除图片和 local/CI 家长删除入口、`LocalOcrJob` 安全 Worker、OCR 前置图片校验/完整像素规范化、临时文件执行、文本结果纯解析、候选结果事务持久化和 linux/amd64 synthetic 模型烟测，Ubuntu 原生基准/评测/生产 Profile 删除仍待实现 |
 | 业务数据 | PostgreSQL + pgvector | `TBD（P0 锁定）` | PostgreSQL 是业务事实来源；pgvector 仅用于知识检索，不替代关系数据 |
 | 缓存/队列 | Redis | `TBD（P0 锁定）` | 不作为长期业务事实来源 |
-| 文件 | 本地 MinIO / S3 兼容 Adapter | MinIO `RELEASE.2025-09-07T16-13-09Z`；SDK 待实现时锁定 | 私有 Bucket、短期预签名 URL；保留策略见 ADR-0010/0011 |
+| 文件 | 本地 MinIO / S3 兼容 Adapter | MinIO `RELEASE.2025-09-07T16-13-09Z`；boto3 `1.43.46` | 私有 Bucket、短期预签名 URL；保留策略和清理器见 ADR-0010/0011 |
 | 端侧数据 | SQLite | 随 Flutter 依赖锁定 | 缓存今日任务、学习会话和上传队列 |
 | 交付/可观测性 | Docker Compose、CI、OpenTelemetry | `TBD（P0 锁定）` | CI 覆盖 lint、test、契约测试与 AI eval；模型和 Prompt/Policy 版本化 |
 
@@ -103,11 +103,11 @@
 
 | 环境 | 用途 | 访问方式 | 数据级别 | 部署来源 |
 | --- | --- | --- | --- | --- |
-| local | 本地开发、离线与多端联调 | `infra/compose/compose.yml` 已定义；PostgreSQL 已为 synthetic migration/integration 启动 | synthetic | 本地工作区 |
+| local | 本地开发、离线与多端联调 | `infra/compose/compose.yml` 已定义；PostgreSQL 与 MinIO 已为 synthetic migration/integration 启动 | synthetic | 本地工作区 |
 | staging | 集成、设备、AI 评测和迁移/恢复验证 | `TBD（P0/P1 建立）` | sanitized/synthetic | CI 产物，禁止从个人工作区直接发布 |
 | production | 家庭正式使用 | `TBD（发布方案和 RUNBOOK 批准后建立）` | restricted | 仅允许已通过发布门槛的版本化产物 |
 
-当前事实：Git 已初始化在 `master` 分支，但尚无任何提交；P0 目标目录、入口、最小测试、Compose 配置、CI、三类锁文件、Profile/Device 合成 API 以及 Learning/Capture `0.4.0` 合同/语义已创建。ADR-0001～0012 已 Accepted；Learning/Capture PostgreSQL migration/事务仓储已验证。本地 MinIO 和 PaddleOCR 架构已批准但尚未接入依赖；真实认证、Profile/Device 持久化、SQLite 落盘、生产部署和真实儿童数据处理仍未完成。
+当前事实：Git 位于 `master`，最近提交为 `7cfd302`；P0 目标目录、入口、最小测试、Compose 配置、CI、三类锁文件、Profile/Device 合成 API 以及 Learning/Capture `0.5.0` 合同/语义已创建。ADR-0001～0012 已 Accepted；Learning/Capture/OCR PostgreSQL 五份 migration/事务仓储、私有 MinIO 预签名上传、服务端对象确认、过期清理、按 Household/Child 的 Capture 对象级联删除编排、local/CI 家长删除顺序、完整像素规范化、OCR 候选结果持久化和 `ocr-synthetic-v1` 固定评测已验证。`study-api:local` 的 linux/amd64 镜像已在构建阶段锁定安装 Pillow 与 PaddleOCR，并通过无网络 1×1 synthetic PNG 真实 CPU 烟测；Ubuntu 原生性能、真实题型评测、Tutor eval、真实认证、Profile/Device 持久化、SQLite 落盘、生产 Profile/数据库与派生对象级联、生产部署和真实儿童数据处理仍未完成。
 
 ## 8. 仓库与服务边界
 

@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi.testclient import TestClient
 
 from study_api.main import create_app
+from study_api.media_lifecycle import CaptureObject, DeletionStatus
 
 HOUSEHOLD_A = "00000000-0000-0000-0000-000000000001"
 HOUSEHOLD_B = "00000000-0000-0000-0000-000000000002"
@@ -87,3 +88,90 @@ def test_missing_principal_is_rejected() -> None:
     response = client.get(f"/households/{HOUSEHOLD_A}/children")
 
     assert response.status_code == 401
+
+
+class FakeChildDeleteRepository:
+    def __init__(self) -> None:
+        self.item = CaptureObject(UUID(int=91), "captures/synthetic/profile-delete")
+        self.status = DeletionStatus.ACTIVE
+
+    def claim_child_capture_objects(
+        self, household_id: UUID, child_id: UUID
+    ) -> list[CaptureObject]:
+        assert household_id == UUID(HOUSEHOLD_A)
+        assert child_id == UUID(CHILD_A)
+        if self.status not in {DeletionStatus.ACTIVE, DeletionStatus.FAILED}:
+            return []
+        self.status = DeletionStatus.DELETING
+        return [self.item]
+
+    def mark_capture_deleted(self, capture_id: UUID) -> None:
+        assert capture_id == self.item.capture_id
+        self.status = DeletionStatus.DELETED
+
+    def mark_capture_deletion_failed(self, capture_id: UUID) -> None:
+        assert capture_id == self.item.capture_id
+        self.status = DeletionStatus.FAILED
+
+
+class FakeChildDeleteStorage:
+    def __init__(self) -> None:
+        self.fail = True
+        self.deleted: list[str] = []
+
+    def delete_object(self, object_key: str) -> None:
+        self.deleted.append(object_key)
+        if self.fail:
+            raise RuntimeError("synthetic deletion failure")
+
+
+def test_parent_child_delete_keeps_profile_until_media_cascade_succeeds() -> None:
+    repository = FakeChildDeleteRepository()
+    storage = FakeChildDeleteStorage()
+    client = TestClient(create_app(capture_repository=repository, object_storage=storage))
+    headers = {**principal(), "Idempotency-Key": "child-delete-001"}
+    path = f"/households/{HOUSEHOLD_A}/children/{CHILD_A}"
+
+    failed = client.delete(path, headers=headers)
+    still_present = client.get(path, headers=principal())
+
+    storage.fail = False
+    deleted = client.delete(path, headers=headers)
+    replay = client.delete(path, headers=headers)
+    missing = client.get(path, headers=principal())
+
+    assert failed.status_code == 503
+    assert failed.json() == {
+        "code": "HTTP_503",
+        "message": "child deletion is incomplete and can be retried",
+    }
+    assert still_present.status_code == 200
+    assert deleted.status_code == 204
+    assert replay.status_code == 204
+    assert replay.headers["Idempotency-Replayed"] == "true"
+    assert missing.status_code == 404
+    assert repository.status is DeletionStatus.DELETED
+    assert storage.deleted == ["captures/synthetic/profile-delete"] * 2
+
+
+def test_child_or_cross_household_cannot_delete_profile() -> None:
+    client = TestClient(create_app())
+    path = f"/households/{HOUSEHOLD_A}/children/{CHILD_A}"
+
+    child = client.delete(
+        path,
+        headers={
+            **principal(role="child"),
+            "Idempotency-Key": "child-delete-role",
+        },
+    )
+    other_household = client.delete(
+        path,
+        headers={
+            **principal(HOUSEHOLD_B),
+            "Idempotency-Key": "child-delete-household",
+        },
+    )
+
+    assert child.status_code == 403
+    assert other_household.status_code == 404

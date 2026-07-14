@@ -26,9 +26,10 @@
 | TODO-005 | 完成儿童数据法域、同意、保留、导出/删除和备份决策 | 解除真实儿童数据和 production 阻塞 | P0 | `TBD（安全/法务/产品）` | Owner 与目标法域明确 |
 | TODO-006 | 修复设计稿跨环境中文字体渲染 | 当前 LibreOffice 渲染缺字，影响后续设计稿维护/发布 | P2 | `TBD` | 确认目标阅读/发布环境 |
 | TODO-007 | 实现任务/会话/Attempt 与离线同步 | 建立学习过程和断网不丢的核心底座 | P1 | Codex（执行） | ADR-0003 Accepted | Done（TASK-0005；synthetic PostgreSQL 事务与队列边界，真实设备离线待后续） |
-| TODO-008 | 实现 Capture/OCR/人工校正 | 支持数学单题输入且控制低置信度风险 | P1 | Codex（执行） | ADR-0010～0012 Accepted；真实儿童图片/生产法域仍阻塞 | In progress（TASK-0006；MinIO/PaddleOCR 实现待锁定运行时依赖） |
+| TODO-008 | 实现 Capture/OCR/人工校正 | 支持数学单题输入且控制低置信度风险 | P1 | Codex（执行） | ADR-0010～0012 Accepted；真实儿童图片/生产法域仍阻塞 | In progress（TASK-0006；私有 MinIO 上传确认、到期清理、按 Household/Child 的 Capture 对象级联删除编排、local/CI 家长删除顺序与幂等入口、家长保存/立即删除图片、构建期模型 SHA-256 供应链、对象有界读取、图片容器头校验、完整像素解码/无 EXIF 规范化重编码、OCR 结果纯解析、执行边界、0005 候选结果事务持久化和 linux/amd64 synthetic 模型烟测已实现，Ubuntu 原生基准/真实 eval/生产 Profile/派生对象/备份级联待完成） |
 | TODO-009 | 实现 Tutor Policy、Provider Adapter 和固定 AI eval | 提供分级提示并控制安全、Schema 和成本 | P1 | `TBD` | AI Provider/预算/评测阈值批准 |
 | TODO-010 | 实现错题、复习和可追溯周报 | 完成孩子学习到家长反馈的闭环 | P1 | `TBD` | Session/Tutor 数据稳定 |
+| TODO-011 | 恢复可复现的 uv 可执行入口 | 当前临时 uv 路径已清理，依赖锁可用但标准 `uv` 命令不可发现 | P0 | `TBD` | 确认项目级或用户级 uv 安装策略 |
 
 ## Later — P2 候选，不承诺
 

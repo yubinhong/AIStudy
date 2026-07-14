@@ -287,8 +287,20 @@ git diff --check
 - [x] 2. 在 `packages/contracts` 增加向后兼容 Capture/Correction `0.4.0` 合同和结构检查。
 - [x] 3. 在 API 建立 Capture 领域模型、child-only 授权路由、内存参考仓储与 PostgreSQL 事务仓储，禁止原始媒体/文本进入审计。
 - [x] 4. 新增版本化迁移与 local PostgreSQL 集成测试，覆盖家庭隔离、幂等、校正追加和 downgrade/upgrade；真实多请求并发仍待下一里程碑。
-- [ ] 5. 选择并锁定 S3 SDK 与本地 PaddleOCR 运行时/模型版本，实施私有 MinIO 预签名上传、本地 OCR Adapter、人工确认与固定 synthetic eval。
+- [ ] 5. 已锁定并安装 `boto3==1.43.46`、Pillow `12.3.0`、PaddleOCR `3.7.0`、PaddlePaddle CPU `3.3.1` 与模型清单；私有 MinIO 预签名 Adapter、`0.5.0` 上传签发/服务端确认端点、`0003`/`0004` 对象键/生命周期迁移、过期清理器、按 Household/Child 的 Capture 对象级联删除编排、local/CI 家长删除顺序与幂等入口、家长保存/立即删除图片、synthetic PostgreSQL/MinIO 测试、预置模型目录的 OCR Adapter、对象有界读取、图片容器头部校验、完整像素解码/无 EXIF 规范化重编码、PaddleOCR 文本结果纯解析、临时文件执行边界、`0005` OCR 候选结果事务持久化、固定 `ocr-synthetic-v1` 评测和 linux/amd64 synthetic 真实模型烟测已完成。继续实现 Ubuntu 原生基准/真实题型评测与生产 Profile/派生对象/备份级联。
 - [ ] 6. 执行相关质量门槛、安全审查和文档同步；记录真实设备、备份/法域和商业 Provider 的未完成项。
+
+## Progress
+
+- `2026-07-13` — `[done]` 为 OCR 边界增加 `read_object` 有界读取、声明大小/SHA-256 校验，以及 JPEG/PNG 容器头、尺寸、像素数和 JPEG EXIF 拒绝测试；完整像素解码和 EXIF 清理仍未宣称完成。
+- `2026-07-13` — `[done]` 增加 PaddleOCR `rec_texts/rec_scores` 结果纯解析器；结果形状、置信度、控制字符和长度经校验，低置信度和空结果均保留人工确认路径。
+- `2026-07-13` — `[done]` 增加本地 OCR 执行边界：安全输入仅写入临时文件供 `predict` 使用，调用结束后清理；引擎错误统一脱敏为 `OcrExecutionError`。
+- `2026-07-13` — `[done]` 增加 Pillow `12.3.0` 显式锁定依赖；OCR 前对 JPEG/PNG 执行完整像素解码、EXIF 方向归一化和无元数据重编码，截断/无法解码的像素不会进入 PaddleOCR。linux/amd64 最终镜像无网络 synthetic PNG 烟测通过。
+- `2026-07-13` — `[done]` 增加 `0005_ocr_result_persistence`、Provider-neutral 候选草稿和 PostgreSQL 事务仓储；保存候选文本及 Provider/模型/Schema 版本，空结果也保存，强制人工确认，支持幂等重放和 Household/Child 读取隔离，审计不保存候选原文。
+- `2026-07-14` — `[done]` 增加 `evals/ocr_synthetic_v1.json` 与无 Provider/无网络的固定 OCR 合同评测 runner；6 个 cases 覆盖正常候选、低置信度、空结果、空行和拒绝路径，结果仅输出聚合摘要。
+- `2026-07-14` — `[done]` 增加 `LocalOcrJob` Worker：已确认 Capture 才能进入有界对象读取、图片规范化、本地 OCR 和候选结果持久化；未确认上传、非法图片或 Provider 失败均不落库，真实调度器仍保留在后续范围。
+- `2026-07-14` — `[done]` 将 OCR 失败接入 ADR-0011 生命周期：从失败发生时设置 `ocr_failure` 七天期限，重复失败不延长，到期清理继续复用现有行锁和可重试删除流程。
+- `2026-07-13` — `[done]` 增加按 Household/Child 边界原子认领 Capture 对象的级联删除编排；对象逐项删除，成功标记 `deleted`，失败标记 `failed` 并可重试，内存单元与 PostgreSQL 集成回归覆盖成功、失败重试、重复运行和错误 Household。
 
 ## 不变量
 

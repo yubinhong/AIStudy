@@ -40,8 +40,14 @@ class StudySessionStatus(StrEnum):
 
 
 class CaptureStatus(StrEnum):
+    UPLOAD_PENDING = "upload_pending"
     NEEDS_CORRECTION = "needs_correction"
     CORRECTED = "corrected"
+
+
+class OcrResultStatus(StrEnum):
+    CANDIDATE = "candidate"
+    EMPTY = "empty"
 
 
 class SyncEventKind(StrEnum):
@@ -143,6 +149,20 @@ class CreateCaptureRequest(BaseModel):
     content_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
+class CaptureUpload(BaseModel):
+    """Short-lived upload capability; no separate object-key field is exposed."""
+
+    model_config = ConfigDict(frozen=True)
+
+    capture: Capture
+    upload_url: str
+    upload_expires_at: datetime
+
+
+class ConfirmCaptureUploadRequest(BaseModel):
+    expected_capture_version: int = Field(ge=1)
+
+
 class CaptureCorrection(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -158,6 +178,33 @@ class CaptureCorrection(BaseModel):
 class CorrectCaptureRequest(BaseModel):
     expected_capture_version: int = Field(ge=1)
     corrected_text: str = Field(min_length=1, max_length=1000)
+
+
+class OcrResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: UUID
+    capture_id: UUID
+    household_id: UUID
+    child_id: UUID
+    provider: str = Field(min_length=1, max_length=80)
+    model: str = Field(min_length=1, max_length=120)
+    model_version: str = Field(min_length=1, max_length=80)
+    schema_version: str = Field(min_length=1, max_length=32)
+    confidence: float = Field(ge=0.0, le=1.0)
+    status: OcrResultStatus
+    requires_manual_confirmation: Literal[True] = True
+    created_at: datetime
+
+
+class OcrCandidate(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: UUID
+    result_id: UUID
+    sequence: int = Field(ge=1)
+    text: str = Field(min_length=1, max_length=1000)
+    confidence: float = Field(ge=0.0, le=1.0)
 
 
 class Attempt(BaseModel):

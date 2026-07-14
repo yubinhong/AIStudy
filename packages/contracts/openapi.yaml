@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 家庭 AI 学习助手 API
-  version: 0.4.0
+  version: 0.5.0
   description: Synthetic local/CI household and learning contract vertical slices.
 servers:
   - url: http://localhost:8000
@@ -107,6 +107,32 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: deleteChild
+      summary: Delete a child profile after cascading Capture object deletion
+      description: Local/CI synthetic deletion only. The profile is not removed when any Capture object deletion fails; the same idempotency key may be retried.
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204':
+          description: Child profile and all claimed Capture objects were deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/InvalidRequest'
+        '503':
+          description: Deletion is incomplete or temporarily unavailable; retry is safe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /households/{household_id}/devices:
     parameters:
       - $ref: '#/components/parameters/HouseholdId'
@@ -483,6 +509,182 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /households/{household_id}/captures/{capture_id}/save:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: capture_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: saveCapture
+      summary: Save a Capture image beyond its default retention window
+      description: Parent-only local/CI operation. Saving does not expose media bytes, object keys, or storage credentials.
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204':
+          description: Capture image is marked parent-saved.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+  /households/{household_id}/captures/{capture_id}/media:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: capture_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      operationId: deleteCaptureMedia
+      summary: Immediately delete one Capture image
+      description: Parent-only local/CI operation. Deletion is private-object scoped, retryable, and does not delete Capture metadata.
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204':
+          description: Capture image deletion completed or was replayed.
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                const: 'true'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '503':
+          description: Object storage deletion is temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /households/{household_id}/sessions/{session_id}/capture-uploads:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      operationId: beginCaptureUpload
+      summary: Create a pending Capture and issue one short-lived private PUT URL
+      description: The response has no separate object-key field. The signed URL is short-lived and must not be logged or persisted by clients.
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+          DemoChild: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCaptureRequest'
+      responses:
+        '201':
+          description: Pending Capture created and a short-lived upload URL issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureUpload'
+        '200':
+          description: Idempotent replay while the Capture upload remains pending. A replacement short-lived URL may be issued.
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                const: 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureUpload'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '503':
+          description: Private object storage is temporarily unavailable; retry with the same idempotency key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /households/{household_id}/captures/{capture_id}/upload-confirmations:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: capture_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: confirmCaptureUpload
+      summary: Confirm a server-verified private object before manual correction
+      description: The API verifies object media type and byte size server-side. It never accepts an object key or bytes from the client.
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+          DemoChild: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmCaptureUploadRequest'
+      responses:
+        '201':
+          description: Private object verified; Capture advances to needs_correction.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capture'
+        '200':
+          description: Idempotent upload-confirmation replay.
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                const: 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capture'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Object verification, Capture state/version, or idempotency conflict.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   parameters:
     HouseholdId:
@@ -758,13 +960,35 @@ components:
           pattern: '^[a-f0-9]{64}$'
         status:
           type: string
-          enum: [needs_correction, corrected]
+          enum: [upload_pending, needs_correction, corrected]
         version:
           type: integer
           minimum: 1
         created_at:
           type: string
           format: date-time
+    CaptureUpload:
+      type: object
+      additionalProperties: false
+      required: [capture, upload_url, upload_expires_at]
+      properties:
+        capture:
+          $ref: '#/components/schemas/Capture'
+        upload_url:
+          type: string
+          format: uri
+          description: Short-lived PUT URL; clients must not persist or log it.
+        upload_expires_at:
+          type: string
+          format: date-time
+    ConfirmCaptureUploadRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_capture_version]
+      properties:
+        expected_capture_version:
+          type: integer
+          minimum: 1
     CorrectCaptureRequest:
       type: object
       additionalProperties: false

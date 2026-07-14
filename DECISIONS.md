@@ -27,9 +27,9 @@
 | [ADR-0007](docs/adr/0007-toolchain-and-scaffold-baseline.md) | 工具链与骨架基线 | 变更须同步锁文件、验证和 ADR |
 | [ADR-0008](docs/adr/0008-deployment-observability-and-recovery.md) | 部署、可观测性与恢复 | 平台、SLO/RPO/RTO、值班与 Secret Manager 仍阻塞 staging |
 | [ADR-0009](docs/adr/0009-postgresql-persistence-and-migrations.md) | PostgreSQL 持久化与版本化迁移依赖 | 仅限 local synthetic 环境；真实数据与 production 前置条件仍有效 |
-| [ADR-0010](docs/adr/0010-local-minio-private-object-storage.md) | 本地 MinIO 私有对象存储与预签名上传 | 具体 SDK、TTL/CORS/大小限制和生产 Secret Manager 须在实现前锁定 |
+| [ADR-0010](docs/adr/0010-local-minio-private-object-storage.md) | 本地 MinIO 私有对象存储与预签名上传；boto3 1.43.46、S3 兼容接口、不使用 MinIO 专属 SDK | TTL/CORS/大小限制和生产 Secret Manager 须在实现前锁定 |
 | [ADR-0011](docs/adr/0011-capture-media-retention-and-cascade-deletion.md) | Capture 图片保留、家长控制与级联删除 | 法域、同意、备份擦除和真实数据告知仍阻塞 production |
-| [ADR-0012](docs/adr/0012-local-paddleocr-provider-and-zero-external-cost.md) | 本地 PaddleOCR、人工确认与零外部成本 | 具体运行时/模型版本、许可证审查和固定 eval 须在实现前完成 |
+| [ADR-0012](docs/adr/0012-local-paddleocr-provider-and-zero-external-cost.md) | Python 3.12、PaddlePaddle CPU 3.3.1、PaddleOCR 3.7.0；五模型构建期 SHA-256 固定、运行时不下载 | 许可证审查、镜像构建和固定 eval 仍须完成 |
 
 ## Proposed ADR
 

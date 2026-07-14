@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "suite_id": "ocr-synthetic-v1",
+  "source": {
+    "kind": "repository-authored-synthetic",
+    "authorization": "project-owner-approved",
+    "contains_child_data": false,
+    "provider_calls": false
+  },
+  "cases": [
+    {
+      "id": "valid-math-lines",
+      "payload": {
+        "rec_texts": ["12 + 3", "15"],
+        "rec_scores": [0.96, 0.91]
+      },
+      "expected": {
+        "status": "candidate",
+        "candidate_count": 2,
+        "confidence": 0.91,
+        "low_confidence": false,
+        "requires_manual_confirmation": true
+      }
+    },
+    {
+      "id": "low-confidence-requires-correction",
+      "payload": {
+        "rec_texts": ["7 × 8"],
+        "rec_scores": [0.61]
+      },
+      "expected": {
+        "status": "candidate",
+        "candidate_count": 1,
+        "confidence": 0.61,
+        "low_confidence": true,
+        "requires_manual_confirmation": true
+      }
+    },
+    {
+      "id": "empty-result-remains-manual",
+      "payload": {
+        "rec_texts": [],
+        "rec_scores": []
+      },
+      "expected": {
+        "status": "empty",
+        "candidate_count": 0,
+        "confidence": 0.0,
+        "low_confidence": true,
+        "requires_manual_confirmation": true
+      }
+    },
+    {
+      "id": "blank-lines-are-discarded",
+      "payload": {
+        "rec_texts": ["  6 × 7  ", "  "],
+        "rec_scores": [0.99, 0.4]
+      },
+      "expected": {
+        "status": "candidate",
+        "candidate_count": 1,
+        "confidence": 0.99,
+        "low_confidence": false,
+        "requires_manual_confirmation": true
+      }
+    },
+    {
+      "id": "mismatched-arrays-are-rejected",
+      "payload": {
+        "rec_texts": ["9"],
+        "rec_scores": []
+      },
+      "expected_error": "OcrResultError"
+    },
+    {
+      "id": "control-character-is-rejected",
+      "payload": {
+        "rec_texts": ["9\u0001"],
+        "rec_scores": [0.9]
+      },
+      "expected_error": "OcrResultError"
+    }
+  ]
+}

@@ -29,12 +29,13 @@ Capture 图片属于 Restricted 数据。ADR-0006 已确定最小化与删除原
 
 ## Compatibility and Migration
 
-- Capture 元数据与对象引用后续只增字段，例如 `retention_class`、`expires_at`、`deletion_status`；不得以删除历史校正记录来实现清理。
-- 现有 `0.4.0` 不保存对象键或图片，因此不需要数据回填。
+- Capture 元数据与对象引用通过 `0004_capture_media_retention` 增加 `retention_class`、`expires_at`、`deletion_status`、`parent_saved`；不得以删除历史校正记录来实现清理。清理器以行锁认领对象，删除失败保留 `failed` 状态供重试。
+- 现有 `0.5.0` 的历史直接登记 Capture 没有对象键；新增上传 Capture 写入原图 24 小时到期时间，不对历史无对象记录强行回填图片。
 - 回滚优先停止新上传、继续执行已经安排的删除；不得因回滚恢复已被家长删除的对象。
 
 ## Validation
 
 - 使用 synthetic 对象演练 24 小时、7 天、30 天三类到期和家长保存/立即删除。
-- 验证孩子档案删除会枚举并处理全部关联对象/派生对象，失败状态可见且审计不包含图片或对象键。
-
+- 当前已用 synthetic 对象验证按 Household/Child 原子认领 Capture 对象、逐项删除、失败状态可见和可重试；审计不包含图片或对象键。
+- local/CI 已接入家长删除孩子档案入口：只有 Capture 对象全部删除成功才移除合成 Profile；失败返回可重试错误并保留 Profile，同一幂等键可安全重放。
+- 生产级孩子档案删除仍待 Profile 持久化、数据库元数据、派生对象/缓存/向量和备份策略接入后验证，不能把当前 local/CI 合成流程报告为生产删除完成。
