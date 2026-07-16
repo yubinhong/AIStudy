@@ -71,14 +71,22 @@ class CaptureApiClient {
     required this.householdId,
     required this.childId,
     required this.sessionId,
-    this.authorizationToken,
-  }) : _baseUri = Uri.parse(baseUrl);
+    required this.authorizationToken,
+  }) : _baseUri = Uri.parse(baseUrl) {
+    if (authorizationToken.isEmpty) {
+      throw ArgumentError.value(
+        authorizationToken,
+        'authorizationToken',
+        'a password-login session is required',
+      );
+    }
+  }
 
   final Uri _baseUri;
   final String householdId;
   final String childId;
   final String sessionId;
-  final String? authorizationToken;
+  final String authorizationToken;
 
   Future<CaptureUploadReceipt> uploadAndEnqueue(
     XFile image, {
@@ -358,15 +366,7 @@ class CaptureApiClient {
   }
 
   void _setPrincipalHeaders(HttpHeaders headers) {
-    final token = authorizationToken;
-    if (token != null && token.isNotEmpty) {
-      headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
-      return;
-    }
-    headers
-      ..set('X-Demo-Household-Id', householdId)
-      ..set('X-Demo-Role', 'child')
-      ..set('X-Demo-Child-Id', childId);
+    headers.set(HttpHeaders.authorizationHeader, 'Bearer $authorizationToken');
   }
 
   Future<void> _putSignedImage(

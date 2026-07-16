@@ -17,6 +17,17 @@ from typing import Any
 
 from study_api.privacy_models import QuestionExtraction
 
+QUESTION_EXTRACTION_INSTRUCTIONS = (
+    "Return only one JSON object with no Markdown, explanation, or extra keys. "
+    "It must conform to question-extraction.v1: schema_version must be "
+    "'question-extraction.v1'; subject must be 'math'; question_text must be the "
+    "question only; options and formulas must be arrays of strings; has_diagram and "
+    "has_handwriting must be booleans; question_region_count must be an integer from "
+    "0 to 256; confidence must be a number from 0 to 1; and needs_confirmation must "
+    "be true. Do not add fields. Never solve the question or infer an answer; omit "
+    "the optional detected_answer field."
+)
+
 
 class NewApiConfigurationError(RuntimeError):
     """Raised when self-hosted Provider configuration is incomplete or unsafe."""
@@ -24,6 +35,10 @@ class NewApiConfigurationError(RuntimeError):
 
 class NewApiProviderError(RuntimeError):
     """Raised when the configured gateway cannot return a safe response."""
+
+    def __init__(self, message: str, *, code: str = "provider_error") -> None:
+        super().__init__(message)
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -34,6 +49,7 @@ class NewApiConfig:
     vision_model: str
     timeout_seconds: float
     max_response_bytes: int
+    user_agent: str = "study-api/0.5"
 
     @classmethod
     def from_environment(cls) -> "NewApiConfig":
@@ -45,6 +61,7 @@ class NewApiConfig:
             vision_model=os.environ.get("STUDY_NEWAPI_VISION_MODEL", ""),
             timeout_seconds=float(os.environ.get("STUDY_NEWAPI_TIMEOUT_SECONDS", "30")),
             max_response_bytes=int(os.environ.get("STUDY_NEWAPI_MAX_RESPONSE_BYTES", "262144")),
+            user_agent=os.environ.get("STUDY_NEWAPI_USER_AGENT", "study-api/0.5"),
         )
         if config.enabled:
             config.validate()
@@ -64,6 +81,12 @@ class NewApiConfig:
         if not 4_096 <= self.max_response_bytes <= 4_000_000:
             raise NewApiConfigurationError(
                 "STUDY_NEWAPI_MAX_RESPONSE_BYTES is outside the safe range"
+            )
+        if not 1 <= len(self.user_agent) <= 256 or any(
+            not 32 <= ord(character) <= 126 for character in self.user_agent
+        ):
+            raise NewApiConfigurationError(
+                "STUDY_NEWAPI_USER_AGENT must be printable ASCII without control characters"
             )
 
 
@@ -89,8 +112,7 @@ class NewApiVisionProvider:
                 {
                     "role": "system",
                     "content": (
-                        "Return only a JSON object matching question-extraction.v1. "
-                        "Do not provide a solution or direct answer. "
+                        f"{QUESTION_EXTRACTION_INSTRUCTIONS} "
                         f"Sanitization schema: {sanitization_schema}."
                     ),
                 },
@@ -121,7 +143,8 @@ class NewApiVisionProvider:
             return QuestionExtraction.model_validate(parsed)
         except (json.JSONDecodeError, TypeError, ValueError) as error:
             raise NewApiProviderError(
-                "Provider response failed question schema validation"
+                "Provider response failed question schema validation",
+                code="provider_response_schema_invalid",
             ) from error
 
     def _post_json(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -131,22 +154,42 @@ class NewApiVisionProvider:
             headers={
                 "Authorization": f"Bearer {self._config.api_key}",
                 "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": self._config.user_agent,
             },
             method="POST",
         )
         try:
             with urllib.request.urlopen(request, timeout=self._config.timeout_seconds) as response:
                 body = response.read(self._config.max_response_bytes + 1)
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as error:
-            raise NewApiProviderError("self-hosted Provider request failed") from error
+        except urllib.error.HTTPError as error:
+            code = (
+                f"provider_http_{error.code}" if 400 <= error.code <= 499 else "provider_http_5xx"
+            )
+            raise NewApiProviderError("self-hosted Provider request failed", code=code) from error
+        except urllib.error.URLError as error:
+            raise NewApiProviderError(
+                "self-hosted Provider network request failed", code="provider_network_error"
+            ) from error
+        except TimeoutError as error:
+            raise NewApiProviderError(
+                "self-hosted Provider request timed out", code="provider_timeout"
+            ) from error
         if len(body) > self._config.max_response_bytes:
-            raise NewApiProviderError("self-hosted Provider response is too large")
+            raise NewApiProviderError(
+                "self-hosted Provider response is too large", code="provider_response_too_large"
+            )
         try:
             parsed = json.loads(body)
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise NewApiProviderError("self-hosted Provider response is not JSON") from error
+            raise NewApiProviderError(
+                "self-hosted Provider response is not JSON", code="provider_response_not_json"
+            ) from error
         if not isinstance(parsed, Mapping):
-            raise NewApiProviderError("self-hosted Provider response has an invalid shape")
+            raise NewApiProviderError(
+                "self-hosted Provider response has an invalid shape",
+                code="provider_response_invalid_shape",
+            )
         return parsed
 
 

@@ -7,6 +7,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from study_api import __version__
+from study_api.auth_domain import (
+    AccountRepository,
+    AuthService,
+    InMemoryAccountRepository,
+    PostgresAccountRepository,
+)
 from study_api.domain.capture_repository import CaptureRepository, InMemoryCaptureRepository
 from study_api.domain.learning_repository import InMemoryLearningRepository
 from study_api.domain.ocr_result_repository import (
@@ -22,6 +28,11 @@ from study_api.domain.question_extraction_repository import (
 from study_api.domain.repository import InMemoryProfileRepository
 from study_api.domain.sql_capture_repository import PostgresCaptureRepository
 from study_api.domain.sql_learning_repository import LearningRepository, PostgresLearningRepository
+from study_api.domain.verified_question_repository import (
+    InMemoryVerifiedQuestionRepository,
+    PostgresVerifiedQuestionRepository,
+    VerifiedQuestionRepository,
+)
 from study_api.image_analysis_jobs import (
     ImageAnalysisJobRepository,
     InMemoryImageAnalysisJobRepository,
@@ -36,6 +47,7 @@ from study_api.object_storage import (
     UnavailableObjectStorage,
 )
 from study_api.ocr_jobs import InMemoryOcrJobQueue, OcrJobQueue, PostgresOcrJobQueue
+from study_api.routes.authentication import router as authentication_router
 from study_api.routes.captures import router as capture_router
 from study_api.routes.image_analysis import router as image_analysis_router
 from study_api.routes.learning import router as learning_router
@@ -52,6 +64,8 @@ def create_app(
     ocr_result_repository: OcrResultRepository | None = None,
     image_analysis_repository: ImageAnalysisJobRepository | None = None,
     question_extraction_repository: QuestionExtractionRepository | None = None,
+    verified_question_repository: VerifiedQuestionRepository | None = None,
+    account_repository: AccountRepository | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="家庭 AI 学习助手 API",
@@ -74,8 +88,14 @@ def create_app(
     app.state.question_extraction_repository = (
         question_extraction_repository or _default_question_extraction_repository()
     )
+    app.state.verified_question_repository = (
+        verified_question_repository or _default_verified_question_repository()
+    )
     app.state.newapi_config = NewApiConfig.from_environment()
+    app.state.account_repository = account_repository or _default_account_repository()
+    app.state.auth_service = AuthService(app.state.account_repository)
     app.include_router(profile_router)
+    app.include_router(authentication_router)
     app.include_router(learning_router)
     app.include_router(capture_router)
     app.include_router(image_analysis_router)
@@ -148,6 +168,20 @@ def _default_question_extraction_repository() -> QuestionExtractionRepository:
     if os.environ.get("STUDY_API_IMAGE_ANALYSIS_REPOSITORY") == "postgres":
         return PostgresQuestionExtractionRepository()
     return InMemoryQuestionExtractionRepository()
+
+
+def _default_verified_question_repository() -> VerifiedQuestionRepository:
+    if os.environ.get("STUDY_API_IMAGE_ANALYSIS_REPOSITORY") == "postgres":
+        return PostgresVerifiedQuestionRepository()
+    return InMemoryVerifiedQuestionRepository()
+
+
+def _default_account_repository() -> AccountRepository:
+    if os.environ.get("STUDY_API_AUTH_REPOSITORY") == "postgres":
+        repository = PostgresAccountRepository()
+        repository.ensure_bootstrap()
+        return repository
+    return InMemoryAccountRepository()
 
 
 app = create_app()

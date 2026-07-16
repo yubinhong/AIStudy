@@ -15,11 +15,11 @@
 - 规模假设：P0/P1 先服务单一或少量家庭；用户数、峰值 RPS、图片量、AI 调用量和数据保留规模均为 `TBD`，应在原型测量后写入容量模型。
 - 主要约束：复用四类现有设备；华为端不依赖 GMS；模块化单体起步；OpenAPI/Schema 契约优先；离线队列保留学习记录，但图片解析依赖网络；模型可替换；原图不外发；儿童数据最小化；未授权教材/题库不入库。
 
-当前实现状态：P0 健康端点、Household-scoped ChildProfile/Device 与 P1 Task/StudySession/Attempt/SyncBatch/Capture API、local/CI 家长删除孩子档案 API、OpenAPI `0.5.0` 增量、Flutter 待同步队列边界、八份本地 PostgreSQL migration、Learning/Capture/OCR/ImageAnalysis 事务仓储、私有 MinIO 上传签发/服务端确认（含对象实际 SHA-256）和过期对象清理器、按 Household/Child 原子认领的 Capture 对象级联删除编排、家长保存/立即删除图片入口、PaddleOCR 模型构建期 SHA-256 供应链和预置目录 Adapter、普通/公式 OCR 按模式分流、OCR 边界有界读取/图片容器头校验/完整像素解码/无 EXIF 规范化重编码/临时文件执行/文本与公式结果纯解析、候选结果人工确认门、local/CI 幂等 OCR 入队/PostgreSQL 行锁队列/单次 Dispatcher、Provider-neutral PrivacySanitizer 核心、OCR/规则隐私信号、五份 ADR-0015/ Tutor Schema、6-case PrivacySanitizer 与 3-case Tutor synthetic eval、receipt-only ImageAnalysis ledger/API、校正 Capture 绑定的 offline Tutor hints API 和 Flutter 本地脱敏预览/手动涂抹/确认后脱敏 PNG+哈希上传顺序已实现。该代码仍保留已被 ADR-0015 替代的“本地完整 OCR 解析”路线；真实视觉检测器、云视觉/Tutor Adapter、单 Provider 外发门禁和临时脱敏副本清理尚未实现。Redis/外部 Worker、真实认证、Profile/Device 持久化、生产数据库/派生对象/备份删除仍未完成。
+历史实现基线（已由下方 2026-07-16 修订覆盖）：P0 健康端点、Household-scoped ChildProfile/Device 与 P1 Task/StudySession/Attempt/SyncBatch/Capture API、local/CI 家长删除孩子档案 API、OpenAPI `0.5.0` 增量、Flutter 待同步队列边界、八份早期本地 PostgreSQL migration、Learning/Capture/OCR/ImageAnalysis 事务仓储、私有 MinIO 上传签发/服务端确认（含对象实际 SHA-256）和过期对象清理器、按 Household/Child 原子认领的 Capture 对象级联删除编排、PaddleOCR 模型构建期 SHA-256 供应链和 Provider-neutral PrivacySanitizer 核心已实现；该历史快照不再描述当前认证和 VerifiedQuestion 状态。
 
-现状修订（2026-07-15）：上面的实现清单是历史快照，当前还包括第九份迁移 `0009_question_extraction`、自用 HMAC Bearer、NewAPI Adapter、ImageAnalysis queued/blocked worker 和未确认 QuestionExtraction 读取接口。当前仍未完成人工确认生成 `VerifiedQuestion`、临时脱敏副本清理、实际 NewAPI 联调、Profile/Device 生产持久化和备份删除。
+现状修订（2026-07-16）：上面的实现清单是历史快照，当前还包括 `0010_verified_question`、`0011_account_password_session`、NewAPI Adapter、ImageAnalysis queued/blocked worker、VerifiedQuestion 人工确认读取和账号密码/会话认证。worker 已覆盖成功/失败派生对象清理；真实视觉检测器、实际 NewAPI 联调、Profile/Device 生产持久化和备份删除仍待环境验收。
 
-认证目标修订（2026-07-15）：ADR-0017 已接受，下一项 P0 将以 PostgreSQL `Account`/`AuthSession`、Argon2id 密码哈希和可撤销不透明会话替换静态 HMAC Bearer。该方案尚未实现；当前运行时代码、Web 环境注入和 Flutter 构建参数仍使用 HMAC Bearer，必须按 PLAN-0007 分阶段迁移，不得把目标方案描述成现状。
+认证实现修订（2026-07-16）：ADR-0017 已进入实现验收。API 以 PostgreSQL `Account`/`AuthSession`、Argon2id 密码哈希和可撤销不透明会话作为唯一认证机制；HMAC、Demo Header、静态 Web Token 和 Web 免登录开关已删除。Web 使用 Cookie/CSRF；Flutter 在登录前验证并持久化服务端地址，地址变更先清理旧会话，新会话使用平台安全存储。认证审计仅写稳定事件名、家庭/资源 UUID 和时间。
 
 ## 2. 系统上下文
 
@@ -55,16 +55,16 @@ flowchart LR
 
 | 组件 | 目标路径/服务 | 责任 | 数据所有权 | 上游/下游 | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| 孩子端 | `apps/child_flutter` | 今日任务、学习会话、拍题/相册选择、分步提示 UI、SQLite、离线队列 | 端侧缓存和待同步操作；服务端数据不是本地主真相 | `image_picker`、Capture API、API | 横屏学习桌、拍题输入、OCR 确认与分数思考提示第 1/2/3 张 UI 原型已实现；`CaptureApiClient` 已覆盖 SHA-256、预签名 PUT、服务端确认、幂等 OCR 入队、Job 轮询和人工确认/纠正，并由显式 `STUDY_CAPTURE_SESSION_ID` 调试开关接入页面；当前仍由构建参数注入 HMAC Bearer，孩子账号登录与平台安全存储会话列入 PLAN-0007；离线 SQLite 未实现 |
-| Web/PWA | `apps/web` | 家长登录、孩子账号管理、内容维护、Windows 首版体验 | 仅 UI 状态；业务事实来自 API | OpenAPI SDK、API | 简洁明亮的 children/tasks/devices 学习概览已实现；当前仍由服务端环境注入 HMAC Bearer。PLAN-0007 将增加首次改密、登录/退出和孩子账号创建/停用/重置页面 |
-| API/BFF | `services/api` | 鉴权、家庭边界、业务编排、契约实现 | PostgreSQL 中 Learning 业务事实 | 客户端、数据层、Worker、AI | 健康 + 合成 Profile/Device API；Learning/Capture/ImageAnalysis 可切换 PostgreSQL 仓储；当前自用 HMAC Bearer 已实现，账号密码与会话尚未实现 |
-| Identity/Profile | `services/api` 内模块 | Household、Account、AuthSession、ChildProfile、Device 和权限 | 身份、家庭归属、密码哈希、可撤销会话 | API、所有领域模块 | 当前为合成 principal + HMAC Bearer；ADR-0017 已接受，目标 PostgreSQL 账号、Argon2id、会话撤销和强制首次改密列入 PLAN-0007 |
+| 孩子端 | `apps/child_flutter` | 今日任务、学习会话、拍题/相册选择、分步提示 UI、SQLite、离线队列 | 端侧缓存和待同步操作；服务端数据不是本地主真相 | `image_picker`、Capture API、API | 横屏学习桌、拍题输入、OCR 确认与分数思考提示第 1/2/3 张 UI 原型、账号密码登录和安全存储会话已实现；离线 SQLite 和真实设备生命周期待后续 |
+| Web/PWA | `apps/web` | 家长登录、孩子账号管理、内容维护、Windows 首版体验 | 仅 UI 状态；业务事实来自 API | OpenAPI SDK、API | 简洁明亮的学习概览、登录/首次改密/退出和孩子账号创建/停用/重置已实现；真实浏览器 E2E 待执行 |
+| API/BFF | `services/api` | 鉴权、家庭边界、业务编排、契约实现 | PostgreSQL 中 Learning/Identity 业务事实 | 客户端、数据层、Worker、AI | Learning/Capture/ImageAnalysis/Account/AuthSession 可切换 PostgreSQL 仓储；Compose 默认使用 password 会话认证 |
+| Identity/Profile | `services/api` 内模块 | Household、Account、AuthSession、ChildProfile、Device 和权限 | 身份、家庭归属、密码哈希、可撤销会话 | API、所有领域模块 | Account/AuthSession、Argon2id、首次改密、失败锁定、会话撤销和 Household/ChildProfile 反向授权已实现；Profile/Device 仍为合成仓储 |
 | Plan/Task/Session | `services/api` 内模块 | 计划、任务、会话、Attempt 和同步合并 | 学习任务与过程记录 | 客户端、Report、Mistake | PostgreSQL 事务仓储、Alembic schema、反向授权/幂等/并发测试已实现；SQLite 未实现 |
-| Capture / PrivacySanitizer | `services/api` 内模块 | 受限媒体声明、签名上传、单题裁剪、本地元数据清除、OCR/规则敏感标签定位、实色遮挡；客户端脱敏预览/手动涂抹/哈希生成；ImageAnalysis queued/blocked job；NewAPI 结构化解析和人工校正 | Capture/脱敏/解析状态与追加校正；原图/脱敏副本在私有 MinIO；未确认题目结构在 PostgreSQL | 对象存储、NewAPI Provider、Tutor | 当前已实现旧本地 OCR 回滚路线、安全读取/实际 SHA-256 核验/生命周期基础、PrivacySanitizer 核心/规则信号、Bearer、ImageAnalysis ledger、0009 提取持久化和可恢复 NewAPI worker；真实视觉检测器、人工确认接口、脱敏副本删除演练和实际 NewAPI 联调仍未实现，提取结果不得冒充 VerifiedQuestion |
+| Capture / PrivacySanitizer | `services/api` 内模块 | 受限媒体声明、签名上传、单题裁剪、本地元数据清除、OCR/规则敏感标签定位、实色遮挡；客户端脱敏预览/手动涂抹/哈希生成；ImageAnalysis queued/blocked job；NewAPI 结构化解析和人工确认 | Capture/脱敏/解析状态与追加校正；原图/脱敏副本在私有 MinIO；未确认题目结构与 VerifiedQuestion 在 PostgreSQL | 对象存储、NewAPI Provider、Tutor | 旧本地 OCR 回滚路线、安全读取/实际 SHA-256、PrivacySanitizer 核心/规则信号、0009 提取、0010 VerifiedQuestion、worker 成功/失败清理已实现；真实视觉检测器、实际 NewAPI 联调和备份演练仍未执行 |
 | Tutor | `services/api` 内模块 | 只消费人工确认的 `VerifiedQuestion`，执行 Provider 路由、Tutor Policy、提示层级、Schema 校验和成本控制 | TutorTurn、模型/Prompt/Policy 版本和审计 | Capture、AI Provider、Mistake | 已创建无 Provider 的 `offline-tutor-policy.v1` 纯规则降级，1～3 级提示/0 元/不回显答案；NewAPI 图片 Adapter 不等于 Tutor Provider，持久化 TutorTurn/人工确认接口/生产审计未实现 |
 | Mistake/Mastery/Report | `services/api` 内模块 | 错因、知识点、复习调度、掌握度快照、周报 | MistakeRecord、ReviewSchedule、MasterySnapshot、WeeklyReport | Session/Tutor、家长端 | 未创建 |
 | Notification | `services/api` 内模块 | 应用内提醒和可替换推送适配器 | 通知状态 | Report/Task、HMS | 未创建 |
-| 跨端契约 | `packages/contracts` | OpenAPI、AI JSON Schema、生成 SDK | 接口/Schema 的唯一事实来源 | API、Flutter、Web、evals | 健康 + Profile/Device + Learning/Capture/OCR `0.5.0` 合同已实现；ADR-0015 新 Schema 和 SDK 生成器未实现 |
+| 跨端契约 | `packages/contracts` | OpenAPI、AI JSON Schema、生成 SDK | 接口/Schema 的唯一事实来源 | API、Flutter、Web、evals | 健康 + Profile/Device + Learning/Capture/OCR/Account Session `0.6.0` 合同已实现；ADR-0015 Schema 已写，SDK 生成器未实现 |
 | AI 评测 | `evals` | 固定样本与质量/安全/延迟/成本回归 | 合成或脱敏评测数据 | Tutor、CI | 旧本地 OCR、PrivacySanitizer 与 offline Tutor Policy synthetic eval 已实现；云视觉和云 Tutor eval 未实现 |
 | 本地基础设施 | `infra/compose` | PostgreSQL、Redis、MinIO、API/Worker 本地编排 | 本地合成数据 | 开发/集成测试 | PostgreSQL 16.10 与 MinIO 已启动用于 migration/integration；Redis 未启动 |
 | ADR | `docs/adr` | 不可逆或跨模块决策记录 | 架构决策历史 | `DECISIONS.md` | ADR-0001～0011、0013～0017 Accepted；ADR-0012 Superseded；ADR-0017 认证目标待实现 |
@@ -73,7 +73,7 @@ flowchart LR
 
 ## 4. 关键数据流
 
-### 4.0 账号初始化、登录与孩子账号管理（ADR-0017 目标，尚未实现）
+### 4.0 账号初始化、登录与孩子账号管理（ADR-0017 实现状态）
 
 1. 仅在空账号库的本机首次启动中创建 `admin/admin123456`，密码只以 Argon2id 哈希落库并标记 `must_change_password=true`；该引导账号不得重复创建。
 2. 引导凭据只允许从 loopback 登录。首次改密前，服务端仅开放当前账号、改密和退出接口，其他家庭数据接口统一返回稳定的 `password_change_required`。
@@ -82,11 +82,11 @@ flowchart LR
 5. 孩子在 Flutter 使用账号密码登录；客户端只在 Keychain/Android Keystore 保存不透明会话值。服务端每次按会话、角色、Household 和 ChildProfile 绑定授权。
 6. 登出、改密、账号停用或重置立即撤销相关会话。忘记唯一管理员密码只允许在服务器本机通过受审计恢复命令处理，不提供短信、邮箱、社交登录、OIDC 或 MFA。
 
-迁移期间可临时保留显式 `legacy_bearer` 兼容开关，但不得作为新安装默认值；切换顺序、会话兼容和回滚以 PLAN-0007 为准。
+Compose 只启用账号密码/会话认证，不存在 legacy 认证开关。PostgreSQL/浏览器 E2E/真实设备和恢复验收以 PLAN-0008 为准。
 
 ### 4.1 任务、作答与离线同步
 
-以下为目标数据流；第 3 步的 MinIO 上传签发与服务端对象确认（包括声明内容 SHA-256 与实际对象字节核验）已经实现。当前旧路线第 4 步仍运行 ADR-0012 的本地完整 OCR 输入规范化、普通/公式执行、`LocalOcrJob`、候选结果和人工确认；新路线已完成本地 PrivacySanitizer 核心/规则信号、ImageAnalysis ledger、0009 提取持久化、可开关 NewAPI worker，以及 Flutter 侧脱敏预览、手动涂抹和确认后只上传脱敏副本的顺序；Provider 未启用时状态明确为 blocked，不读取或外发图片。真实视觉检测器、人工确认接口、临时副本清理和实际 NewAPI 联调仍未完成。Flutter 调试默认仍使用内存队列，需显式切换 PostgreSQL 才连接持久化 Worker。
+以下为当前数据流；第 3 步的 MinIO 上传签发与服务端对象确认（包括声明内容 SHA-256 与实际对象字节核验）已经实现。旧路线仍保留 ADR-0012 的本地完整 OCR 输入规范化、普通/公式执行、`LocalOcrJob`、候选结果和人工确认；新路线已完成本地 PrivacySanitizer 核心/规则信号、ImageAnalysis ledger、0009 提取持久化、0010 VerifiedQuestion、可开关 NewAPI worker、派生对象清理，以及 Flutter 侧脱敏预览、手动涂抹和确认后只上传脱敏副本的顺序；Provider 未启用时状态明确为 blocked，不读取或外发图片。真实视觉检测器和实际 NewAPI 联调仍未完成。Flutter 调试默认仍使用内存队列，需显式切换 PostgreSQL 才连接持久化 Worker。
 
 1. 家长通过 Web/手机创建任务，API 校验 Household 权限后写入 PostgreSQL。
 2. 孩子端同步今日任务到 SQLite，开始 StudySession；断网时将 Attempt、状态变化和上传意图写入追加队列。
@@ -140,13 +140,13 @@ flowchart LR
 | 同步事件批次 | Flutter | API | `packages/contracts/schemas` | 每事件有 ID/版本/幂等键；追加新事件类型 | `TBD` |
 | AuditEvent | 所有服务端模块 | 审计/可观测性 | `packages/contracts/schemas` | 稳定事件名；字段按敏感级别控制 | `TBD` |
 
-契约目录和结构检查已建立；SDK 生成器、兼容检查命令和 ADR-0017 账号/会话契约尚未实现，具体接口和错误码将在 PLAN-0007 第一阶段以向后兼容增量锁定。
+契约目录和结构检查已建立；SDK 生成器和自动兼容检查命令仍未固定。认证、账号管理和 VerifiedQuestion 接口已写入 OpenAPI；`0.6.0` 删除 HMAC/Demo security scheme 是项目 Owner 批准的破坏性安全收敛，旧客户端必须升级。
 
 ## 6. 数据架构
 
 | 数据域 | 存储 | 主键/分区 | 保留策略 | 备份/恢复 | 敏感级别 |
 | --- | --- | --- | --- | --- | --- |
-| Household/Account/AuthSession/ChildProfile/Device | PostgreSQL（目标）；当前 Profile/Device 为内存合成、认证为无撤销 HMAC | UUID；全部业务行含 Household 边界；会话只存 SHA-256 摘要 | 账号期 + 批准的删除策略；会话最长 30 天并可即时撤销；其他精确期限 `TBD` | `TBD` | Confidential/Restricted |
+| Household/Account/AuthSession/ChildProfile/Device | Account/AuthSession 为 PostgreSQL；当前 Profile/Device 仍为内存合成 | UUID；全部业务行含 Household 边界；会话只存 SHA-256 摘要 | 账号期 + 批准的删除策略；会话最长 30 天并可即时撤销；其他精确期限 `TBD` | `TBD` | Confidential/Restricted |
 | Plan/Task/Session/Attempt | PostgreSQL | UUID；Attempt 追加写 | 学习记录期限 `TBD` | `TBD` | Confidential |
 | Capture 元数据 | PostgreSQL | Capture UUID | 与图片策略联动 | `TBD` | Confidential |
 | 单题图片 | 私有 MinIO / S3 Adapter | 随机对象键，不含儿童身份 | 原图 24 小时；旧 OCR/后续脱敏处理失败最多 7 天；裁剪题目 30 天，家长可保存/删除 | 默认不做长期业务备份，备份擦除待真实数据前确定 | Restricted |
@@ -175,7 +175,7 @@ flowchart LR
 
 ### 安全
 
-- 认证授权：目标为家长/孩子账号密码 + 可撤销会话；密码使用 Argon2id，Web 使用 HttpOnly Cookie + CSRF，Flutter 使用平台安全存储；每个资源访问检查 Household/角色/孩子绑定，管理员操作重新验证并审计。当前 HMAC Bearer 仅是待迁移实现事实。
+- 认证授权：Compose 只使用家长/孩子账号密码 + 可撤销会话；密码使用 Argon2id，Web 使用 HttpOnly Cookie + CSRF，Flutter 使用平台安全存储；每个资源访问检查 Household/角色/孩子绑定。
 - 密钥：环境注入，生产使用批准的密钥管理器；本地只使用无权限测试凭据和脱敏 `.env.example`。
 - 加密：所有非本地传输 TLS；数据库、对象存储、备份和设备安全存储的静态加密方案 `TBD（生产前批准）`。
 - 审计：登录/设备、家庭权限、任务状态、Capture、Tutor、导出/删除、内容/管理和配置/策略变更均记录稳定事件。
@@ -223,8 +223,8 @@ flowchart TD
 | 项目 | 当前影响 | 触发改造的阈值 | 目标方向 | 跟踪 |
 | --- | --- | --- | --- | --- |
 | 核心领域多数未实现 | 任务/会话、Capture、Tutor、离线与生产路径不可运行 | P1 实现前 | 按已起草 ADR 的审批和后续 TODO 分阶段实现 | `TODO-007`～`TODO-010` |
-| ADR-0015/0016 新路线仍在联调阶段 | 当前代码保留本地 PaddleOCR 回滚路线；新 ImageAnalysis 可在 NewAPI 开启时排队、worker 可持久化未确认提取，但人工确认、临时副本生命周期和实际 Provider 联调仍未完成 | 自用真实图片进入 NewAPI 前 | 完成人工确认接口、删除演练、synthetic NewAPI 联调和失败重试/监控，兼容旧 OCR Job | `TASK-0006`、`TODO-008` |
-| ADR-0017 账号密码目标未实现 | 当前 Web/Flutter/API 仍依赖长期 HMAC Bearer，不能撤销单个会话，也没有登录、首次改密或孩子账号管理 | `TASK-0006` 完成或 Owner 明确暂停后 | 按 PLAN-0007 增加 Account/AuthSession、Argon2id、受限引导账号、Web/Flutter 登录并移除默认 HMAC | `TODO-012`、`PLAN-0007` |
+| ADR-0015/0016 新路线仍在联调阶段 | 当前代码保留本地 PaddleOCR 回滚路线；ImageAnalysis 可在 NewAPI 开启时排队、worker 可持久化未确认提取，人工确认和成功/失败派生对象清理已实现，实际 Provider 联调仍未完成 | 自用真实图片进入 NewAPI 前 | 完成真实视觉检测器、NewAPI 联调、失败重试/监控和备份演练，兼容旧 OCR Job | `TODO-008` |
+| ADR-0017 已进入实现验收 | API/Web/Flutter/Compose 已接入 Account/AuthSession、Argon2id、受限引导账号、Cookie/CSRF、孩子账号管理、Flutter 登录前服务地址配置和安全存储；PostgreSQL/浏览器/iPad/备份验收仍未执行 | 自用 Compose 或真实设备切换前 | 完成迁移往返、E2E、真实设备会话生命周期和恢复演练；旧 HMAC/Demo 客户端必须升级 | `TODO-012`、`PLAN-0008` |
 | 核心技术/安全决策已批准、部分未实现 | 实现仍须锁定 SDK/运行时、验证安全与成本 | 接入对应边界前 | ADR-0001～0011、0013～0017；实现依赖须另行审查 | `TASK-0006`、`TODO-005`、`TODO-012` |
 | SLO、容量、RPO/RTO、成本阈值未知 | 无法设置告警和发布门槛 | staging 建立并获得基线 | 用测量值批准目标 | `TODO-004` |
 | 数据保留/法域未决 | 真实儿童数据和生产部署被阻塞 | 任何真实数据进入前 | 完成安全/法务决策和删除/备份策略 | `TODO-005` |

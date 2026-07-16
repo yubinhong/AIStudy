@@ -19,7 +19,7 @@
 ## 2. 当前仓库阶段
 
 - 当前 P0 基础骨架已完成：目标 `apps/`、`services/`、`packages/`、`evals/`、`infra/compose/` 目录、最小入口、三类锁文件和 CI 草案已创建；合成 Profile/Device、Learning/Capture API 与两份数据库迁移已存在，部署仍不存在；Git 已初始化在 `master` 但无提交。
-- ADR-0017 已接受以账号密码和可撤销会话替换 HMAC/PIN 目标，但尚未实现；当前运行时仍使用自用 HMAC Bearer。认证实现只可在 `TASK-0006` 完成或被 Owner 明确暂停后按 `PLAN-0007` 启动，不得把计划写成现状。
+- ADR-0017 已接受以账号密码和可撤销会话替换 HMAC/PIN；TASK-0007 进一步删除 HMAC、Demo Header 和 Web 免登录旁路。API/Web/Flutter/Compose 运行时只允许用户名密码登录后的 Cookie/Bearer Session；Flutter 在登录前配置服务端地址，地址变更必须清理旧会话。真实 PostgreSQL、浏览器 E2E 和设备生命周期仍需验收。
 - `PROJECT.md` 中的模块路径和命令在实际命令运行成功前不得声称对应能力已经存在；当前状态以 `TASK.md` 和 `TESTING.md` 的逐项验证记录为准。
 - 初始化每个子项目时必须同时提交依赖清单、锁文件、最小测试、标准脚本/命令和忽略规则，并同步 `TESTING.md`、`AI_CONTEXT.md` 和本文件。
 - 未经 ADR 或用户批准，不得用临时单文件实现替代目标模块边界，也不得为了快速演示跳过儿童数据、安全、契约或离线同步约束。

@@ -49,6 +49,7 @@ COPY alembic.ini ./alembic.ini
 ENV PATH="/app/.venv/bin:${PATH}" \
     PYTHONPATH="/app/src" \
     PADDLE_MODEL_ROOT="/opt/study/models" \
+    STUDY_OCR_CONTAINER_RUNTIME="true" \
     PYTHONUNBUFFERED="1"
 
 EXPOSE 8000

@@ -12,17 +12,17 @@
 
 ### 自用部署修订（2026-07-15）
 
-本产品当前按单家庭自用、自托管方式推进；地区、商业化、第三方 IdP 和复杂监护人流程暂不作为本轮实现门槛。API 当前已提供 `STUDY_AUTH_MODE=bearer` 的 HMAC 家庭令牌和本地签发脚本，NewAPI/OpenAI-compatible Adapter 已实现但默认关闭。ADR-0017 已批准用家庭账号密码和可撤销会话替换 HMAC，但 PLAN-0007 尚未实施；在切换前不得把账号登录、默认管理员或会话撤销描述为可用能力。
+本产品当前按单家庭自用、自托管方式推进；地区、商业化、第三方 IdP 和复杂监护人流程暂不作为本轮实现门槛。Compose 只使用账号密码和可撤销会话；HMAC、Demo Header、静态 Web Token 和认证模式开关已删除。NewAPI/OpenAI-compatible Adapter 默认关闭。Ubuntu 24.04 x86_64 的 Compose 栈已完成基础健康、迁移、重启恢复和 loopback bootstrap login 验证，但首次改密、Cookie/CSRF、孩子账号/iPad 生命周期、真实 NewAPI、备份恢复和生产监控仍待执行。
+
+2026-07-16 网络运行边界：远端 VM 已关闭 IPv6，Docker daemon 通过用户提供的 SOCKS5 出网代理拉取镜像；项目 `.env` 仅存在远端、权限为 600，未进入仓库。NewAPI key 未写入，也没有发送真实图片或儿童数据。
 
 账号密码目标保留自用的简单边界：不接入短信、邮箱、社交登录、OIDC 或 MFA。安全性由“仅空库初始化一次 + 默认凭据仅 loopback 可用 + 首次登录强制改密 + 改密前阻断全部家庭数据 + 登录限速/锁定 + 可撤销会话 + Household/角色授权”提供。`admin/admin123456` 不是长期凭据，也不得在局域网或公网暴露后继续有效。
 
-当前可运行边界是：`ImageAnalysis` 回执经安全校验后进入 queued，worker 读取私有对象、调用已配置的 NewAPI，并只保存 Schema 校验后的未确认 `QuestionExtraction`。人工确认接口、脱敏副本清理演练、实际 NewAPI 联调、备份恢复和生产监控仍未完成；在这些项完成前不得把系统描述为完整生产能力。
+当前可运行边界是：`ImageAnalysis` 回执经安全校验后进入 queued，worker 读取私有对象、调用已配置的 NewAPI，并只保存 Schema 校验后的未确认 `QuestionExtraction`；人工确认接口已把人工输入持久化为 `VerifiedQuestion`，worker 成功/失败分支均尝试清理派生对象。实际 NewAPI 联调、真实视觉检测器、备份恢复和生产监控仍未完成；在这些项完成前不得把系统描述为完整生产能力。
 
 Apple Silicon 的默认 Compose 镜像是 Linux ARM64 调试运行时；由于锁定的 PaddlePaddle 3.3.1 只提供 macOS ARM64 和 Linux x86_64 wheel，该镜像不含 Paddle OCR。不得把规则/手工遮挡或“ARM 镜像可以启动”解释成完整 PrivacySanitizer 已通过；启用图片外发前仍必须在具备获批本地检测器的运行时完成固定脱敏评测和用户确认门禁。
 
-当前实现状态：已有合成 Profile/Device API，以及可选 PostgreSQL Learning/Capture/OCR/ImageAnalysis（Task/Session/Attempt/CaptureCorrection/规范化候选/receipt-only job）仓储、OpenAPI `0.5.0`、local/CI 家长删除孩子档案 API、Flutter 待同步队列边界、锁文件、Compose/CI 草案和反向 Household 授权测试；Capture 可签发私有 MinIO 的短期 PUT URL，并在服务端确认对象声明 MIME/大小及实际 SHA-256 后转入人工校正；原图到期字段、清理器和失败重试状态、按 Household/Child 原子认领的对象级联删除编排、失败不完成的 Profile 删除顺序、家长主动保存/立即删除图片、OCR 前置有界读取/容器头校验/完整像素解码/无 EXIF 规范化重编码/临时文件执行、候选结果版本/置信度/人工确认门、Provider-neutral PrivacySanitizer 核心、OCR/规则检测信号、四份 Schema、Flutter 本地脱敏预览/手动涂抹/确认后仅上传脱敏副本、receipt-only ImageAnalysis blocked 状态和无网络 synthetic 脱敏评测已实现，人工校正文本、候选结果不进入审计，对象键不写入审计。这仍保留 ADR-0012 的本地完整 OCR 实现；ADR-0015 要求的真实视觉检测器、单 Provider 云视觉解析和临时脱敏副本删除尚未实现，因此当前代码不得处理真实儿童图片或发送任何图片到外部 Provider。demo headers（含 synthetic child binding）和 Profile/Device 内存仓储只限 local/CI，不是认证或生产授权控制。
-
-上段中“当前代码不得处理真实儿童图片”和“demo headers only”是 ADR-0016 之前的历史快照；现行自用边界以本节修订为准：Bearer 令牌、显式 NewAPI 开关、脱敏确认/哈希门禁、queued worker 和未确认提取持久化已实现，仍不得把提取当作已验证事实。
+当前实现状态：已有合成 Profile/Device API，以及可选 PostgreSQL Learning/Capture/OCR/ImageAnalysis（Task/Session/Attempt/CaptureCorrection/规范化候选/receipt-only job）仓储、OpenAPI `0.6.0`、local/CI 家长删除孩子档案 API、Flutter 待同步队列边界、锁文件、Compose/CI 草案和反向 Household 授权测试。Capture 安全处理、PrivacySanitizer、ImageAnalysis 和 VerifiedQuestion 边界已按 ADR-0015/0016 实现到当前记录的程度；真实视觉检测器、NewAPI 成功联调和备份恢复仍未完成。业务 API 只接受密码登录后的未撤销会话，测试也通过密码账号领域建立会话，不伪造身份 Header。
 
 ## 2. 数据分类
 
@@ -37,18 +37,18 @@ Apple Silicon 的默认 Compose 镜像是 Linux ARM64 调试运行时；由于�
 
 ## 3. 认证与授权
 
-- 实现状态：当前仍运行 ADR-0016 的 HMAC Bearer；ADR-0017 已接受但未实现。HMAC 只能作为 PLAN-0007 迁移期的显式 `legacy_bearer` 兼容方式，不能作为新安装的最终默认认证。
+- 实现状态：Compose 只运行 ADR-0017 的账号密码和可撤销会话；HMAC、Demo Header 和免登录旁路已删除，不存在迁移期兼容开关。
 - 身份模型：`parent_admin` 账号拥有 Household 管理权限；`child` 账号必须绑定同一 Household 的一个 ChildProfile。自用版不强制手机号，也不提供公开注册。
 - 凭据：密码使用 Argon2id 哈希，数据库不保存明文或可逆密码；普通家长新密码 12～128 字符、孩子密码 8～128 字符。用户名在 Household 内进行大小写不敏感唯一化；登录失败统一返回不可枚举错误。
 - 初始化：仅空账号库可创建一次 `admin/admin123456`，在运行时立即保存为 Argon2id 哈希并标记 `must_change_password=true`。该凭据只允许 loopback 首次登录；改密前仅允许查询当前账号、改密和退出，其他家庭数据接口返回稳定 `password_change_required`。改密后撤销全部引导会话并签发新会话，之后才允许把 Web 暴露到局域网。
-- 登录防护：同一账号连续 5 次失败锁定 15 分钟，并对账号/IP 组合做有界限速；登录、锁定、解锁和失败只审计稳定字段，不记录用户名明文、密码或会话值。
+- 登录防护：同一账号连续 5 次失败锁定 15 分钟，并对账号/IP 组合做有界限速；登录、锁定、阻断和失败已写入现有审计表的稳定字段，不记录用户名明文、密码或会话值。
 - 会话：服务端签发至少 256 bit 随机不透明值，数据库只保存 SHA-256 摘要；最长有效期 30 天。登出、改密、管理员重置/停用账号时撤销相关会话；不存在无法撤销的长期客户端 Token。
-- 客户端存储：Web 使用 `HttpOnly`、`SameSite=Lax` Cookie，TLS 下强制 `Secure`，所有状态变更接口验证 CSRF；Flutter 只把会话放入 Keychain/Android Keystore，不进 URL、日志、普通 SQLite 或构建参数。
+- 客户端存储：Web 使用 `HttpOnly`、`SameSite=Lax` Cookie，TLS 下强制 `Secure`，所有状态变更接口验证 CSRF；Flutter 在登录前只允许无 user-info/查询/片段/路径的 HTTP(S) 服务端地址，地址变更先清除旧会话，会话放入 Keychain/Android Keystore，不进 URL、日志、普通 SQLite 或构建参数。LAN 调试可使用 HTTP，公网/生产必须使用 HTTPS。
 - 授权模型：每个业务资源带 Household 归属；服务端逐次校验 account、session、household、role 和 ChildProfile 绑定。仅依赖客户端隐藏按钮不算授权。
 - 孩子权限：只能读取/完成分配给自己的任务、提交作答/捕获、请求允许级别提示和读取必要反馈；不能创建账号、修改家庭、策略、成本、保留或管理内容。
 - 管理操作：家长可在 Web 创建、停用、启用和重置同一 Household 的孩子账号。内容发布、策略/模型切换、数据导出/删除、账号重置和高成本配置要求在 10 分钟内重新验证家长密码并审计。
 - 恢复与二次验证：唯一管理员忘记密码时，只提供服务器本机、显式执行且有审计的恢复命令；自用版明确不接入短信、邮箱、社交登录、OIDC 或 MFA。若未来开放公网或多家庭，必须重新威胁建模并新写 ADR。
-- 测试：覆盖正确/错误密码、用户枚举、5 次失败锁定、引导凭据 loopback 限制、首次改密数据阻断、Cookie/CSRF、Flutter 安全存储边界、会话过期/撤销、同家庭允许、不同家庭拒绝、角色不足拒绝、孩子档案反向绑定和枚举 ID 防护。
+- 测试：覆盖正确/错误密码、用户枚举、5 次失败锁定、引导凭据 loopback 限制、首次改密数据阻断、Cookie/CSRF、Flutter 安全存储边界、会话过期/撤销、同家庭允许、不同家庭拒绝、角色不足拒绝、孩子档案反向绑定、枚举 ID 防护，以及审计不含密码/令牌/用户名。
 
 ## 4. 输入、输出、文件与 AI
 
@@ -85,6 +85,7 @@ Apple Silicon 的默认 Compose 镜像是 Linux ARM64 调试运行时；由于�
 ## 7. 日志与审计
 
 - 必须审计：登录/失败、设备注册/撤销、家庭角色变化、任务/会话关键状态、同步冲突、Capture/PrivacySanitizer/图片解析、Tutor 请求和策略版本、内容/管理操作、导出/删除、密钥/配置/模型变更、备份恢复。
+- 当前认证实现已覆盖：成功/失败/锁定/阻断登录、改密成功/失败、再认证失败、登出、孩子账号创建、启停和重置；`audit_events` 只保存稳定事件名、Household/资源 UUID 和时间。
 - 稳定字段：event name、timestamp、trace/request、actor/device/household 的不可逆标识、resource type/id、action、result/reason、sanitizer/rule/policy/schema/model version、检测类型枚举与数量、用户确认、脱敏副本不可逆哈希、删除状态、延迟和成本（适用时）。
 - 禁止字段：密码/PIN、密码哈希、会话原值/摘要、令牌、签名 URL、密钥、原始图片、完整题目/作答、原始 Prompt/模型输出、儿童姓名/手机号/精确身份。
 - 脱敏：默认 denylist + allowlist 双重控制；自由文本异常先清洗；生产日志采样不得绕过安全事件。
@@ -104,7 +105,7 @@ Apple Silicon 的默认 Compose 镜像是 Linux ARM64 调试运行时；由于�
 ## 9. 安全发布门槛
 
 - [ ] 家庭/角色/设备权限有正向和反向测试，无 ID 枚举或跨家庭访问。
-- [ ] ADR-0017 认证测试通过：空库仅初始化一次、默认凭据仅 loopback、首次改密前数据阻断、Argon2id 参数受控、登录限速/锁定、统一错误、Web Cookie/CSRF、Flutter 安全存储、会话过期/撤销和孩子账号反向绑定。
+- [x] ADR-0017 API 认证回归通过：空库仅初始化一次、默认凭据仅 loopback、首次改密前数据阻断、Argon2id 参数受控、登录锁定、统一错误、会话撤销和孩子账号反向绑定；Web Cookie/CSRF、Flutter 安全存储和真实设备生命周期仍待环境验收。
 - [ ] 外部输入、文件、URL（若有）、离线事件、AI 输出和错误路径已测试。
 - [ ] 脱敏固定集覆盖敏感信息漏检/误遮挡、EXIF/缩略图/原始像素清除、实色遮挡、人脸/二维码/条形码、手动涂抹、确认哈希绑定、单 Provider 请求和临时副本删除；任何未确认/不安全图片均无法外发。
 - [ ] 无明文密钥、真实儿童数据或 Restricted 内容泄漏；日志字段通过 allowlist/脱敏测试。
@@ -127,7 +128,7 @@ Apple Silicon 的默认 Compose 镜像是 Linux ARM64 调试运行时；由于�
 | 项目 | Owner | 截止条件 | 影响 |
 | --- | --- | --- | --- |
 | 适用法域、监护人同意和隐私条款 | 安全/法务 Owner | 任何真实儿童数据进入前 | production 阻塞 |
-| ADR-0017 账号/会话实现、管理员本机恢复和公开暴露边界 | 技术 + 安全 Owner | 自用 Web 在局域网承载真实家庭数据前 | 当前 HMAC 不能满足目标；由 `TODO-012`/PLAN-0007 跟踪 |
+| ADR-0017 账号/会话环境验收、管理员本机恢复和公开暴露边界 | 技术 + 安全 Owner | 自用 Web 在局域网承载真实家庭数据前 | HMAC/Demo 已删除；由 `TASK-0007`/`PLAN-0008` 跟踪真实 PostgreSQL、浏览器和设备生命周期 |
 | MFA、外部恢复和多家庭 IdP | 技术 + 安全 Owner | 未来公网开放或多家庭使用前 | 明确不在当前自用范围；届时需重新 ADR/威胁建模 |
 | 真实数据法域、备份与正式告知 | 安全/产品 Owner | 任何真实儿童图片/生产前 | 删除和告知阻塞；默认图片保留值见 ADR-0011 |
 | Secret Manager、加密和环境拓扑 | 运维 + 安全 Owner | ADR-0008 批准、staging 前 | 部署阻塞 |

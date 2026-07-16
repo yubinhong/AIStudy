@@ -2,7 +2,7 @@
 
 ## 1. 当前状态与质量目标
 
-当前仓库已有 P0 依赖清单、最小测试、CI 草案和三类锁文件。API 的 Household 边界/幂等切片、Web/Flutter 合同消费入口、Compose 配置以及 Flutter 格式/分析/单元测试已有本地验证；Android 调试 APK 和 iOS 无签名 Runner.app 均已构建通过。E2E/AI/契约 SDK 生成/安全扫描仍是后续入口。
+当前仓库已有 P0 依赖清单、最小测试、CI 草案和三类锁文件。API 的 Household/认证/幂等切片（含认证审计）、Web/Flutter 登录入口、Compose 配置以及 Flutter 格式/分析/单元测试已有本地验证；Android 调试 APK 和 iOS 无签名 Runner.app 均已构建通过。浏览器 E2E、真实设备认证、契约 SDK 生成、备份恢复和安全扫描仍是后续入口。
 
 - 核心用户路径：家长创建任务 → 孩子端同步 → 作答/拍题 → 本地脱敏预览与用户确认 → 单一云视觉 Provider 解析 → 题目人工校正 → 1～3 级提示 → 错题沉淀 → 离线重连 → 家长周报。
 - 不可接受的失败：跨家庭越权；原图/未确认脱敏图/儿童数据/密钥泄漏；同一图片被静默发送给多个 Provider；学习记录丢失或被最后写入覆盖；AI 直接代答或错误结论静默入库；删除请求未执行却报告成功；未记录的成本失控。
@@ -35,36 +35,37 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | 区域/目的 | 目标命令 | 何时运行 | 当前状态 |
 | --- | --- | --- | --- |
 | Flutter 安装 | `cd apps/child_flutter && flutter pub get` | 锁文件变化/干净环境 | 通过（2026-07-14；Flutter 3.44.6；`image_picker 1.2.3` 已解析并写入 `pubspec.lock`；2026-07-13 交互式 PATH 与 `flutter doctor -v` 全绿） |
-| Flutter 格式 | `cd apps/child_flutter && dart format .` | 每次 Flutter 变更 | 通过（2026-07-15；启动过渡增量已按当前 Dart formatter 写回） |
-| Flutter 静态/类型 | `cd apps/child_flutter && flutter analyze` | 每次 Flutter 变更 | 通过（无 issues，2026-07-15） |
-| Flutter 单元/Widget | `cd apps/child_flutter && flutter test` | 每次 Flutter 变更 | 通过（13 tests，2026-07-15；含有限启动过渡/首页并行加载、减少动态效果跳过动画、离线队列、学习桌 UI、拍题输入示例路径、OCR 确认流程、分数思考提示流程、本地脱敏预览确认，以及 Capture 客户端 text/formula 上传、Job 轮询、候选确认/纠正链路） |
+| Flutter 格式 | `cd apps/child_flutter && dart format .` | 每次 Flutter 变更 | 通过（2026-07-16；服务端地址配置、密码登录和会话切换增量无需 formatter 写回） |
+| Flutter 静态/类型 | `cd apps/child_flutter && flutter analyze` | 每次 Flutter 变更 | 通过（无 issues，2026-07-16） |
+| Flutter 单元/Widget | `cd apps/child_flutter && flutter test` | 每次 Flutter 变更 | 通过（17 tests，2026-07-16；新增登录前 HTTP(S) 根地址校验/持久化、地址变更清除旧会话、按配置地址登录和 Widget 流程；既有启动过渡、学习桌、脱敏确认、Capture/OCR 链路继续通过） |
 | Flutter UI 视觉 QA | 原型目标 viewport `1194 × 834` 的真实设备/截图比较 | 每次客户端 UI 原型变更 | 阻塞（2026-07-14）：实体 iPad 已成功横屏启动 Debug 应用，但 Flutter screenshot 不支持实体设备；iPad mini 模拟器仅完成 portrait smoke screenshot，详见 `design-qa.md` |
 | Flutter 构建 | `cd apps/child_flutter && flutter build ios --no-codesign` 或 `flutter build apk` | 合并前/平台变更 | 通过（2026-07-14）：Flutter 3.44.6、Xcode 26.6 + iOS 26.5 runtime 生成含 `image_picker` 原生插件的无签名 `Runner.app`（20.1 MB），并已通过 Flutter tooling 重新安装到实体 iPad；此前 Android 调试 APK 为 139 MB。2026-07-13 已接受 Android 许可证，交互式 `flutter doctor -v` 全绿 |
 | Flutter 实体设备相机/相册权限 | iPad 上依次验证 `拍照`、`从相册选择`、系统权限拒绝/允许和回到人工确认页 | 相机/图片输入变更 | 部分通过（2026-07-14；用户确认实体 iPad 已完成拍照、权限和回到“已选择题目照片”页；相册选择、拒绝权限和错误恢复仍待验证） |
 | Flutter local Capture 上传 smoke | 使用合成 StudySession 和 iPad 可达 MinIO，验证预签名 PUT、服务端确认、OCR 入队和不展示合成候选 | Capture 客户端接线 | 通过上传/确认/入队（2026-07-14；实体 iPad API 日志为 201、201、202；Worker 结果未在当前 InMemory 队列进程中产生） |
 | Web 安装 | `cd apps/web && pnpm install --frozen-lockfile` | 锁文件变化/干净环境 | 通过（2026-07-12；构建脚本白名单已审查） |
-| Web 格式 | `cd apps/web && pnpm format:check` | 每次 Web 变更 | 通过（2026-07-12） |
-| Web Lint | `cd apps/web && pnpm lint` | 每次 Web 变更 | 通过（2026-07-12） |
-| Web 类型 | `cd apps/web && pnpm typecheck` | 每次 Web 变更 | 通过（2026-07-12） |
-| Web 单元 | `cd apps/web && pnpm test` | 每次 Web 变更 | 通过（2 tests，2026-07-15） |
+| Web 格式 | `cd apps/web && pnpm format:check` | 每次 Web 变更 | 通过（2026-07-16） |
+| Web Lint | `cd apps/web && pnpm lint` | 每次 Web 变更 | 通过（2026-07-16） |
+| Web 类型 | `cd apps/web && pnpm typecheck` | 每次 Web 变更 | 通过（2026-07-16） |
+| Web 单元 | `cd apps/web && pnpm test` | 每次 Web 变更 | 通过（2 tests，2026-07-16） |
 | Web E2E | `cd apps/web && pnpm e2e` | 用户流程变更/P1 门槛 | 不可运行 |
-| Web 构建 | `cd apps/web && pnpm build` | 合并前 | 通过（2026-07-15；Next 16.2.10 production build） |
+| Web 构建 | `cd apps/web && pnpm build` | 合并前 | 通过（2026-07-16；Next 16.2.10 production build；本机 Node 20/pnpm 9 低于仓库 Node 24.18/pnpm 11.7 基线并产生 engine warning，但构建成功，容器仍使用锁定基线） |
 | API 安装 | `cd services/api && uv sync --locked` | 锁文件变化/干净环境 | 通过（2026-07-15；ARM 镜像内 `uv sync --locked --no-dev` 解析 124 个锁定包并安装 35 个适用包；macOS ARM64/Linux x86_64 保留 PaddleOCR 3.7.0、PaddlePaddle 3.3.1，Linux ARM64 按 marker 排除 Paddle；模型只在 amd64 镜像构建阶段下载） |
-| API 格式 | `cd services/api && uv run ruff format --check .` | 每次 API 变更 | 通过（2026-07-15；85 files） |
-| API Lint | `cd services/api && uv run ruff check .` | 每次 API 变更 | 通过（2026-07-15） |
-| API 类型 | `cd services/api && uv run mypy src` | 每次 API 变更 | 通过（2026-07-15；37 source files） |
-| API 单元 | `cd services/api && uv run pytest -m "not integration"` | 每次 API 变更 | 通过（110 tests，2026-07-15；含 Household、Bearer 令牌签名/过期/篡改、家长删除授权/幂等/失败保留、家长保存/立即删除授权与重放、任务版本、Attempt 幂等、Capture 校正、私有上传确认、实际对象 SHA-256、默认 text/按需 formula OCR 入队与 mode 幂等冲突、ImageAnalysis disabled/queued/幂等/家庭边界、提取结果仓储、NewAPI worker 默认关闭时安全空闲及 claim/complete/fail、无 Provider Tutor Policy 1～3 级提示/答案阻断及 Household/Child/Capture 校验、NewAPI 配置/响应 Schema/安全上限、Dispatcher、一次性与 watch Worker 启动/退出边界、OCR 运行时平台/版本/模型预检、锁定模型 synthetic 输入生成/匹配门禁、生命周期上限、对象级联删除成功/失败/重试、预签名 URL、对象有界读取、完整像素解码/规范化重编码/EXIF 清理、图片容器头/尺寸/像素数边界、Provider-neutral PrivacySanitizer 实色覆盖/阻断/安全边距/手动确认 Schema、OCR/规则敏感区域检测、PrivacySanitizer synthetic eval、OCR Worker 安全读取/未确认状态拒绝/失败不持久化、OCR 输出形状/置信度/人工确认/临时文件清理/未锁定模型关闭边界、文本/公式引擎实例复用、公式结果解析与临时文件执行、OCR 候选草稿状态/控制字符边界、child-only OCR 结果读取/候选确认与 Household/Child/Capture 边界、环境凭据边界、预置模型目录与构建清单边界） |
-| Compose 配置 | `docker compose -f infra/compose/compose.yml config` | Compose 变更 | 通过（2026-07-15；以 `.env.example` 和 `--no-env-resolution` 静态展开 PostgreSQL、迁移、MinIO、Redis、API、家长 Web、ImageAnalysis worker 七个默认服务，profile 列表为空） |
-| Compose 完整启动 | `docker compose -f infra/compose/compose.yml up -d --build` | API/数据/跨模块变更 | 待本机执行；Apple Silicon 默认使用已验证构建的原生 ARM 调试镜像，amd64 构建才下载并校验 Paddle 模型；本轮未启动持久服务或覆盖卷 |
+| API 格式 | `cd services/api && uv run ruff format --check .` | 每次 API 变更 | 通过（2026-07-16） |
+| API Lint | `cd services/api && uv run ruff check .` | 每次 API 变更 | 通过（2026-07-16） |
+| API 类型 | `cd services/api && uv run mypy src` | 每次 API 变更 | 通过（2026-07-16；39 source files） |
+| API 单元 | `cd services/api && uv run pytest -m "not integration"` | 每次 API 变更 | 通过（122 tests，2026-07-16；新增拒绝已删除的 Demo Header/旧 Bearer 凭据并以真实密码会话覆盖业务路由；认证生命周期、Capture、Household、OCR、ImageAnalysis、NewAPI、Tutor 和图片安全边界继续通过） |
+| Compose 配置 | `docker compose -f infra/compose/compose.yml config` | Compose 变更 | 通过（2026-07-16；本机临时以 `.env.example` 作为 Compose `.env` 完成解析后即删除，配置中无 auth mode/HMAC/Demo/Web 免登录变量；远端未在本轮重新部署） |
+| Compose 完整启动 | `docker compose -f infra/compose/compose.yml up -d --build` | API/数据/跨模块变更 | 通过（2026-07-16，Ubuntu 24.04 x86_64；经 Docker daemon SOCKS5 代理使用 `DOCKER_BUILDKIT=0` 构建，迁移/API/Web/worker/MinIO/PostgreSQL/Redis 健康；未启用 NewAPI） |
 | Web 镜像 | `cd apps/web && docker buildx build --platform=linux/arm64 --load -t study-web:arm64-debug .` | Web/Compose 变更 | 通过（2026-07-15；Next.js standalone 镜像使用 Node 24.18.0、pnpm 11.7.0，包含 `/healthz`） |
 | 集成环境 | `docker compose -f infra/compose/compose.yml up -d postgres minio` | API/数据/跨模块变更 | 通过（2026-07-13；Docker Desktop 29.2.1，postgres:16.10 与 MinIO healthy，端口 5432/9000，synthetic local 配置） |
-| API 集成 | `cd services/api && uv run pytest -m integration` | 跨模块/数据变更 | 通过（18 tests，2026-07-15；migration schema 含 `0007_ocr_job_mode`、`0008_image_analysis_job`、`0009_question_extraction`、Learning/Capture/OCR/ImageAnalysis ledger 持久化幂等与 mode、receipt-only blocked job、OCR 候选确认复用 CaptureCorrection 事务、PostgreSQL 行锁领取/stale lease 恢复、家长保存/立即删除图片、OCR_FAILURE 七天保留、规范化候选/空结果、家庭边界、对象键内部持久化、到期对象认领/删除审计、批次原子性、连接池重连、并发版本冲突，以及 PostgreSQL + MinIO synthetic API + Worker `queued → succeeded → candidate` 闭环） |
-| API 镜像 | `cd services/api && docker buildx build --platform=linux/arm64 --load -t study-api:arm64-debug .`；发布仍构建 `linux/amd64` | 合并/发布前 | 通过（ARM：2026-07-15，镜像 `study-api:arm64-debug` 原生构建成功，锁内 35 个适用运行包不含 Paddle，未下载模型；构建后容器启动烟测未获执行。amd64：2026-07-13，镜像 `study-api:local` 的五个官方 PaddleOCR 归档均校验 SHA-256，并在无网络容器内完成 1×1 synthetic PNG 真实 CPU 烟测） |
+| API 集成 | `cd services/api && uv run pytest -m integration` | 跨模块/数据变更 | 通过（18 tests，2026-07-16；本机 synthetic PostgreSQL/MinIO，先将本地开发库从 `0009` 前滚至 `0011`；未触碰远端或真实数据） |
+| API 镜像 | `cd services/api && docker buildx build --platform=linux/arm64 --load -t study-api:arm64-debug .`；发布仍构建 `linux/amd64` | 合并/发布前 | ARM 本地通过（2026-07-15）；amd64 Ubuntu 远端通过（2026-07-16，构建期模型目录 26 文件/清单标记、Paddle 3.3.1 + PaddleOCR 3.7.0、容器预检 ready、内存 synthetic OCR 4/4）；运行时无模型下载 |
 | AI eval | `cd services/api && ./.venv/bin/python ../../evals/run_ocr_eval.py`；`./.venv/bin/python ../../evals/run_privacy_sanitizer_eval.py`；`./.venv/bin/python ../../evals/run_tutor_policy_eval.py` | OCR/脱敏/Provider/模型路由/Tutor Policy 变更 | 通过（2026-07-15；OCR 6、PrivacySanitizer 6、offline Tutor Policy 3 cases，均 0 Provider calls；云视觉 Adapter、真实检测器和云 Tutor Provider 仍未实现） |
 | PrivacySanitizer / Tutor eval | `cd services/api && ./.venv/bin/python ../../evals/run_privacy_sanitizer_eval.py && ./.venv/bin/python ../../evals/run_tutor_policy_eval.py` | 脱敏规则/OCR/视觉检测、图片外发、Tutor Policy/Provider/Schema/路由变更 | 本地 PrivacySanitizer 6 cases 与 offline Tutor Policy 3 cases 通过（2026-07-15）；云视觉 Adapter、真实检测器和云视觉固定评测仍未实现 |
-| OCR 真实运行时预检 | `cd services/api && ./.venv/bin/python scripts/check_ocr_runtime.py` | Ubuntu/模型镜像或 Paddle 版本变更 | 代码与 synthetic 门禁测试通过（2026-07-14）；当前 macOS 预检按预期 `blocked`，Ubuntu 24.04 CPU 实测未执行 |
-| OCR 锁定模型 synthetic smoke | `cd services/api && ./.venv/bin/python ../../evals/run_ocr_model_eval.py` | Ubuntu/模型/Provider 变更 | 评测脚本与预检接线完成（2026-07-15；含普通 OCR 与按需公式 OCR case）；当前 macOS 按预期 `blocked`，未执行真实推理 |
-| 契约结构/差异 | `ruby -ryaml -e '...'`（见任务记录） | OpenAPI/Schema 变更 | 通过（2026-07-15）：21 paths、34 OpenAPI schemas、6 JSON schemas；含 Bearer scheme、ImageAnalysis queued/blocked 状态、QuestionExtractionRecord 读取路径；SDK 生成器未决定 |
+| OCR 真实运行时预检 | `cd services/api && ./.venv/bin/python scripts/check_ocr_runtime.py` | Ubuntu/模型镜像或 Paddle 版本变更 | 宿主 Ubuntu 24.04/x86_64 已确认；预检新增显式 `STUDY_OCR_CONTAINER_RUNTIME=true`，仅接受锁定 Debian 13 amd64 容器层，不放宽其他门禁；对应单元测试通过 |
+| OCR 锁定模型 synthetic smoke | `cd services/api && ./.venv/bin/python ../../evals/run_ocr_model_eval.py` | Ubuntu/模型/Provider 变更 | 通过（2026-07-16，远端 x86_64 Debian 13 锁定容器，4/4 cases：普通文本 3、公式 1，CPU；只使用内存 synthetic 图片，无外部 Provider）；真实题型评测仍待执行 |
+| NewAPI synthetic live eval | `docker compose -f infra/compose/compose.yml exec -T api python scripts/run_newapi_live_eval.py` | NewAPI key/model/网络或 worker 变更 | 通过（2026-07-16，Ubuntu x86_64；Cloudflare 1010 拦截 Python 默认 User-Agent 后，Adapter 使用受限 `study-api/0.5` 成功完成单 Provider `queued → Extraction`；`needs_confirmation=true`、派生副本删除、synthetic Job 残留为 0，未输出原始响应或使用真实图片。人工确认生成 VerifiedQuestion 的远端验收仍待执行） |
+| 契约结构/差异 | `ruby -ryaml -rjson -e '...'`（解析 `openapi.yaml` 与 `schemas/*.json`） | OpenAPI/Schema 变更 | 通过（2026-07-16；OpenAPI `0.6.0`/JSON Schema 解析成功；除健康与登录外的业务端点仅声明 `SessionCookie`/`BearerSession`，不存在旧认证 Scheme；SDK 生成器未决定） |
 | 安全扫描 | `TBD（按 Flutter/pnpm/uv/镜像工具链建立）` | 合并/发布前 | 阻塞：无依赖/镜像 |
 
 耗时预算必须在命令首次进入 CI 后用实际数据补充，不在无代码阶段猜测。
@@ -113,7 +114,7 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 - [ ] PrivacySanitizer、用户外发确认、单 Provider、云视觉 Schema/人工确认和临时脱敏副本删除门禁通过；未实现前保持图片外发功能关闭。
 - [ ] 无未批准的高危依赖/镜像/密钥扫描问题；SBOM/签名策略在生产前确定。
 - [ ] 构建产物可生成，迁移与备份恢复经过验证。
-- [ ] ADR-0017 认证门槛通过：空库引导幂等、默认账号只允许 loopback、首次改密强制阻断、Argon2id、5 次失败锁定、统一登录错误、Web Cookie/CSRF、Flutter 安全存储、会话过期/撤销、孩子账号管理和反向越权测试。
+- [ ] ADR-0017 认证门槛全部通过：API 认证回归、认证审计和孩子账号反向越权已通过；Web Cookie/CSRF、Flutter 安全存储真实设备生命周期、PostgreSQL 迁移往返和浏览器 E2E 仍待执行。
 - [ ] P1 核心 E2E 全通过，四类设备完成职责内弱网/横竖屏/权限回归。
 - [ ] AI eval、成本告警、周报追溯和儿童数据删除有可审查记录。
 

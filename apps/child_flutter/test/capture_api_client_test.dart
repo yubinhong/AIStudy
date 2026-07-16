@@ -22,7 +22,10 @@ void main() {
         );
         expect(body['media_type'], 'image/jpeg');
         expect(body['byte_size'], 3);
-        expect(request.headers.value('X-Demo-Role'), 'child');
+        expect(
+          request.headers.value(HttpHeaders.authorizationHeader),
+          'Bearer test-session-token',
+        );
         final response = {
           'capture': _capture(captureId, version: 1),
           'upload_url':
@@ -115,6 +118,7 @@ void main() {
       householdId: '00000000-0000-0000-0000-000000000001',
       childId: '00000000-0000-0000-0000-000000000101',
       sessionId: '00000000-0000-0000-0000-000000000201',
+      authorizationToken: 'test-session-token',
     ).uploadAndEnqueue(XFile(file.path), ocrMode: OcrMode.formula);
 
     expect(receipt.captureId, captureId);
@@ -128,6 +132,7 @@ void main() {
       householdId: '00000000-0000-0000-0000-000000000001',
       childId: '00000000-0000-0000-0000-000000000101',
       sessionId: '00000000-0000-0000-0000-000000000201',
+      authorizationToken: 'test-session-token',
     ).getOcrJob(receipt);
     expect(job.status, 'queued');
     expect(job.mode, OcrMode.formula);
@@ -156,6 +161,7 @@ void main() {
         householdId: 'household',
         childId: 'child',
         sessionId: 'session',
+        authorizationToken: 'test-session-token',
       ).uploadAndEnqueue(XFile(file.path)),
       throwsA(isA<CaptureApiException>()),
     );
@@ -251,6 +257,7 @@ void main() {
             householdId: '00000000-0000-0000-0000-000000000001',
             childId: '00000000-0000-0000-0000-000000000101',
             sessionId: '00000000-0000-0000-0000-000000000201',
+            authorizationToken: 'test-session-token',
           ).uploadAndStartImageAnalysisBytes(
             Uint8List.fromList(const [0xff, 0xd8, 0xff]),
             sanitization: {
@@ -384,6 +391,7 @@ void main() {
       householdId: 'household',
       childId: 'child',
       sessionId: 'session',
+      authorizationToken: 'test-session-token',
     );
 
     final result = await client.waitForOcrResult(

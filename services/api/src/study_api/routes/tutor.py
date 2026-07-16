@@ -5,13 +5,18 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 
-from study_api.auth import DemoPrincipal, get_demo_principal, require_bound_child, require_household
+from study_api.auth import (
+    AuthenticatedPrincipal,
+    get_principal,
+    require_bound_child,
+    require_household,
+)
 from study_api.domain.capture_repository import CaptureRepository
 from study_api.domain.learning_repository import ChildAssignmentError
 from study_api.tutor_policy import StartTutorHintRequest, TutorHintResponse, create_offline_hint
 
 router = APIRouter(prefix="/households/{household_id}", tags=["tutor"])
-Principal = Annotated[DemoPrincipal, Depends(get_demo_principal)]
+Principal = Annotated[AuthenticatedPrincipal, Depends(get_principal)]
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=128)]
 
 

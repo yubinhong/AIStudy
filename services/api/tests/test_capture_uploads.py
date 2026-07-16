@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from uuid import uuid4
 
+from auth_helpers import session_headers
 from fastapi.testclient import TestClient
 
 from study_api.main import create_app
@@ -48,18 +49,18 @@ class FakeObjectStorage:
 
 
 def _principal(
-    household_id: str = HOUSEHOLD_A, role: str = "parent", child_id: str | None = None
+    client: TestClient,
+    household_id: str = HOUSEHOLD_A,
+    role: str = "parent",
+    child_id: str | None = None,
 ) -> dict[str, str]:
-    headers = {"X-Demo-Household-Id": household_id, "X-Demo-Role": role}
-    if child_id is not None:
-        headers["X-Demo-Child-Id"] = child_id
-    return headers
+    return session_headers(client, role=role, household_id=household_id, child_id=child_id)
 
 
 def _session(client: TestClient) -> dict[str, object]:
     task = client.post(
         f"/households/{HOUSEHOLD_A}/tasks",
-        headers={**_principal(), "Idempotency-Key": f"upload-task-{uuid4()}"},
+        headers={**_principal(client), "Idempotency-Key": f"upload-task-{uuid4()}"},
         json={
             "child_id": CHILD_A,
             "title": "Synthetic upload task",
@@ -70,7 +71,7 @@ def _session(client: TestClient) -> dict[str, object]:
     response = client.post(
         f"/households/{HOUSEHOLD_A}/tasks/{task['id']}/sessions",
         headers={
-            **_principal(role="child", child_id=CHILD_A),
+            **_principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": f"upload-session-{uuid4()}",
         },
         json={"expected_task_version": task["version"]},
@@ -84,7 +85,7 @@ def _begin_upload(
 ) -> dict[str, object]:
     response = client.post(
         f"/households/{HOUSEHOLD_A}/sessions/{session_id}/capture-uploads",
-        headers={**_principal(role="child", child_id=CHILD_A), "Idempotency-Key": key},
+        headers={**_principal(client, role="child", child_id=CHILD_A), "Idempotency-Key": key},
         json={
             "media_type": "image/jpeg",
             "byte_size": 1024,
@@ -108,7 +109,7 @@ def test_capture_upload_requires_server_verified_private_object_and_is_idempoten
     missing_object = client.post(
         f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/upload-confirmations",
         headers={
-            **_principal(role="child", child_id=CHILD_A),
+            **_principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": "confirm-missing",
         },
         json={"expected_capture_version": capture["version"]},
@@ -117,7 +118,7 @@ def test_capture_upload_requires_server_verified_private_object_and_is_idempoten
 
     storage.upload_declared_object("image/jpeg", 1024)
     headers = {
-        **_principal(role="child", child_id=CHILD_A),
+        **_principal(client, role="child", child_id=CHILD_A),
         "Idempotency-Key": "confirm-upload-001",
     }
     payload = {"expected_capture_version": capture["version"]}
@@ -150,7 +151,7 @@ def test_capture_upload_child_and_household_boundaries_are_not_enumerable() -> N
     sibling = client.post(
         f"/households/{HOUSEHOLD_A}/captures/{capture_id}/upload-confirmations",
         headers={
-            **_principal(role="child", child_id=CHILD_B),
+            **_principal(client, role="child", child_id=CHILD_B),
             "Idempotency-Key": "confirm-sibling",
         },
         json=payload,
@@ -158,7 +159,7 @@ def test_capture_upload_child_and_household_boundaries_are_not_enumerable() -> N
     other_household = client.post(
         f"/households/{HOUSEHOLD_B}/captures/{capture_id}/upload-confirmations",
         headers={
-            **_principal(HOUSEHOLD_B, "child", CHILD_B),
+            **_principal(client, HOUSEHOLD_B, "child", CHILD_B),
             "Idempotency-Key": "confirm-household",
         },
         json=payload,
@@ -177,7 +178,7 @@ def test_ocr_job_requires_confirmed_upload_and_is_idempotent() -> None:
     pending = client.post(
         f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/ocr-jobs",
         headers={
-            **_principal(role="child", child_id=CHILD_A),
+            **_principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": "ocr-job-pending",
         },
     )
@@ -187,7 +188,7 @@ def test_ocr_job_requires_confirmed_upload_and_is_idempotent() -> None:
     confirmed = client.post(
         f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/upload-confirmations",
         headers={
-            **_principal(role="child", child_id=CHILD_A),
+            **_principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": "ocr-confirm-001",
         },
         json={"expected_capture_version": capture["version"]},
@@ -195,7 +196,7 @@ def test_ocr_job_requires_confirmed_upload_and_is_idempotent() -> None:
     assert confirmed.status_code == 201
 
     headers = {
-        **_principal(role="child", child_id=CHILD_A),
+        **_principal(client, role="child", child_id=CHILD_A),
         "Idempotency-Key": "ocr-job-001",
     }
     first = client.post(
@@ -214,7 +215,7 @@ def test_ocr_job_requires_confirmed_upload_and_is_idempotent() -> None:
     job_id = first.json()["id"]
     status_response = client.get(
         f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/ocr-jobs/{job_id}",
-        headers=_principal(role="child", child_id=CHILD_A),
+        headers=_principal(client, role="child", child_id=CHILD_A),
     )
     assert status_response.status_code == 200
     assert status_response.json() == first.json()
@@ -222,7 +223,7 @@ def test_ocr_job_requires_confirmed_upload_and_is_idempotent() -> None:
     formula = client.post(
         f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/ocr-jobs",
         headers={
-            **_principal(role="child", child_id=CHILD_A),
+            **_principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": "ocr-job-formula",
         },
         json={"mode": "formula"},
@@ -233,7 +234,7 @@ def test_ocr_job_requires_confirmed_upload_and_is_idempotent() -> None:
     conflicting_mode = client.post(
         f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/ocr-jobs",
         headers={
-            **_principal(role="child", child_id=CHILD_A),
+            **_principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": "ocr-job-formula",
         },
         json={"mode": "text"},
@@ -242,6 +243,6 @@ def test_ocr_job_requires_confirmed_upload_and_is_idempotent() -> None:
 
     sibling_status = client.get(
         f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/ocr-jobs/{job_id}",
-        headers=_principal(role="child", child_id=CHILD_B),
+        headers=_principal(client, role="child", child_id=CHILD_B),
     )
     assert sibling_status.status_code == 404

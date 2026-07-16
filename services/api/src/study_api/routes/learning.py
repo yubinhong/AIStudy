@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
 from study_api.auth import (
-    DemoPrincipal,
-    get_demo_principal,
+    AuthenticatedPrincipal,
+    get_principal,
     require_bound_child,
     require_household,
     require_parent,
@@ -18,9 +18,9 @@ from study_api.domain.learning_repository import (
     ResourceVersionConflictError,
 )
 from study_api.domain.models import (
+    AccountRole,
     Attempt,
     CreateTaskRequest,
-    DemoRole,
     RecordAttemptRequest,
     StartStudySessionRequest,
     StudySession,
@@ -32,7 +32,7 @@ from study_api.domain.repository import IdempotencyConflictError
 from study_api.domain.sql_learning_repository import LearningRepository
 
 router = APIRouter(prefix="/households/{household_id}", tags=["learning"])
-Principal = Annotated[DemoPrincipal, Depends(get_demo_principal)]
+Principal = Annotated[AuthenticatedPrincipal, Depends(get_principal)]
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=128)]
 
 
@@ -50,7 +50,7 @@ def _conflict(detail: str) -> HTTPException:
 @router.get("/tasks", response_model=list[StudyTask])
 def list_tasks(household_id: UUID, principal: Principal, repository: Repository) -> list[StudyTask]:
     role = require_household(principal, household_id)
-    child_id = require_bound_child(principal) if role is DemoRole.CHILD else None
+    child_id = require_bound_child(principal) if role is AccountRole.CHILD else None
     return repository.list_tasks(household_id, child_id)
 
 

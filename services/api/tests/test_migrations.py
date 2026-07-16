@@ -32,6 +32,9 @@ def test_learning_schema_is_at_head_in_local_postgresql() -> None:
         "ocr_jobs",
         "image_analysis_jobs",
         "question_extractions",
+        "verified_questions",
+        "accounts",
+        "auth_sessions",
     } <= set(tables)
     assert {
         "object_key",
@@ -93,3 +96,38 @@ def test_learning_schema_is_at_head_in_local_postgresql() -> None:
         "confidence",
         "needs_confirmation",
     } <= extraction_columns
+
+    verified_columns = {
+        column["name"] for column in inspect(engine).get_columns("verified_questions")
+    }
+    assert {
+        "household_id",
+        "child_id",
+        "capture_id",
+        "extraction_id",
+        "question_text",
+        "options",
+        "formulas",
+        "verified_by",
+        "verified_at",
+    } <= verified_columns
+
+    account_columns = {column["name"] for column in inspect(engine).get_columns("accounts")}
+    assert {
+        "household_id",
+        "username",
+        "role",
+        "child_id",
+        "password_hash",
+        "must_change_password",
+        "failed_login_count",
+        "locked_until",
+    } <= account_columns
+    session_columns = {column["name"] for column in inspect(engine).get_columns("auth_sessions")}
+    assert {
+        "account_id",
+        "household_id",
+        "token_digest",
+        "expires_at",
+        "revoked_at",
+    } <= session_columns

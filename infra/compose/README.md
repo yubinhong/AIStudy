@@ -2,7 +2,7 @@
 
 这套 Compose 适合单家庭、自用部署，包含 PostgreSQL、Redis、MinIO、FastAPI API、家长 Web、数据库迁移一次性服务和默认启动的 NewAPI 图片分析 worker。Compose 会从同目录的 `.env` 注入服务变量，不需要在启动命令中传入 `--env-file`。它不会部署 NewAPI；NewAPI 由部署者单独提供，API 通过 OpenAI-compatible `/v1/chat/completions` 访问。
 
-当前服务端状态：API、Bearer 认证、MinIO 预签名上传、ImageAnalysis 队列、QuestionExtraction 持久化、家长 Web 和 NewAPI worker 已实现；题目人工确认生成 `VerifiedQuestion`、真实 NewAPI 联调、脱敏副本自动清理、备份恢复和生产监控仍未完成。因此本文件提供的是“可启动的自用全栈部署”，不是完整产品发布证明。
+当前服务端状态：API、账号密码/可撤销会话、MinIO 预签名上传、ImageAnalysis 队列、QuestionExtraction/VerifiedQuestion 持久化、家长 Web 和 NewAPI worker 已实现；真实 NewAPI 联调、真实视觉检测器、备份恢复和生产监控仍未完成。因此本文件提供的是“可启动的自用全栈部署”，不是完整产品发布证明。
 
 ## 1. 前置条件
 
@@ -23,12 +23,13 @@ openssl rand -hex 32
 
 编辑 `infra/compose/.env`：
 
-- 替换 `POSTGRES_PASSWORD`、`MINIO_ROOT_PASSWORD` 和 `STUDY_AUTH_SECRET`。
+- 替换 `POSTGRES_PASSWORD`、`MINIO_ROOT_PASSWORD`、NewAPI key 和视觉模型配置；首次启动后必须在本机使用 `admin/admin123456` 登录并立即改密。
 - `DATABASE_URL` 必须把主机写成 `postgres`，并与 PostgreSQL 用户、密码、数据库名一致。
 - `WEB_PORT` 是家长 Web 对宿主机暴露的端口，默认 `3000`；Web 容器内部始终通过 `http://api:8000` 访问 API。
-- `STUDY_API_TOKEN` 可先留空以启动 Web 健康页；要显示家长数据，必须填入由 API 签发的 parent Bearer token，然后重启 Web。
+- Compose 只使用账号密码认证。Web 登录后会通过 HttpOnly Cookie 保存会话；不要把会话或密码写入 `.env`、客户端构建参数或日志。HMAC、Demo Header 和 Web 免登录旁路已删除。
 - 如果 NewAPI 在宿主机，使用 `http://host.docker.internal:<port>`；如果在另一台机器或另一个 Compose 网络，填写容器可访问的 URL。Adapter 会自动补齐 `/v1/chat/completions`，因此 base URL 可以是根地址或以 `/v1` 结尾。
 - 初次部署保持 `STUDY_NEWAPI_ENABLED=false`。确认 NewAPI 视觉模型、key 和响应契约后，再改为 `true`。
+- Adapter 默认以 `study-api/0.5` 作为 `User-Agent`，避免部分 Cloudflare 规则拦截 Python `urllib` 的默认特征；如前置网关要求其他值，可设置 `STUDY_NEWAPI_USER_AGENT`，但只允许 1–256 个可打印 ASCII 字符，不能包含换行或其他控制字符。
 
 不要把 `infra/compose/.env`、真实 API key、儿童图片或真实题目写入仓库。
 
@@ -68,6 +69,7 @@ STUDY_NEWAPI_ENABLED=true
 STUDY_NEWAPI_BASE_URL=http://host.docker.internal:3000
 STUDY_NEWAPI_API_KEY=your_local_newapi_key
 STUDY_NEWAPI_VISION_MODEL=your_vision_model
+STUDY_NEWAPI_USER_AGENT=study-api/0.5
 ```
 
 然后仅重建/重启 API 和已在默认 profile 中的 worker：
@@ -79,19 +81,7 @@ docker compose -f infra/compose/compose.yml \
 
 只有客户端已确认、且服务端保存的 SHA-256 与 Capture 一致的脱敏副本会进入 worker。worker 只保存 Schema 校验后的未确认 `QuestionExtraction`，不会把它直接当作答案或 Tutor 学习事实。失败只记录稳定失败状态；关闭开关后新 worker 不再领取任务。
 
-认证令牌在 API 容器中签发，密钥不进入客户端镜像：
-
-```bash
-docker compose -f infra/compose/compose.yml exec api \
-  python scripts/issue_auth_token.py \
-  --household-id <household-uuid> --role parent
-```
-
-将命令输出的令牌写入 `infra/compose/.env` 的 `STUDY_API_TOKEN` 后，仅重启 Web：
-
-```bash
-docker compose -f infra/compose/compose.yml up -d web
-```
+首次启动后，在服务器本机访问家长 Web，使用一次性 `admin/admin123456` 登录并完成首次改密；改密前 API 会阻断家庭数据接口。改密成功后，家长可以在“孩子账号”页面创建、停用、启用和重置孩子账号。Flutter 孩子端在登录页先填写对 iPad/Android 可达的 API 地址（例如 `http://192.168.1.4:8000`），再使用孩子账号密码登录。地址和会话由系统安全存储持久化，更换地址会先清除旧会话。
 
 ## 5. 停止、升级和回滚
 
@@ -116,4 +106,4 @@ curl -fsS http://127.0.0.1:${WEB_PORT:-3000}/healthz
 docker compose -f infra/compose/compose.yml logs --no-log-prefix migrate | tail -20
 ```
 
-然后使用 synthetic 图片完成一次：Bearer 认证 → Capture 预签名上传 → 服务端对象 SHA-256 确认 → 用户确认脱敏副本 → ImageAnalysis 入队。真实儿童图片只在确认生命周期、删除和备份方案后再使用。
+然后使用 synthetic 图片完成一次：孩子账号密码登录/可撤销 Session → Capture 预签名上传 → 服务端对象 SHA-256 确认 → 用户确认脱敏副本 → ImageAnalysis 入队。真实儿童图片只在确认生命周期、删除和备份方案后再使用。

@@ -1,80 +1,95 @@
-"""Household boundary checks with a self-hosted bearer mode."""
+"""Account-session authentication and Household authorization checks."""
 
-import os
 from dataclasses import dataclass
+from hmac import compare_digest
 from uuid import UUID
 
-from fastapi import Header, HTTPException, status
+from fastapi import Cookie, Header, HTTPException, Request, status
 
-from study_api.auth_tokens import AuthTokenError, parse_token
-from study_api.domain.models import DemoRole
+from study_api.domain.models import AccountRole
 
 
 @dataclass(frozen=True)
-class DemoPrincipal:
-    """Synthetic local/CI principal; it is never a production identity."""
+class AuthenticatedPrincipal:
+    """A Household principal authenticated by a revocable account session."""
 
     household_id: UUID
-    role: DemoRole
+    role: AccountRole
     child_id: UUID | None
+    account_id: UUID
+    session_id: UUID
+    must_change_password: bool = False
 
 
-def get_demo_principal(
+def get_principal(
+    request: Request,
     authorization: str | None = Header(default=None, alias="Authorization"),
-    household_header: str | None = Header(default=None, alias="X-Demo-Household-Id"),
-    role_header: str | None = Header(default=None, alias="X-Demo-Role"),
-    child_header: str | None = Header(default=None, alias="X-Demo-Child-Id"),
-) -> DemoPrincipal:
-    """Read self-hosted bearer auth, or local demo headers in compatibility mode."""
+    session_cookie: str | None = Cookie(default=None, alias="study_session"),
+    csrf_cookie: str | None = Cookie(default=None, alias="study_csrf"),
+    csrf_header: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> AuthenticatedPrincipal:
+    """Authenticate one opaque session from a Cookie or Bearer transport."""
 
-    if authorization is not None:
-        scheme, _, token = authorization.partition(" ")
-        if scheme.lower() != "bearer" or not token:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid principal"
-            )
-        secret = os.environ.get("STUDY_AUTH_SECRET", "")
-        try:
-            claims = parse_token(secret, token)
-        except AuthTokenError as error:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid principal"
-            ) from error
-        return DemoPrincipal(claims.household_id, claims.role, claims.child_id)
-
-    if os.environ.get("STUDY_AUTH_MODE", "demo").lower() == "bearer":
+    token = session_cookie or _bearer_token(authorization)
+    if token is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="principal required")
 
-    if household_header is None or role_header is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="principal required")
     try:
-        household_id = UUID(household_header)
-        role = DemoRole(role_header)
-        child_id = UUID(child_header) if child_header is not None else None
-    except ValueError as error:
+        account, session = request.app.state.auth_service.authenticate(token)
+    except Exception as error:  # noqa: BLE001 -- keep all session failures indistinguishable.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid principal"
         ) from error
-    return DemoPrincipal(household_id=household_id, role=role, child_id=child_id)
+
+    if account.must_change_password and not (
+        request.url.path.startswith("/auth/change-password")
+        or request.url.path.startswith("/auth/logout")
+        or request.url.path.startswith("/auth/me")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="password change required"
+        )
+
+    if session_cookie is not None and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        if not csrf_cookie or not csrf_header or not compare_digest(csrf_cookie, csrf_header):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="csrf token required")
+
+    return AuthenticatedPrincipal(
+        household_id=account.household_id,
+        role=account.role,
+        child_id=account.child_id,
+        account_id=account.id,
+        session_id=session.id,
+        must_change_password=account.must_change_password,
+    )
 
 
-def require_household(principal: DemoPrincipal, household_id: UUID) -> DemoRole:
-    """Return role only when the path Household belongs to the principal."""
+def _bearer_token(authorization: str | None) -> str | None:
+    if authorization is None:
+        return None
+    scheme, separator, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not separator or not token.strip():
+        return None
+    return token.strip()
+
+
+def require_household(principal: AuthenticatedPrincipal, household_id: UUID) -> AccountRole:
+    """Return the role only when the path Household belongs to the principal."""
 
     if principal.household_id != household_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
     return principal.role
 
 
-def require_parent(role: DemoRole) -> None:
-    if role is not DemoRole.PARENT:
+def require_parent(role: AccountRole) -> None:
+    if role is not AccountRole.PARENT:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="parent role required")
 
 
-def require_bound_child(principal: DemoPrincipal) -> UUID:
-    """Require a synthetic child binding for child-only learning operations."""
+def require_bound_child(principal: AuthenticatedPrincipal) -> UUID:
+    """Require the account to be bound to one child profile."""
 
-    if principal.role is not DemoRole.CHILD or principal.child_id is None:
+    if principal.role is not AccountRole.CHILD or principal.child_id is None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="bound child principal required"
         )

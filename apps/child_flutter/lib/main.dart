@@ -5,32 +5,29 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'capture_api_client.dart';
+import 'auth_client.dart';
 import 'privacy_sanitization_preview.dart';
 import 'startup_transition.dart';
 
-const demoHouseholdId = '00000000-0000-0000-0000-000000000001';
-const apiBaseUrl = String.fromEnvironment(
-  'STUDY_API_URL',
-  defaultValue: 'http://127.0.0.1:8000',
-);
+const defaultHouseholdId = '00000000-0000-0000-0000-000000000001';
 const captureSessionId = String.fromEnvironment('STUDY_CAPTURE_SESSION_ID');
-const authToken = String.fromEnvironment('STUDY_API_TOKEN');
 
 typedef ChildrenLoader = Future<List<Map<String, dynamic>>> Function();
+typedef ChildLoginAction =
+    Future<String> Function(String baseUrl, String username, String password);
+typedef ChildLoggedIn = void Function(String baseUrl, String token);
 
-Future<List<Map<String, dynamic>>> loadDemoChildren() async {
+Future<List<Map<String, dynamic>>> loadChildrenWithToken(
+  String baseUrl,
+  String token,
+) async {
+  if (token.isEmpty) return [];
   final client = HttpClient();
   try {
     final request = await client.getUrl(
-      Uri.parse('$apiBaseUrl/households/$demoHouseholdId/children'),
+      Uri.parse('$baseUrl/households/$defaultHouseholdId/children'),
     );
-    if (authToken.isEmpty) {
-      request.headers
-        ..set('X-Demo-Household-Id', demoHouseholdId)
-        ..set('X-Demo-Role', 'child');
-    } else {
-      request.headers.set('Authorization', 'Bearer $authToken');
-    }
+    request.headers.set('Authorization', 'Bearer $token');
     final response = await request.close();
     if (response.statusCode != HttpStatus.ok) return [];
     final payload = jsonDecode(await response.transform(utf8.decoder).join());
@@ -53,9 +50,16 @@ Future<void> main() async {
 }
 
 class StudyChildApp extends StatelessWidget {
-  const StudyChildApp({super.key, this.loadChildren = loadDemoChildren});
+  const StudyChildApp({
+    super.key,
+    this.loadChildren,
+    this.authStore,
+    this.loginAction,
+  });
 
-  final ChildrenLoader loadChildren;
+  final ChildrenLoader? loadChildren;
+  final ChildAuthStore? authStore;
+  final ChildLoginAction? loginAction;
 
   @override
   Widget build(BuildContext context) {
@@ -75,17 +79,237 @@ class StudyChildApp extends StatelessWidget {
         scaffoldBackgroundColor: _background,
         splashFactory: InkSparkle.splashFactory,
       ),
-      home: StartupTransition(
-        child: ChildProfileScreen(loadChildren: loadChildren),
+      home: loadChildren == null
+          ? ChildAuthGate(store: authStore, loginAction: loginAction)
+          : StartupTransition(
+              child: ChildProfileScreen(loadChildren: loadChildren!),
+            ),
+    );
+  }
+}
+
+class ChildAuthGate extends StatefulWidget {
+  const ChildAuthGate({super.key, this.store, this.loginAction});
+
+  final ChildAuthStore? store;
+  final ChildLoginAction? loginAction;
+
+  @override
+  State<ChildAuthGate> createState() => _ChildAuthGateState();
+}
+
+class _ChildAuthGateState extends State<ChildAuthGate> {
+  late final ChildAuthStore _store;
+  String _serverBaseUrl = defaultServerBaseUrl;
+  String? _token;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _store = widget.store ?? const SecureChildAuthStore();
+    _restore();
+  }
+
+  Future<void> _restore() async {
+    String serverBaseUrl = defaultServerBaseUrl;
+    String? token;
+    try {
+      final savedServerBaseUrl = await _store.readServerBaseUrl();
+      if (savedServerBaseUrl != null && savedServerBaseUrl.isNotEmpty) {
+        serverBaseUrl = normalizeServerBaseUrl(savedServerBaseUrl);
+      }
+      token = await _store.readSessionToken();
+    } on ChildAuthException {
+      await _store.clearSessionToken();
+    } on Object {
+      token = null;
+    }
+    if (!mounted) return;
+    setState(() {
+      _serverBaseUrl = serverBaseUrl;
+      _token = token;
+      _loading = false;
+    });
+  }
+
+  Future<void> _changeServer() async {
+    await _store.clearSessionToken();
+    if (!mounted) return;
+    setState(() => _token = null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    final token = _token;
+    if (token != null && token.isNotEmpty) {
+      return StartupTransition(
+        child: ChildProfileScreen(
+          loadChildren: () => loadChildrenWithToken(_serverBaseUrl, token),
+          baseUrl: _serverBaseUrl,
+          authorizationToken: token,
+          onChangeServer: _changeServer,
+        ),
+      );
+    }
+    return ChildLoginScreen(
+      initialServerBaseUrl: _serverBaseUrl,
+      store: _store,
+      loginAction: widget.loginAction,
+      onLoggedIn: (baseUrl, newToken) => setState(() {
+        _serverBaseUrl = baseUrl;
+        _token = newToken;
+      }),
+    );
+  }
+}
+
+class ChildLoginScreen extends StatefulWidget {
+  const ChildLoginScreen({
+    super.key,
+    required this.initialServerBaseUrl,
+    required this.store,
+    required this.onLoggedIn,
+    this.loginAction,
+  });
+
+  final String initialServerBaseUrl;
+  final ChildAuthStore store;
+  final ChildLoggedIn onLoggedIn;
+  final ChildLoginAction? loginAction;
+
+  @override
+  State<ChildLoginScreen> createState() => _ChildLoginScreenState();
+}
+
+class _ChildLoginScreenState extends State<ChildLoginScreen> {
+  late final TextEditingController _serverBaseUrl;
+  final _username = TextEditingController();
+  final _password = TextEditingController();
+  bool _pending = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _serverBaseUrl = TextEditingController(text: widget.initialServerBaseUrl);
+  }
+
+  @override
+  void dispose() {
+    _serverBaseUrl.dispose();
+    _username.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _login() async {
+    setState(() {
+      _pending = true;
+      _error = null;
+    });
+    try {
+      final baseUrl = await widget.store.saveServerBaseUrl(_serverBaseUrl.text);
+      final token = await (widget.loginAction ?? _loginWithClient)(
+        baseUrl,
+        _username.text,
+        _password.text,
+      );
+      await widget.store.writeSessionToken(token);
+      if (mounted) widget.onLoggedIn(baseUrl, token);
+    } on ChildAuthException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } on Object {
+      if (mounted) setState(() => _error = '无法保存服务端配置，请重试。');
+    } finally {
+      if (mounted) setState(() => _pending = false);
+    }
+  }
+
+  Future<String> _loginWithClient(
+    String baseUrl,
+    String username,
+    String password,
+  ) => ChildAuthClient(baseUrl: baseUrl).login(username, password);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Card(
+            margin: const EdgeInsets.all(24),
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    '登录学习桌',
+                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('使用家长创建的孩子账号登录。'),
+                  const SizedBox(height: 20),
+                  TextField(
+                    key: const ValueKey('server-base-url'),
+                    controller: _serverBaseUrl,
+                    keyboardType: TextInputType.url,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    decoration: const InputDecoration(
+                      labelText: '服务端地址',
+                      helperText: '例如 http://192.168.1.4:8000',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _username,
+                    decoration: const InputDecoration(labelText: '用户名'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _password,
+                    obscureText: true,
+                    decoration: const InputDecoration(labelText: '密码'),
+                  ),
+                  if (_error != null) ...[
+                    const SizedBox(height: 12),
+                    Text(_error!, style: const TextStyle(color: _coral)),
+                  ],
+                  const SizedBox(height: 20),
+                  FilledButton(
+                    onPressed: _pending ? null : _login,
+                    child: Text(_pending ? '登录中…' : '登录'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
 }
 
 class ChildProfileScreen extends StatefulWidget {
-  const ChildProfileScreen({super.key, required this.loadChildren});
+  const ChildProfileScreen({
+    super.key,
+    required this.loadChildren,
+    this.baseUrl = defaultServerBaseUrl,
+    this.authorizationToken,
+    this.onChangeServer,
+  });
 
   final ChildrenLoader loadChildren;
+  final String baseUrl;
+  final String? authorizationToken;
+  final VoidCallback? onChangeServer;
 
   @override
   State<ChildProfileScreen> createState() => _ChildProfileScreenState();
@@ -103,7 +327,16 @@ class _ChildProfileScreenState extends State<ChildProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('家庭 AI 学习助手')),
+      appBar: AppBar(
+        title: const Text('家庭 AI 学习助手'),
+        actions: [
+          if (widget.onChangeServer != null)
+            TextButton(
+              onPressed: widget.onChangeServer,
+              child: const Text('更换服务端'),
+            ),
+        ],
+      ),
       body: FutureBuilder<List<Map<String, dynamic>>>(
         future: _children,
         builder: (context, snapshot) {
@@ -128,15 +361,20 @@ class _ChildProfileScreenState extends State<ChildProfileScreen> {
 
   CaptureApiClient? _buildCaptureClient(Map<String, dynamic> child) {
     final childId = child['id']?.toString();
-    if (captureSessionId.isEmpty || childId == null || childId.isEmpty) {
+    final token = widget.authorizationToken;
+    if (captureSessionId.isEmpty ||
+        childId == null ||
+        childId.isEmpty ||
+        token == null ||
+        token.isEmpty) {
       return null;
     }
     return CaptureApiClient(
-      baseUrl: apiBaseUrl,
-      householdId: demoHouseholdId,
+      baseUrl: widget.baseUrl,
+      householdId: defaultHouseholdId,
       childId: childId,
       sessionId: captureSessionId,
-      authorizationToken: authToken.isEmpty ? null : authToken,
+      authorizationToken: token,
     );
   }
 }

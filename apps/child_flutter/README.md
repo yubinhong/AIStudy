@@ -4,8 +4,12 @@ Flutter iOS/Android child learning experience. The current slice implements the
 bright landscape learning-desk, capture input, OCR-confirmation, and thinking-hint UI: one current
 math task, progress, continue learning, camera/gallery entry, OCR candidate review/edit/confirm,
 online state, and an unavailable API state. It uses synthetic-only generated visual assets and
-uses demo headers by default and can receive a self-hosted Bearer token through
-`STUDY_API_TOKEN`; it still has no local database. A selected local image is passed
+supports only account/password login with a revocable session stored by
+`flutter_secure_storage`; it has no demo-header fallback or local database.
+Before login, the child can edit the HTTP(S) service address. The validated
+address is persisted on-device, and changing it clears the previous server's
+session before any credentials are sent.
+A selected local image is passed
 to the OCR confirmation screen. With an explicitly supplied local StudySession, the page
 uses the reusable `CaptureApiClient` for signed MinIO upload, default text OCR enqueue,
 optional formula OCR mode, bounded Job
@@ -25,19 +29,23 @@ flutter analyze
 flutter test
 ```
 
-For a local-only Capture upload smoke test, provide a valid synthetic session:
+For a local-only Capture upload smoke test, configure the LAN-reachable API
+address on the login screen, sign in with a child username/password, and provide
+a valid synthetic StudySession:
 
 ```bash
 flutter run -d <device> \
-  --dart-define=STUDY_API_URL=http://<mac-lan-ip>:8000 \
-  --dart-define=STUDY_CAPTURE_SESSION_ID=<local-session-id> \
-  --dart-define=STUDY_API_TOKEN=<self-hosted-bearer-token>
+  --dart-define=STUDY_CAPTURE_SESSION_ID=<local-session-id>
 ```
+
+`STUDY_API_URL` remains only an optional compile-time initial value for the
+editable login field; it is not an authentication bypass or immutable endpoint.
 
 This debug switch enables the `CaptureApiClient` sequence only when the session
 is explicitly supplied. The API and MinIO endpoint must both be reachable from
-the device; production authentication and session synchronization are not
-implemented by this switch. Omit `STUDY_API_TOKEN` only for local demo mode.
+the device; account/password login is the self-hosted path, while this switch
+only controls the local Capture smoke test. Session synchronization and local
+SQLite are not implemented.
 The current local API smoke setup may leave the Job in `queued` until a visible OCR Worker
 process is started; the page keeps the candidate behind the manual-confirmation gate.
 

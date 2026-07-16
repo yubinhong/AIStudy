@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from auth_helpers import session_headers
 from fastapi.testclient import TestClient
 
 from study_api.main import create_app
@@ -8,16 +9,20 @@ from study_api.media_lifecycle import CaptureObject, DeletionStatus
 HOUSEHOLD_A = "00000000-0000-0000-0000-000000000001"
 HOUSEHOLD_B = "00000000-0000-0000-0000-000000000002"
 CHILD_A = "00000000-0000-0000-0000-000000000101"
+CHILD_B = "00000000-0000-0000-0000-000000000102"
 
 
-def principal(household_id: str = HOUSEHOLD_A, role: str = "parent") -> dict[str, str]:
-    return {"X-Demo-Household-Id": household_id, "X-Demo-Role": role}
+def principal(
+    client: TestClient, household_id: str = HOUSEHOLD_A, role: str = "parent"
+) -> dict[str, str]:
+    child_id = (CHILD_A if household_id == HOUSEHOLD_A else CHILD_B) if role == "child" else None
+    return session_headers(client, role=role, household_id=household_id, child_id=child_id)
 
 
 def test_parent_can_list_only_children_in_own_household() -> None:
     client = TestClient(create_app())
 
-    response = client.get(f"/households/{HOUSEHOLD_A}/children", headers=principal())
+    response = client.get(f"/households/{HOUSEHOLD_A}/children", headers=principal(client))
 
     assert response.status_code == 200
     assert [child["id"] for child in response.json()] == [CHILD_A]
@@ -26,10 +31,10 @@ def test_parent_can_list_only_children_in_own_household() -> None:
 def test_cross_household_reads_are_not_enumerable() -> None:
     client = TestClient(create_app())
 
-    response = client.get(f"/households/{HOUSEHOLD_B}/children", headers=principal())
+    response = client.get(f"/households/{HOUSEHOLD_B}/children", headers=principal(client))
     child_response = client.get(
         f"/households/{HOUSEHOLD_A}/children/{UUID('00000000-0000-0000-0000-000000000102')}",
-        headers=principal(),
+        headers=principal(client),
     )
 
     assert response.status_code == 404
@@ -45,7 +50,7 @@ def test_child_creation_is_idempotent_and_detects_payload_reuse() -> None:
         "curriculum_version": "math-demo-2026",
         "subjects": ["math"],
     }
-    headers = {**principal(), "Idempotency-Key": "child-create-001"}
+    headers = {**principal(client), "Idempotency-Key": "child-create-001"}
 
     first = client.post(f"/households/{HOUSEHOLD_A}/children", json=payload, headers=headers)
     replay = client.post(f"/households/{HOUSEHOLD_A}/children", json=payload, headers=headers)
@@ -65,15 +70,15 @@ def test_child_creation_is_idempotent_and_detects_payload_reuse() -> None:
 def test_only_parent_can_create_and_list_devices() -> None:
     client = TestClient(create_app())
     payload = {"kind": "child", "platform": "ios", "display_name": "Synthetic iPad 2"}
-    headers = {**principal(), "Idempotency-Key": "device-create-001"}
+    headers = {**principal(client), "Idempotency-Key": "device-create-001"}
 
     child_create = client.post(
         f"/households/{HOUSEHOLD_A}/devices",
         json=payload,
-        headers={**principal(role="child"), "Idempotency-Key": "device-child-001"},
+        headers={**principal(client, role="child"), "Idempotency-Key": "device-child-001"},
     )
     parent_create = client.post(f"/households/{HOUSEHOLD_A}/devices", json=payload, headers=headers)
-    parent_list = client.get(f"/households/{HOUSEHOLD_A}/devices", headers=principal())
+    parent_list = client.get(f"/households/{HOUSEHOLD_A}/devices", headers=principal(client))
 
     assert child_create.status_code == 403
     assert child_create.json() == {"code": "HTTP_403", "message": "parent role required"}
@@ -129,16 +134,16 @@ def test_parent_child_delete_keeps_profile_until_media_cascade_succeeds() -> Non
     repository = FakeChildDeleteRepository()
     storage = FakeChildDeleteStorage()
     client = TestClient(create_app(capture_repository=repository, object_storage=storage))
-    headers = {**principal(), "Idempotency-Key": "child-delete-001"}
+    headers = {**principal(client), "Idempotency-Key": "child-delete-001"}
     path = f"/households/{HOUSEHOLD_A}/children/{CHILD_A}"
 
     failed = client.delete(path, headers=headers)
-    still_present = client.get(path, headers=principal())
+    still_present = client.get(path, headers=principal(client))
 
     storage.fail = False
     deleted = client.delete(path, headers=headers)
     replay = client.delete(path, headers=headers)
-    missing = client.get(path, headers=principal())
+    missing = client.get(path, headers=principal(client))
 
     assert failed.status_code == 503
     assert failed.json() == {
@@ -161,14 +166,14 @@ def test_child_or_cross_household_cannot_delete_profile() -> None:
     child = client.delete(
         path,
         headers={
-            **principal(role="child"),
+            **principal(client, role="child"),
             "Idempotency-Key": "child-delete-role",
         },
     )
     other_household = client.delete(
         path,
         headers={
-            **principal(HOUSEHOLD_B),
+            **principal(client, HOUSEHOLD_B, "child"),
             "Idempotency-Key": "child-delete-household",
         },
     )

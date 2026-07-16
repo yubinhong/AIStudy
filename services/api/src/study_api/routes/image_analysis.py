@@ -11,11 +11,17 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 
-from study_api.auth import DemoPrincipal, get_demo_principal, require_bound_child, require_household
+from study_api.auth import (
+    AuthenticatedPrincipal,
+    get_principal,
+    require_bound_child,
+    require_household,
+)
 from study_api.domain.capture_repository import CaptureRepository
 from study_api.domain.learning_repository import ChildAssignmentError
 from study_api.domain.question_extraction_repository import QuestionExtractionRepository
 from study_api.domain.repository import IdempotencyConflictError
+from study_api.domain.verified_question_repository import VerifiedQuestionRepository
 from study_api.image_analysis_jobs import (
     ImageAnalysisJobRepository,
 )
@@ -24,10 +30,12 @@ from study_api.privacy_models import (
     ImageAnalysisJobStatus,
     QuestionExtractionRecord,
     StartImageAnalysisRequest,
+    VerifiedQuestion,
+    VerifyQuestionRequest,
 )
 
 router = APIRouter(prefix="/households/{household_id}", tags=["image-analysis"])
-Principal = Annotated[DemoPrincipal, Depends(get_demo_principal)]
+Principal = Annotated[AuthenticatedPrincipal, Depends(get_principal)]
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=128)]
 
 
@@ -43,10 +51,17 @@ def get_question_extraction_repository(request: Request) -> QuestionExtractionRe
     return request.app.state.question_extraction_repository
 
 
+def get_verified_question_repository(request: Request) -> VerifiedQuestionRepository:
+    return request.app.state.verified_question_repository
+
+
 CaptureRepo = Annotated[CaptureRepository, Depends(get_capture_repository)]
 ImageAnalysisRepo = Annotated[ImageAnalysisJobRepository, Depends(get_image_analysis_repository)]
 QuestionExtractionRepo = Annotated[
     QuestionExtractionRepository, Depends(get_question_extraction_repository)
+]
+VerifiedQuestionRepo = Annotated[
+    VerifiedQuestionRepository, Depends(get_verified_question_repository)
 ]
 
 
@@ -158,6 +173,8 @@ def get_question_extraction(
     require_household(principal, household_id)
     try:
         job = jobs.get_for_household(household_id, capture_id, job_id)
+        if principal.role.value == "child" and require_bound_child(principal) != job.child_id:
+            raise LookupError
     except LookupError as error:
         raise _not_found() from error
     if job.extraction_id is None or job.status is not ImageAnalysisJobStatus.SUCCEEDED:
@@ -165,4 +182,93 @@ def get_question_extraction(
     try:
         return extractions.get(household_id, capture_id, job.extraction_id, job.child_id)
     except LookupError as error:
+        raise _not_found() from error
+
+
+@router.post(
+    "/captures/{capture_id}/image-analysis-jobs/{job_id}/extraction/verify",
+    response_model=VerifiedQuestion,
+    status_code=status.HTTP_201_CREATED,
+)
+def verify_question_extraction(
+    household_id: UUID,
+    capture_id: UUID,
+    job_id: UUID,
+    request: VerifyQuestionRequest,
+    idempotency_key: IdempotencyKey,
+    principal: Principal,
+    captures: CaptureRepo,
+    jobs: ImageAnalysisRepo,
+    extractions: QuestionExtractionRepo,
+    verified_questions: VerifiedQuestionRepo,
+) -> JSONResponse:
+    """Persist only explicitly user-edited fields as a Tutor-safe fact."""
+
+    require_household(principal, household_id)
+    try:
+        job = jobs.get_for_household(household_id, capture_id, job_id)
+        if job.extraction_id is None:
+            raise LookupError
+        extraction = extractions.get(household_id, capture_id, job.extraction_id, job.child_id)
+        capture = captures.get_capture(household_id, capture_id, job.child_id)
+    except (LookupError, TypeError, ChildAssignmentError) as error:
+        raise _not_found() from error
+    if job.extraction_id is None or job.status is not ImageAnalysisJobStatus.SUCCEEDED:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="extraction is not ready")
+    if capture.version != request.expected_capture_version:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="capture version conflict")
+    # A parent may review any child in the household; a child may only review
+    # the bound child that owns this Capture.
+    if principal.role.value == "parent":
+        verified_by = "parent"
+    else:
+        if principal.child_id != job.child_id:
+            raise _not_found()
+        verified_by = "child"
+    try:
+        record, replayed = verified_questions.create(
+            household_id,
+            job.child_id,
+            capture_id,
+            extraction.id,
+            request,
+            verified_by,
+            idempotency_key,
+        )
+    except IdempotencyConflictError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="idempotency key reused with a different payload",
+        ) from error
+    return JSONResponse(
+        status_code=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
+        content=record.model_dump(mode="json"),
+        headers={"Idempotency-Replayed": "true"} if replayed else {},
+    )
+
+
+@router.get(
+    "/captures/{capture_id}/image-analysis-jobs/{job_id}/verified-question",
+    response_model=VerifiedQuestion,
+)
+def get_verified_question(
+    household_id: UUID,
+    capture_id: UUID,
+    job_id: UUID,
+    principal: Principal,
+    jobs: ImageAnalysisRepo,
+    verified_questions: VerifiedQuestionRepo,
+) -> VerifiedQuestion:
+    require_household(principal, household_id)
+    try:
+        job = jobs.get_for_household(household_id, capture_id, job_id)
+        if principal.role.value == "child" and require_bound_child(principal) != job.child_id:
+            raise LookupError
+        if job.extraction_id is None:
+            raise LookupError
+        child_id = (
+            require_bound_child(principal) if principal.role.value == "child" else job.child_id
+        )
+        return verified_questions.get(household_id, child_id, capture_id, job.extraction_id)
+    except (LookupError, ChildAssignmentError) as error:
         raise _not_found() from error

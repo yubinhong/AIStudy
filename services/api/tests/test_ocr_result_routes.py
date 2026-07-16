@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from auth_helpers import session_headers
 from fastapi.testclient import TestClient
 
 from study_api.domain.learning_repository import ChildAssignmentError
@@ -26,17 +27,12 @@ CAPTURE_ID = UUID("00000000-0000-0000-0000-000000000201")
 
 
 def _headers(
+    client: TestClient,
     household_id: UUID = HOUSEHOLD_A,
     role: str = "child",
     child_id: UUID | None = CHILD_A,
 ) -> dict[str, str]:
-    headers = {
-        "X-Demo-Household-Id": str(household_id),
-        "X-Demo-Role": role,
-    }
-    if child_id is not None:
-        headers["X-Demo-Child-Id"] = str(child_id)
-    return headers
+    return session_headers(client, role=role, household_id=household_id, child_id=child_id)
 
 
 def _result(capture_id: UUID = CAPTURE_ID) -> tuple[OcrResult, list[OcrCandidate]]:
@@ -115,7 +111,7 @@ def test_child_can_read_unverified_candidates_for_the_matching_capture() -> None
 
     response = client.get(
         f"/households/{HOUSEHOLD_A}/captures/{CAPTURE_ID}/ocr-results/{results.result.id}",
-        headers=_headers(),
+        headers=_headers(client),
     )
 
     assert response.status_code == 200
@@ -129,11 +125,11 @@ def test_ocr_result_read_rejects_sibling_parent_and_other_household() -> None:
     client = TestClient(create_app(ocr_result_repository=results))
     path = f"/households/{HOUSEHOLD_A}/captures/{CAPTURE_ID}/ocr-results/{results.result.id}"
 
-    sibling = client.get(path, headers=_headers(child_id=CHILD_B))
-    parent = client.get(path, headers=_headers(role="parent", child_id=None))
+    sibling = client.get(path, headers=_headers(client, child_id=CHILD_B))
+    parent = client.get(path, headers=_headers(client, role="parent", child_id=None))
     other_household = client.get(
         f"/households/{HOUSEHOLD_B}/captures/{CAPTURE_ID}/ocr-results/{results.result.id}",
-        headers=_headers(HOUSEHOLD_B, child_id=CHILD_B),
+        headers=_headers(client, HOUSEHOLD_B, child_id=CHILD_B),
     )
 
     assert sibling.status_code == 404
@@ -147,7 +143,7 @@ def test_ocr_result_read_rejects_capture_id_mismatch() -> None:
 
     response = client.get(
         f"/households/{HOUSEHOLD_A}/captures/{uuid4()}/ocr-results/{results.result.id}",
-        headers=_headers(),
+        headers=_headers(client),
     )
 
     assert response.status_code == 404
@@ -189,11 +185,11 @@ def test_child_can_confirm_a_selected_candidate_as_an_append_only_correction() -
         "expected_capture_version": 1,
         "candidate_id": str(results.candidates[0].id),
     }
-    headers = {**_headers(), "Idempotency-Key": "ocr-confirm-route-001"}
+    headers = {**_headers(client), "Idempotency-Key": "ocr-confirm-route-001"}
 
     first = client.post(path, headers=headers, json=payload)
     replay = client.post(path, headers=headers, json=payload)
-    read_back = client.get(path.removesuffix("/confirmations"), headers=_headers())
+    read_back = client.get(path.removesuffix("/confirmations"), headers=_headers(client))
 
     assert first.status_code == 201
     assert first.json()["corrected_text"] == "synthetic 3 + 4"
@@ -216,12 +212,15 @@ def test_ocr_candidate_confirmation_rejects_unknown_candidate_and_parent() -> No
     )
     unknown = client.post(
         path,
-        headers={**_headers(), "Idempotency-Key": "ocr-confirm-unknown"},
+        headers={**_headers(client), "Idempotency-Key": "ocr-confirm-unknown"},
         json={"expected_capture_version": 1, "candidate_id": str(uuid4())},
     )
     parent = client.post(
         path,
-        headers={**_headers(role="parent", child_id=None), "Idempotency-Key": "ocr-confirm-parent"},
+        headers={
+            **_headers(client, role="parent", child_id=None),
+            "Idempotency-Key": "ocr-confirm-parent",
+        },
         json={
             "expected_capture_version": 1,
             "candidate_id": str(results.candidates[0].id),

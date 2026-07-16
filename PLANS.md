@@ -333,7 +333,7 @@ git diff --check
 - `2026-07-15` — `[done]` 新增无 Provider 的 `offline-tutor-policy.v1` 和 `tutor-hint.v1` Schema；固定输出 1～3 级提示、要求孩子回应、`direct_answer: null` 和 0 元成本，3-case synthetic eval 通过；Flutter 思考页同步支持第 3 级提示。
 - `2026-07-15` — `[done]` 补齐自用 Compose 全栈部署：新增 `migrate`、API、家长 Web 和默认 ImageAnalysis worker，API 镜像复制迁移/脚本入口并保留构建期模型 SHA-256 门禁；新增 Web standalone Dockerfile、健康端点、`.env.example`、自动读取的 `.env` 与部署/升级/回滚说明。Compose 默认服务展开、Web 镜像构建和 Web 质量门槛通过，完整容器启动仍待本机执行。
 - `2026-07-15` — `[done]` 按项目 Owner 的本机调试需求增加 Flutter 1.2 秒启动过渡（首页并行加载、减少动态效果时跳过）、将 ImageAnalysis worker 移入默认 Compose profile 并在 Provider 关闭时安全空闲；API 镜像改为宿主架构原生构建。Linux/arm64 无本地 Paddle OCR/模型/专用系统库的调试镜像已构建，amd64 继续保留锁定模型与旧 OCR 回滚能力。
-- `2026-07-15` — `[in_progress]` 下一步完成人工确认接口、临时脱敏副本删除演练、synthetic NewAPI 联调和 iPad 真实脱敏预览回归；真实数据可在自托管内网使用，但不得跳过确认/哈希门禁，备份级联和生产监控仍在后续范围。
+- `2026-07-16` — `[done]` TASK-0006 代码闭环完成：人工确认接口生成 VerifiedQuestion，worker 成功/失败分支清理派生对象；synthetic NewAPI 联调、iPad 真实脱敏预览回归、备份级联和生产监控转为环境验收项。
 
 ## 不变量
 
@@ -355,16 +355,16 @@ git diff --check
 
 - 计划 ID：`PLAN-0007`
 - 关联任务：`TODO-012` / `ADR-0017`；进入执行时建立 `TASK-0007`
-- 状态：`PLANNED`
+- 状态：`IN_PROGRESS`
 - 优先级：`P0（下一优先级）`
-- Owner：Codex（待执行）；项目 Owner（用户，方案批准）
-- 创建/更新：`2026-07-15`
+- Owner：Codex（执行）；项目 Owner（用户，方案批准）
+- 创建/更新：`2026-07-16`
 
 ## 目标与边界
 
 用 PostgreSQL 本地账号密码和可撤销不透明会话替换当前自用 HMAC 家庭 Token。家长 Web 提供登录、首次强制改密和孩子账号管理；Flutter 孩子端使用孩子账号登录并把会话保存在系统安全存储。保持单 Household 自用，不接入短信、邮箱、社交登录、OIDC 或 MFA。
 
-本计划涉及 `services/api`、`packages/contracts`、`apps/web`、`apps/child_flutter`、数据库迁移和 `infra/compose`，必须分里程碑验收。当前 `TASK-0006` 仍是唯一活动任务；除非项目 Owner 明确暂停/结束 TASK-0006，否则本计划不标记 `IN_PROGRESS`，也不提前修改认证代码。
+本计划涉及 `services/api`、`packages/contracts`、`apps/web`、`apps/child_flutter`、数据库迁移和 `infra/compose`，必须分里程碑验收。`TASK-0006` 的代码闭环已完成，本计划按用户授权自动进入 `IN_PROGRESS`。
 
 ## 产品与安全不变量
 
@@ -377,14 +377,14 @@ git diff --check
 
 ## 实施阶段
 
-- [ ] 1. 契约与依赖评审：在 OpenAPI 增加 login/logout/me/change-password、账号列表/创建/禁用/启用/重置合同和稳定错误；评审并锁定 Argon2id Python 依赖与 Flutter 安全存储依赖，记录许可证、维护、供应链、体积和替代方案。
-- [ ] 2. 数据库与领域：新增前滚迁移（目标名 `0010_account_password_session`），建立 Account/Session/认证审计所需索引、唯一约束、并发空表初始化和旧数据兼容；downgrade 不删除学习/审计记录，生产回滚优先前向修复。
-- [ ] 3. API 认证核心：实现 Argon2id、统一登录错误、5 次失败/15 分钟锁定、256 bit 会话、摘要存储、30 天到期、退出/撤销、改密/禁用/重置联动和最近 10 分钟高风险再验证；补齐家庭/角色反向授权。
-- [ ] 4. 安全初始化：空账号表事务创建 `admin/admin123456`，设置 `must_change_password`；默认回环绑定、改密前数据阻断、并发启动只创建一次、改密后撤销引导会话。非引导环境存在默认凭据时拒绝开放数据接口。
-- [ ] 5. 家长 Web：增加 `/login`、首次改密、退出、账号设置和孩子账号管理页面；采用 HttpOnly/SameSite Cookie、CSRF、服务端路由保护和安全错误状态，不把会话注入 HTML/客户端 JS。
-- [ ] 6. 孩子 Flutter：增加用户名/密码登录、退出、会话过期恢复；通过经评审的安全存储保存会话，删除 `STUDY_API_TOKEN` 构建注入和 demo 登录旁路，验证 iOS/Android 生命周期与设备重启。
-- [ ] 7. Compose 与迁移切换：加入引导/会话配置，先部署账号表和兼容认证，再切 Web、Flutter，最后删除 HMAC 签发脚本和静态 Token 环境变量；demo headers 仅保留 local/CI。
-- [ ] 8. 完整质量门槛：运行格式/Lint/类型、OpenAPI 差异、迁移往返、API/Web/Flutter 单元与集成、浏览器登录 E2E、真实设备登录/退出、反向越权、CSRF/Cookie/限速/会话撤销和敏感信息扫描；同步 TASK、AI_CONTEXT、TESTING、RUNBOOK、CHANGELOG。
+- [x] 1. 契约与依赖评审：OpenAPI 已增加认证与账号管理合同；锁定 `argon2-cffi==25.1.0` 和 Flutter `flutter_secure_storage==9.2.4`，用途、替代和供应链影响已记录。
+- [x] 2. 数据库与领域：新增 `0011_account_password_session`（因 `0010` 已用于 VerifiedQuestion），建立 Account/AuthSession、唯一约束、索引、并发空表初始化和兼容迁移边界。
+- [x] 3. API 认证核心：已实现 Argon2id、统一登录错误、5 次失败/15 分钟锁定、256 bit 不透明会话摘要、30 天到期、退出/撤销、改密/禁用/重置联动、孩子账号管理的当前密码再验证和 Household/角色/ChildProfile 反向授权；认证生命周期已写入现有 `audit_events`，只保存稳定事件名与资源 UUID。
+- [x] 4. 安全初始化：空账号库事务创建 `admin/admin123456`，设置 `must_change_password`；回环限制、改密前数据阻断和改密后会话轮换已实现并测试。
+- [x] 5. 家长 Web：已增加 `/login`、首次改密、退出、账号列表、孩子账号创建/启停/重置；使用 HttpOnly/SameSite Cookie、CSRF 和服务端路由保护，孩子账号管理操作要求当前家长密码再验证。
+- [x] 6. 孩子 Flutter：已增加用户名/密码登录，并使用 `flutter_secure_storage` 保存会话；Capture API 使用会话 Bearer。真实 iPad 生命周期/重启验证待执行。
+- [x] 7. Compose 与迁移切换：Compose 已启用 password/postgres 认证和 Cookie 配置；随 TASK-0007 删除 auth mode、HMAC/Demo 兼容、静态 Web token 和 Web auth-required 开关。
+- [ ] 8. 完整质量门槛：API/Web/Flutter 本地质量门槛、OpenAPI/Schema 解析和 18 项 PostgreSQL/MinIO 集成已通过；迁移 downgrade/upgrade 往返、浏览器 E2E、真实设备登录/退出、备份恢复和正式敏感信息扫描仍待执行。
 
 ## 验收标准
 
@@ -393,14 +393,64 @@ git diff --check
 - [ ] 家长可以创建、查看状态、禁用/启用和重置同家庭孩子账号；不能查看既有密码，不能绑定其他家庭 ChildProfile。
 - [ ] 孩子可以登录自己的 Flutter 学习桌，只能访问绑定孩子；兄弟孩子、家长 API、跨家庭和枚举 ID 均被拒绝。
 - [ ] Web Cookie、CSRF、会话到期/撤销、失败锁定、退出、改密、账号禁用和管理员恢复均有正反向测试。
-- [ ] `STUDY_API_TOKEN`、HMAC 自用签发脚本和 Flutter 长期 Token 注入完成迁移并删除；旧客户端兼容窗口和回滚方式有记录。
+- [x] Compose 已移除 `STUDY_API_TOKEN`/长期 token 配置，Flutter 已移除长期 token 构建注入；TASK-0007 已删除 HMAC 签发脚本、Demo Header 和所有兼容开关。
 
 ## 发布与回滚
 
-发布分三步：先扩展数据库/合同并保留 legacy 兼容；再切换 Web 与 Flutter；最后关闭并删除旧 HMAC。每步都必须能独立验收。出现登录或授权问题时回滚应用版本并短期开启显式 legacy 模式，账号/会话表和审计保持不删；不得退回公开 demo headers、清空家庭数据或重写学习记录。
+发布切换已完成：扩展数据库/合同、切换 Web/Flutter、再删除旧 HMAC/Demo。出现登录或授权问题时优先前向修复；回滚到含旧认证路径的版本需项目 Owner 单独批准并限于隔离环境。账号/会话表和审计保持不删，不得清空家庭数据或重写学习记录。
 
 ## 剩余风险
 
 - 公开默认密码存在抢先登录风险，必须依赖回环引导和改密前数据阻断；如果未来要求开箱即用的局域网首次登录，应改为随机一次性密码/安装码并另行批准。
 - 无邮箱/短信/MFA 时，家长忘记密码只能使用本机恢复命令；服务器主机权限等同于家庭管理员权限。
 - 单家庭方案不解决公网多租户注册、账号恢复和身份合规；范围扩展必须新建 ADR。
+
+## 2026-07-16 执行记录
+
+- `[done]` TASK-0006 已完成代码闭环，PLAN-0007 自动启动。
+- `[done]` API/Web/Flutter/Compose 认证主链路已实现；新增账号绑定反向校验和家长重置密码入口。
+- `[done]` 认证生命周期审计已接入内存与 PostgreSQL 账号仓储：成功/失败/锁定/阻断登录、改密失败/成功、再认证失败、登出、孩子账号创建、启停和重置均只写稳定事件名、Household/资源 UUID 和时间；认证回归、Ruff、Mypy 通过。
+- `[done]` TASK-0007 已完成唯一密码认证和 Flutter 登录前服务端地址配置；API 122 项非集成/18 项 PostgreSQL-MinIO 集成、OpenAPI/Schema、Web 与 Flutter 本地质量门槛通过。
+- `[pending]` 仍需在 Compose、浏览器和 iPad 上完成迁移往返、Cookie/CSRF、真实登录退出与设备重启验收；未执行项不能报告为通过。
+
+---
+
+# PLANS.md — PLAN-0008 Ubuntu x86_64 与自托管 NewAPI 环境验收
+
+## 计划元数据
+
+- 计划 ID：`PLAN-0008`
+- 关联任务：`TASK-0006`、`PLAN-0007`、`TODO-008`、`TODO-012`、`ADR-0015`、`ADR-0016`、`ADR-0017`
+- 状态：`IN_PROGRESS`
+- Owner：Codex（执行）；项目 Owner（用户，Ubuntu/NewAPI 已提供）
+- 创建/更新：`2026-07-16`
+
+## 范围与安全边界
+
+在用户提供的 Ubuntu VM `192.168.1.4:22`、账号 `syin`、`x86_64` 环境验证自托管 Compose、锁定模型构建和 NewAPI OpenAI-compatible Adapter。只使用 synthetic 图片和 synthetic 题目；真实儿童图片、真实学习记录和原始 Provider 响应不得上传、写入日志或进入仓库。NewAPI 只接受用户确认且哈希绑定的脱敏副本，失败不得切换 Provider。
+
+`2026-07-16` 项目 Owner 进一步明确：运行时只保留“用户名+密码→可撤销会话”一种认证方式，删除 HMAC、Demo Header 和 Web 免登录开关；Flutter 必须在提交登录前允许验证、保存和更换服务端地址，地址变更时不得复用旧服务端会话。该收敛作为继续环境验收的前置增量，不扩大到短信、邮箱、MFA 或设备绑定。
+
+## 阶段
+
+- [x] 1. SSH、架构、Python 3.12、磁盘和 Docker 前置检查。
+- [x] 2. 安装 Ubuntu 官方 Docker Engine/Compose v2，启用 daemon，并加入 `syin` 的 docker 用户组。
+- [x] 3. 传输脱敏工作区、生成远程 `.env`、运行 Compose config 和 Alembic `0011` 前滚迁移。
+- [x] 4. 构建 Linux x86_64 API/Web 镜像，确认五份模型构建期 SHA-256 校验和运行时不自动下载；容器预检已增加显式锁定 Debian 13 运行层选项，其他版本/架构/模型门禁仍保持严格。
+- [ ] 5. 启动 PostgreSQL/Redis/MinIO/API/Web/worker，验证健康、账号首次改密、Cookie/CSRF 和孩子账号授权（Compose 健康、迁移、loopback bootstrap login 已通过；首次改密、Cookie/CSRF、孩子账号和 iPad 生命周期待验收）。
+- [x] 5a. 在再次部署前收敛认证面：已删除 API HMAC/Demo 路径、旧签发脚本与相关配置，OpenAPI 和 Web/Flutter 只使用密码登录后的 Cookie/Bearer Session；Flutter 登录页已提供持久化服务端地址配置，并覆盖地址验证与跨服务端会话清理测试。
+- [ ] 6. 使用 synthetic 脱敏图片配置 NewAPI 视觉模型，执行单 Provider `queued → extraction → VerifiedQuestion` 联调；不发送真实数据。`queued → extraction` 已通过；远端以家长/孩子会话调用人工确认生成 `VerifiedQuestion` 仍待验收。
+- [x] 7. 做停止/重启、迁移、worker 失败清理和日志敏感信息审查；新增稳定 Provider 错误码和可清理 live eval，并同步任务/测试/安全/运行文档。
+
+## 当前进度（2026-07-16）
+
+- Ubuntu 宿主确认 `Ubuntu 24.04 LTS`、`x86_64`、Python `3.12.3`；Docker `29.1.3`、Compose `2.40.3` 已安装。按项目 Owner 要求关闭该 VM IPv6，并为 Docker daemon 配置 `socks5://192.168.1.100:7893` 出网代理。
+- `/home/syin/study` 只接收排除 `.git`、依赖缓存、构建产物、`.env` 和图片的工作区；远端 `.env` 权限为 `600`，数据库/MinIO 密码由远端随机生成，NewAPI URL、Key 和 `gemini-3.1-flash-lite` 已配置并启用；Key 未写入仓库或输出。
+- Compose 已在远端启动并重启恢复：PostgreSQL、Redis、MinIO、API、Web、迁移和 worker 均正常；API/Web `/healthz`、`0011` 迁移、loopback bootstrap login、模型预置目录、无网络运行时模型路径和内存 synthetic OCR smoke 已验证。Cloudflare 曾以 1010 拦截 Python `urllib` 默认 User-Agent；Adapter 改用受控的 `study-api/0.5` 后，synthetic NewAPI live eval 已成功完成 `queued → extraction`，返回 `needs_confirmation=true`，派生副本已删除且数据库残留 Job 为 0。未发送真实图片或输出原始 Provider 响应。
+- 本次发现并修复 API Docker 构建上下文的 Python 缓存与 macOS AppleDouble 元数据排除，避免 Alembic 将 `*.pyc`/`._*.py` 当迁移脚本扫描。
+- 已修复 OCR 预检无法识别自身锁定 Debian 13 镜像层的问题：宿主仍要求 Ubuntu 24.04，只有镜像声明的 `STUDY_OCR_CONTAINER_RUNTIME=true` 才允许 Debian 13；远端重建后预检 `ready`，完整 4-case synthetic OCR eval 通过。
+- TASK-0007 认证收敛已在本地完成：OpenAPI `0.6.0`、API/Web/Flutter/Compose 只保留密码登录后的 Cookie/Bearer Session，Flutter 可在登录前配置服务端地址。API 122 项非集成/18 项 PostgreSQL-MinIO 集成、Web 完整质量命令和 Flutter 17 项测试通过；远端栈尚未用该增量重新部署。
+
+## 回滚
+
+只删除本次在 `/home/syin/study` 创建的部署目录和 Compose 项目（需用户明确授权后执行）；不删除 Docker Engine、系统包、其他容器或远程用户数据。NewAPI 异常时保持 `STUDY_NEWAPI_ENABLED=false` 并停止 worker，数据库迁移优先前向修复；Cloudflare 1010 的应用侧兼容修复只设置受限 User-Agent，不修改或绕过网关安全策略。

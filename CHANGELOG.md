@@ -4,14 +4,26 @@
 
 ## [Unreleased]
 
-尚无产品能力、部署或发布。
+尚无产品发布；已完成一次不含真实数据的 Ubuntu 自用 Compose 环境验收。
+
+- TASK-0006 代码闭环完成：新增 QuestionExtraction 人工确认生成/读取 `VerifiedQuestion`、`0010_verified_question` 迁移，以及 ImageAnalysis 派生对象成功/失败清理。
+- PLAN-0007 进入实现：新增 Argon2id 账号密码、`0011_account_password_session`、可撤销会话、首次改密、Web Cookie/CSRF、Flutter 安全存储登录、家长孩子账号管理和 Compose password 认证默认配置。
+- TASK-0007 收敛认证面：删除 API HMAC/Demo Header、签发脚本、旧配置和 Web 免登录/静态 Token 回退；OpenAPI `0.6.0` 业务端点只允许 Cookie/Bearer Session，Web 受保护页统一要求登录。旧 HMAC/Demo 客户端不再兼容。
+- Flutter 登录页新增服务端地址配置与持久化；地址需为受限 HTTP(S) 根 URL，变更地址会先清除旧服务端会话。登录、孩子档案和 Capture 共用该地址。
+- 认证生命周期已接入现有 `audit_events`：记录登录成功/失败/锁定/阻断、改密、再认证失败、登出和家长账号管理操作；审计不保存用户名、密码、哈希、令牌或 Cookie。
+- NewAPI 已完成 synthetic `queued → Extraction` 联调；真实视觉检测器、浏览器 E2E、首次改密后的 Cookie/CSRF、iPad 认证生命周期、远端人工确认和备份恢复仍未执行，不作为本次代码完成声明。
 
 ### Changed
 
+- 在用户提供的 Ubuntu 24.04 x86_64 VM 上完成 Compose 基础验收：Docker 29.1.3/Compose 2.40.3、PostgreSQL/Redis/MinIO/API/Web/migration/worker 健康，`0011` 前滚迁移、loopback bootstrap login、重启恢复和内存 synthetic OCR smoke 通过；NewAPI 保持关闭，未发送真实图片。为适配同步工作区的 macOS 元数据，API `.dockerignore` 现在排除所有层级的 Python 缓存、AppleDouble 和 `.DS_Store`，避免 Alembic 扫描非源码文件。
+- OCR 运行时预检增加显式锁定容器模式：宿主仍要求 Ubuntu 24.04，amd64 发布镜像仅在 `STUDY_OCR_CONTAINER_RUNTIME=true` 且运行层为 Debian 13 时通过 OS 检查；Linux、x86_64、Python/Paddle 版本及构建期模型标记门禁不变。
+- Ubuntu x86_64 锁定模型 synthetic smoke 已通过 4/4 cases（PP-OCRv6 medium 普通文本 3 cases、PP-FormulaNet_plus-M 公式 1 case），只产生人工确认候选，不调用外部 Provider。
+- NewAPI Adapter 现在发送 `Accept: application/json` 和受限、可配置的 `STUDY_NEWAPI_USER_AGENT`（默认 `study-api/0.5`），并拒绝控制字符以防止请求头注入。该修复处理了 Cloudflare 对 Python 默认 `urllib` User-Agent 的 1010 拦截；2026-07-16 远端 synthetic 图片成功完成 `queued → Extraction`，结果保持 `needs_confirmation=true`，临时派生对象和 synthetic 数据库记录均已清理。
+
 - Flutter 孩子端新增有限启动过渡：真实首页和档案请求从首帧开始在动画后方并行初始化，1.2 秒后平滑进入学习桌；系统启用减少动态效果时直接跳过动画。
 - Compose 的 ImageAnalysis worker 进入默认 profile；NewAPI 关闭时 worker 保持空闲，不读取图片或创建 Provider 客户端。API Dockerfile 改为按目标架构原生构建：Linux amd64 继续包含锁定 Paddle OCR 和模型，Linux ARM64 提供不含 Paddle 的 API/NewAPI 调试镜像；macOS ARM64 原生 Python 仍保留 Paddle 依赖。
-- 新增单家庭自托管 Docker Compose 部署：PostgreSQL/Redis/MinIO 持久卷、Alembic 一次性迁移、FastAPI API、Next.js 家长 Web 和 NewAPI ImageAnalysis worker；API 镜像现在包含迁移文件和 worker 脚本，Compose 从同目录 `infra/compose/.env` 自动注入变量。部署变量、Web Bearer token、NewAPI 外部地址、启动/升级/回滚步骤见 `infra/compose/README.md`。这不代表题目人工确认、脱敏副本清理、备份恢复或真实 NewAPI 联调已完成。
-- 项目 Owner 接受 ADR-0015/0016：Capture 目标路线调整为原图留在家庭边界，本地 PrivacySanitizer 使用 OCR/规则/轻量视觉只做不可逆脱敏，用户确认后由自用 NewAPI 兼容 Provider 结构化解析，题目再次人工确认后才进入 Tutor；自用 Bearer 令牌作为方便认证方式。ADR-0012 的本地完整 OCR 默认路线已被替代并保留为回滚实现。
+- 新增单家庭自托管 Docker Compose 部署：PostgreSQL/Redis/MinIO 持久卷、Alembic 一次性迁移、FastAPI API、Next.js 家长 Web 和 NewAPI ImageAnalysis worker；API 镜像包含迁移文件和 worker 脚本，Compose 从同目录 `infra/compose/.env` 自动注入变量。部署变量、账号密码首次引导、NewAPI 外部地址、启动/升级/回滚步骤见 `infra/compose/README.md`。这不代表备份恢复或真实 NewAPI 联调已完成。
+- 项目 Owner 接受 ADR-0015/0016：Capture 目标路线调整为原图留在家庭边界，本地 PrivacySanitizer 只做不可逆脱敏，用户确认后由自用 NewAPI 兼容 Provider 结构化解析，题目再次人工确认后才进入 Tutor。ADR-0016 最初的 HMAC 认证部分随后被 ADR-0017/TASK-0007 替代并已删除；NewAPI 边界继续有效。
 - 项目 Owner 此前接受 ADR-0010～0012：本地 MinIO 私有对象存储/短期预签名上传、Capture 图片默认保留与级联删除、本地 PaddleOCR 与默认外部 OCR 成本 0 元。其中 ADR-0012 现作为已实现旧路线和迁移历史保留，不再是目标默认解析路由。
 - 锁定 API 服务端 boto3 `1.43.46`、Pillow `12.3.0`、PaddleOCR `3.7.0` 与 CPU PaddlePaddle `3.3.1`；新增私有 MinIO 预签名 Adapter、`0.5.0` Capture 上传签发/服务端确认路径、`0003`/`0004` 保留字段与过期清理器、`0005` OCR 候选结果事务持久化、家长保存/立即删除图片入口、按 Household/Child 边界的 Capture 对象级联删除编排、local/CI 家长删除顺序与幂等入口、构建期模型归档 SHA-256 校验、拒绝自动下载模型的 PaddleOCR Adapter、OCR 前置对象有界读取/图片容器头校验/完整像素解码/无 EXIF 规范化重编码、文本结果纯解析、临时文件执行边界和无网络 synthetic 真实模型烟测。Ubuntu 原生基准/真实题型评测、生产 Profile/派生对象/备份级联仍未完成。
 - 新增仅使用仓库合成样本的 `ocr-synthetic-v1` 固定评测入口；6 个 OCR 信任边界 cases 通过，明确不调用 Provider、网络或图片文件。Tutor/提示层级评测仍未实现。
@@ -22,9 +34,8 @@
 - 新增 ADR-0015 的 Provider-neutral PrivacySanitizer 核心与 JSON Schema：本地元数据清除、敏感区域实色覆盖、不可逆重编码、低置信度/无法安全遮挡阻断，以及 6-case synthetic 脱敏评测；新增 OCR/规则敏感区域信号和 Flutter 本地脱敏预览/手动涂抹，确认后只生成并上传脱敏 PNG。
 - Capture 上传确认现在会读取私有对象并核验实际 SHA-256 与声明哈希一致，避免确认错误或被替换的脱敏副本。
 - 新增 `0008_image_analysis_job`/`0009_question_extraction`、ImageAnalysis queued/blocked API、未确认提取读取合同和 PostgreSQL 可恢复 worker；仅在 NewAPI 显式启用时排队，Provider 失败只保存稳定错误码，提取结果不会自动进入 Tutor。
-- Web/Flutter 支持从服务端或 `--dart-define=STUDY_API_TOKEN` 注入自用 Bearer 令牌；默认仍是 local demo headers。
 - 新增 Provider-free `offline-tutor-policy.v1` 与 `tutor-hint.v1`：仅消费人工确认题目的结构字段，提供 1～3 级提示，响应强制不含直接答案且成本为 0 元；新增 3-case synthetic eval。云 Tutor Provider 和 TutorTurn 持久化仍未接入。
-- Web/PWA 家长工作台从空壳升级为简洁明亮的学习概览，读取现有 Household-scoped children/tasks/devices API，断开 API 时显示安全空状态；认证仍未实现。
+- Web/PWA 家长工作台从空壳升级为简洁明亮的学习概览，读取现有 Household-scoped children/tasks/devices API，断开 API 时显示安全空状态；当前统一使用家长账号密码和 HttpOnly 会话。
 - 新增一次性本地 `run_ocr_worker.py` 入口；仅使用带构建期 SHA-256 标记的本地模型、PostgreSQL 和 MinIO，CLI 不输出配置或 Provider 详情。
 - 新增 child-only OCR 结果读取合同与路由；服务端再次校验 Household、绑定 Child 和 Capture，候选文本保持人工确认状态，不升级为已验证学习事实。
 - 新增 child-only OCR 候选确认接口；服务端只接受候选 ID，按 Household/Child/Capture 重新校验后复用 CaptureCorrection 追加写与版本幂等，原始 OCR 结果保持不可变。

@@ -1,5 +1,6 @@
 from uuid import uuid4
 
+from auth_helpers import session_headers
 from fastapi.testclient import TestClient
 
 from study_api.main import create_app
@@ -8,17 +9,16 @@ HOUSEHOLD_A = "00000000-0000-0000-0000-000000000001"
 CHILD_A = "00000000-0000-0000-0000-000000000101"
 
 
-def _principal(*, role: str = "parent", child_id: str | None = None) -> dict[str, str]:
-    headers = {"X-Demo-Household-Id": HOUSEHOLD_A, "X-Demo-Role": role}
-    if child_id is not None:
-        headers["X-Demo-Child-Id"] = child_id
-    return headers
+def _principal(
+    client: TestClient, *, role: str = "parent", child_id: str | None = None
+) -> dict[str, str]:
+    return session_headers(client, role=role, child_id=child_id)
 
 
 def _corrected_capture(client: TestClient) -> dict[str, object]:
     task = client.post(
         f"/households/{HOUSEHOLD_A}/tasks",
-        headers={**_principal(), "Idempotency-Key": f"tutor-task-{uuid4()}"},
+        headers={**_principal(client), "Idempotency-Key": f"tutor-task-{uuid4()}"},
         json={
             "child_id": CHILD_A,
             "title": "Tutor synthetic task",
@@ -29,7 +29,7 @@ def _corrected_capture(client: TestClient) -> dict[str, object]:
     session = client.post(
         f"/households/{HOUSEHOLD_A}/tasks/{task['id']}/sessions",
         headers={
-            **_principal(role="child", child_id=CHILD_A),
+            **_principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": f"tutor-session-{uuid4()}",
         },
         json={"expected_task_version": task["version"]},
@@ -37,7 +37,7 @@ def _corrected_capture(client: TestClient) -> dict[str, object]:
     capture = client.post(
         f"/households/{HOUSEHOLD_A}/sessions/{session['id']}/captures",
         headers={
-            **_principal(role="child", child_id=CHILD_A),
+            **_principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": f"tutor-capture-{uuid4()}",
         },
         json={
@@ -49,7 +49,7 @@ def _corrected_capture(client: TestClient) -> dict[str, object]:
     correction = client.post(
         f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/corrections",
         headers={
-            **_principal(role="child", child_id=CHILD_A),
+            **_principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": f"tutor-correction-{uuid4()}",
         },
         json={"expected_capture_version": capture["version"], "corrected_text": "3/4 + 1/8 = ?"},
@@ -87,7 +87,7 @@ def test_tutor_hint_requires_corrected_capture_and_returns_no_answer() -> None:
     response = client.post(
         f"/households/{HOUSEHOLD_A}/tutor/hints",
         headers={
-            **_principal(role="child", child_id=CHILD_A),
+            **_principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": "tutor-hint-001",
         },
         json=payload,
@@ -108,13 +108,13 @@ def test_tutor_hint_rejects_parent_or_child_mismatch() -> None:
     }
     parent = client.post(
         f"/households/{HOUSEHOLD_A}/tutor/hints",
-        headers={**_principal(), "Idempotency-Key": "tutor-hint-parent"},
+        headers={**_principal(client), "Idempotency-Key": "tutor-hint-parent"},
         json=payload,
     )
     mismatch = client.post(
         f"/households/{HOUSEHOLD_A}/tutor/hints",
         headers={
-            **_principal(role="child", child_id=CHILD_A),
+            **_principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": "tutor-hint-mismatch",
         },
         json={**payload, "child_id": "00000000-0000-0000-0000-000000000102"},

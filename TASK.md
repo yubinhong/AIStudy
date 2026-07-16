@@ -1,8 +1,51 @@
-# TASK.md — TASK-0006 Capture 与人工校正安全基础
+# TASK.md — TASK-0007 认证面收敛与 Flutter 服务端地址配置
 
 ## 任务元数据
 
-- 状态：`IN_PROGRESS`
+- 状态：`COMPLETE（代码与本地质量门槛完成；远端部署和真实设备验收保留在 PLAN-0008）`
+- 类型：`FEATURE / SECURITY`
+- 优先级：`P0`
+- Owner：Codex（执行）；项目 Owner（用户，明确要求）
+- 创建/更新：`2026-07-16`
+- 关联：`PLAN-0008` 阶段 5a、`ADR-0017`、`TODO-012`
+
+## 1. 目标与范围
+
+运行时只保留家长/孩子“用户名+密码”登录，登录成功后分别使用 Web HttpOnly Cookie 或 Flutter Bearer Session 承载同一类可撤销会话。删除 HMAC Token、Demo Header、Web 认证旁路、签发脚本和对应契约/测试/配置。
+
+Flutter 登录界面在用户提交账号密码前提供服务端基础地址编辑和持久化；仅允许无用户信息、查询和片段的 HTTP(S) 地址。服务端地址变更必须清除本地旧会话，防止将旧 Token 发往新服务端。
+
+## 2. 验收标准
+
+- [x] API 不再读取 `STUDY_AUTH_MODE`/`STUDY_AUTH_SECRET`，不接受 HMAC 或 `X-Demo-*` Header，运行时只认可密码登录产生的未撤销会话。
+- [x] OpenAPI 业务端点只声明 `SessionCookie`/`BearerSession`，Web 无免登录开关或 Demo Header 回退，Compose 无旧认证配置。
+- [x] Flutter 登录前可编辑并保存服务端地址；登录、孩子资料和 Capture 共用该地址，地址变更不复用旧会话。
+- [x] API/OpenAPI/Web/Flutter 相关单测、格式、Lint/类型和构建门槛通过；无密钥、真实数据或意外生成物。
+- [x] 同步 ADR、架构、安全、测试、运行手册和变更记录，记录该破坏性契约收敛的升级与回滚方案。
+
+## 3. 兼容、回滚与风险
+
+- 这是用户明确批准的破坏性安全收敛；旧 HMAC/Demo 客户端必须升级，不保留运行时兼容开关。
+- 已签发的 HMAC Token 在升级后立即失效；现有密码账号和会话表不迁移、不删除。
+- 回滚只能回滚到上一应用版本，不保证旧 HMAC/Demo 路径安全；若必须临时回退，需项目 Owner 再次明确批准并限制在隔离环境。
+- 自托管 LAN 可使用 HTTP 调试；公网或生产必须由反向代理提供 HTTPS。
+
+## 4. 完成记录
+
+- 删除 API HMAC/Demo 认证器、旧 Token 签发脚本、环境开关和对应契约；业务测试改用真实账号密码创建的可撤销会话，并覆盖旧凭据被拒绝。
+- Web 删除 Demo Profile、静态 Token 和免登录回退，工作台、账号管理和首次改密路由统一由 Session Cookie 保护。
+- Flutter 新增登录前服务端根地址校验与安全持久化；登录、孩子档案和 Capture 统一读取该地址，更换地址先删除旧会话。
+- 验证：API Ruff/Mypy、122 项非集成和 18 项 PostgreSQL/MinIO 集成通过；OpenAPI/JSON Schema 和认证 Scheme 检查通过；Web 格式/Lint/类型/2 项单测/生产构建通过；Flutter 格式/分析/17 项测试通过；Compose 本机配置解析通过；`git diff --check` 通过。
+- 未执行：未重新部署远端 Ubuntu，未运行浏览器 E2E、实体 iPad 登录/退出/重启生命周期和备份恢复。Web 本地验证使用 Node 20/pnpm 9，虽全部通过但产生 engine warning；锁定容器仍使用 Node 24.18/pnpm 11.7。
+- 回滚：优先前向修复；如必须回退应用版本，保留 `Account`/`AuthSession`/审计数据，不恢复已撤销会话。重新启用 HMAC/Demo 需项目 Owner 另行批准并限制在隔离环境。
+
+---
+
+# 历史任务：TASK-0006 Capture 与人工校正安全基础
+
+## 任务元数据
+
+- 状态：`COMPLETE（代码闭环；真实 Provider/设备/备份验证作为环境验收项保留）`
 - 类型：`FEATURE`
 - 优先级：`P1`
 - Owner：Codex（执行）；项目 Owner（用户，明确要求继续 TODO-008）
@@ -16,13 +59,13 @@
 
 本任务包含：Capture OpenAPI 增量、API 领域/仓储/迁移、Household/child 授权、版本冲突与幂等、合成 PostgreSQL 集成测试，以及必要的架构/安全/运行记录。
 
-本任务不包含：商业化、多地区、第三方 IdP、复杂监护人流程或外部商业 Provider。按 ADR-0010～0016，本地 synthetic 环境已实现相机/相册选择、MinIO 私有上传、服务端确认（含对象实际 SHA-256 核验）、旧 OCR 入队/Job 状态轮询/候选人工确认、Provider-neutral Schema、PrivacySanitizer 核心/规则信号、Flutter 本地脱敏预览确认、ImageAnalysis queued/blocked API、Bearer 认证、NewAPI Adapter、0009 提取结果持久化、可恢复 worker 和无 Provider offline Tutor Policy 降级提示；不把真实原图发出，也不把未确认提取伪装成业务事实。S3/OCR 运行时和模型版本已锁定，人工确认接口、真实视觉检测器、临时副本清理和备份删除工作流仍须实现。local/CI 已提供合成孩子档案删除入口、OCR 输入规范化边界、候选结果持久化和 Tutor synthetic eval 边界。
+本任务不包含：商业化、多地区、第三方 IdP、复杂监护人流程或外部商业 Provider。按 ADR-0010～0016，本地 synthetic 环境已实现相机/相册选择、MinIO 私有上传、服务端确认（含对象实际 SHA-256 核验）、旧 OCR 入队/Job 状态轮询/候选人工确认、Provider-neutral Schema、PrivacySanitizer 核心/规则信号、Flutter 本地脱敏预览确认、ImageAnalysis queued/blocked API、Bearer 认证、NewAPI Adapter、0009 提取结果持久化、可恢复 worker、人工确认生成 VerifiedQuestion 和无 Provider offline Tutor Policy 降级提示；不把真实原图发出，也不把未确认提取伪装成业务事实。S3/OCR 运行时和模型版本已锁定，真实视觉检测器、实际 NewAPI 联调和备份恢复仍属于环境验收项。local/CI 已提供合成孩子档案删除入口、OCR 输入规范化边界、候选结果持久化和 Tutor synthetic eval 边界。
 
 `2026-07-15` 架构调整：项目 Owner 接受 ADR-0015，目标路线改为本地 `PrivacySanitizer` 只用 OCR/规则/轻量视觉检测敏感区域，用户确认不可逆脱敏副本后由单一获批云端视觉 Provider 解析照片。现有 text/formula OCR Job/结果链路是已实现的旧路线和可关闭回滚能力，不再是目标默认解析器。本轮先实现不依赖云 Provider 的脱敏核心、Provider-neutral Schema 和 synthetic eval，不接入云 Provider 或真实图片。
 
 随后项目 Owner 接受 ADR-0016 并明确本产品按自用、自托管 NewAPI 推进；因此当前实现增加了自用 Bearer、显式 NewAPI 开关和 queued worker，但实际 Provider 联调与人工确认仍单独保留为未完成项。
 
-项目 Owner 随后批准用家长/孩子账号密码和可撤销会话替换 HMAC Bearer。该变更已记录为 ADR-0017、PLAN-0007 和 TODO-012，但不纳入本 Capture 活动任务：本轮只同步开发计划和长期文档，没有修改认证代码、OpenAPI、数据库或 Compose；TASK-0006 完成或被 Owner 明确暂停前不得启动 TASK-0007。
+项目 Owner 随后批准用家长/孩子账号密码和可撤销会话替换 HMAC Bearer。该变更已记录为 ADR-0017、PLAN-0007 和 TODO-012；本任务完成后已自动进入 PLAN-0007，认证代码、OpenAPI、数据库和 Compose 切换不再属于本 Capture 任务。
 
 ## 2. 已知冲突与实施假设
 
@@ -39,7 +82,7 @@
 - [x] Capture 初始必须要求校正；校正追加写、幂等重放和版本冲突可验证，审计中无原始题目或校正文本。
 - [x] PostgreSQL 迁移和仓储在同一事务处理 Capture、校正、幂等记录与审计；验证迁移回滚/前滚、重复请求和并发校正。
 - [x] 已记录真实媒体、OCR Provider、设备权限/离线 SQLite 与生产生命周期仍未实现的原因、回滚方式和下一步。
-- [x] 已以 ADR-0015/0016 记录本地脱敏/自托管视觉职责、原图不外发、单 Provider、识别/Tutor 分离、临时副本删除、旧 OCR 兼容迁移与回滚；当前已实现 Adapter、queued worker 和未确认提取落库，人工确认和生命周期演练仍未完成。
+- [x] 已以 ADR-0015/0016 记录本地脱敏/自托管视觉职责、原图不外发、单 Provider、识别/Tutor 分离、临时副本删除、旧 OCR 兼容迁移与回滚；当前已实现 Adapter、queued worker、未确认提取落库、人工确认生成 VerifiedQuestion 和成功/失败清理分支。真实视觉检测器、NewAPI 实例联调、iPad 回归和备份生命周期演练仍未执行。
 
 ## 4. 验证与回滚
 
@@ -97,8 +140,15 @@
 - `2026-07-15`：新增无 Provider 的 `offline-tutor-policy.v1`，只消费 `VerifiedQuestion` 的结构字段，提供 1～3 级提示、直接答案为空和 0 元成本的固定响应；新增 synthetic eval。Flutter 思考页同步支持第 3 级提示。该降级策略不代表任何云 Tutor 已获批准。
 - `2026-07-15`：接入 `LocalPrivacyDetector` 的敏感标签/规则区域信号，新增 Flutter 本地脱敏预览、手动涂抹、不可逆 PNG 生成与 SHA-256 计算；拍题上传路径只接受确认后的脱敏字节，原图不进入上传客户端。Widget/analyze 已通过；真实 iPad 渲染和手动涂抹仍需设备人工验证。
 - `2026-07-15`：项目 Owner 接受 ADR-0016，明确自用单家庭 Bearer 令牌和项目 Owner 自行部署 NewAPI；新增 HMAC token 签发/解析、OpenAI-compatible Adapter、显式开关和 Web/Flutter Bearer 注入边界，默认 Provider 关闭。
-- `2026-07-15`：ImageAnalysis 从 receipt-only blocked 扩展为安全条件满足且 NewAPI 开启时 queued；新增 `0009_question_extraction`、未确认提取结果仓储、PostgreSQL 行锁/stale lease worker、提取读取合同和失败稳定状态。110 项 API 非集成、18 项 PostgreSQL/MinIO 集成、OpenAPI 21 paths/34 schemas/6 JSON schemas、Flutter/Web 门槛通过；实际 NewAPI 联调和人工确认接口仍待完成。
+- `2026-07-15`：ImageAnalysis 从 receipt-only blocked 扩展为安全条件满足且 NewAPI 开启时 queued；新增 `0009_question_extraction`、未确认提取结果仓储、PostgreSQL 行锁/stale lease worker、提取读取合同和失败稳定状态。110 项 API 非集成、18 项 PostgreSQL/MinIO 集成、OpenAPI 21 paths/34 schemas/6 JSON schemas、Flutter/Web 门槛通过；当时实际 NewAPI 联调和人工确认接口仍待完成，后续已补齐人工确认代码，真实 Provider 联调仍保留为环境验收。
 - `2026-07-15`：补齐自用 Docker Compose 部署：API 镜像复制 `migrations/`、`alembic.ini` 和 worker 脚本；Compose 增加 PostgreSQL/Redis/MinIO 持久卷、一次性 `migrate`、API healthcheck、默认 ImageAnalysis worker 和家长 Web；新增 `infra/compose/.env.example` 和自动读取的 `infra/compose/.env` 部署方式。Compose config、`linux/amd64` API/迁移镜像构建、ARM64 Web standalone 镜像、Web 格式/Lint/类型/测试/构建、镜像内容检查和 110 项 API 非集成测试通过；完整容器启动、真实 NewAPI 联调、人工确认接口、脱敏副本清理和备份恢复仍待完成。
-- `2026-07-15`：按本机 Apple Silicon 调试需求增加 Flutter 1.2 秒有限启动过渡，首页档案加载与动画并行，减少动态效果时跳过；Compose 的 ImageAnalysis worker 移入默认 profile，NewAPI 关闭时以空闲实现保持健康且不读取图片/连接 Provider。Dockerfile 取消固定 amd64，依赖标记保留 macOS ARM64 和 Linux x86_64 Paddle，同时为缺少 PaddlePaddle 3.3.1 Linux aarch64 wheel 的原生 ARM 调试镜像跳过 Paddle/模型和专用系统库。Compose 静态配置无额外 profile，`linux/arm64` 镜像构建、110 项 API 单元、13 项 Flutter 测试及静态检查通过；ARM 镜像容器启动烟测和完整 Compose 启动未执行。
+- `2026-07-15`：按本机 Apple Silicon 调试需求增加 Flutter 1.2 秒有限启动过渡，首页档案加载与动画并行，减少动态效果时跳过；Compose 的 ImageAnalysis worker 移入默认 profile，NewAPI 关闭时以空闲实现保持健康且不读取图片/连接 Provider。Dockerfile 取消固定 amd64，依赖标记保留 macOS ARM64 和 Linux x86_64 Paddle，同时为缺少 PaddlePaddle 3.3.1 Linux aarch64 wheel 的原生 ARM 调试镜像跳过 Paddle/模型和专用系统库。Compose 静态配置无额外 profile，`linux/arm64` 镜像构建、110 项 API 单元、13 项 Flutter 测试及静态检查通过；当时完整 Compose 启动未执行，后续已在 Ubuntu x86_64 VM 完成基础启动验收。
 - `2026-07-15`：项目 Owner 批准下一阶段改用账号密码。已接受 ADR-0017，建立 PLAN-0007/TODO-012，并同步 PRD/架构/安全/测试/运维边界；一次性 `admin/admin123456` 仅允许空库、本机首次登录，改密前阻断家庭数据。当前 HMAC Bearer 仍是运行时事实，本轮未修改代码、合同、迁移或 Compose。
-- 下一步：在 iPad 上人工验证真实渲染和手动涂抹，补齐真实视觉检测器本地适配与临时副本删除演练；具体云 Provider、条款、区域、预算、真实图片和 Tutor 仍需批准；Ubuntu 的完整题目 PaddleOCR 真实评测不再是默认路线的优先项。
+- `2026-07-16`：完成 `0010_verified_question`、人工确认/读取 API、VerifiedQuestion 内存/PostgreSQL 仓储和迁移测试；验证请求带 Capture 版本、Household/Child 绑定和幂等键，未确认提取保持不可变。
+- `2026-07-16`：ImageAnalysis worker 成功后立即删除脱敏派生对象，失败路径也尝试删除并保留稳定失败状态；新增清理成功/失败回归测试。TASK-0006 的代码验收完成，真实 NewAPI、真实视觉检测器、iPad 回归和备份恢复仍是环境验收项。
+- `2026-07-16`：在 Ubuntu 24.04 x86_64 VM 完成自用 Compose 基础验收：Docker/Compose、PostgreSQL/Redis/MinIO/API/Web/迁移/worker 健康，`0011` 前滚、loopback bootstrap login、重启恢复和内存 synthetic OCR smoke 通过；容器内 OS 预检因 Debian 13 运行层而保持 blocked。NewAPI key 未提供，Provider 保持关闭；首次改密、Cookie/CSRF、孩子账号/iPad 生命周期、真实视觉链路和备份恢复仍未完成。
+- `2026-07-16`：修复 OCR 预检与发布镜像运行层的契约：宿主继续要求 Ubuntu 24.04，amd64 镜像通过显式 `STUDY_OCR_CONTAINER_RUNTIME=true` 接受锁定 Debian 13；新增单元覆盖，远端完整 4-case OCR eval 待重建镜像后执行。
+- `2026-07-16`：远端重建 x86_64 API 镜像后，OCR 预检输出 `ready`，`ocr-model-synthetic-v1` 4/4（普通文本 3、公式 1）通过；未发送图片到 NewAPI。
+- `2026-07-16`：项目 Owner 配置 NewAPI key 后启用远端 Provider；新增可清理的合成 live eval，主机和 API 容器访问 `newapi.iuhui.site` 均收到 HTTP 403，未取得 Extraction。worker 新增稳定 Provider 错误码，失败任务、MinIO 对象和合成数据库记录已清理。
+- `2026-07-16`：定位 HTTP 403 为 Cloudflare 1010 对 Python 默认 `urllib` User-Agent 的拦截；Adapter 新增受限 `STUDY_NEWAPI_USER_AGENT`（默认 `study-api/0.5`）、`Accept: application/json` 和完整 `question-extraction.v1` 字段提示。远端重建 API/worker 后，synthetic live eval 成功得到 `needs_confirmation=true` 的 Extraction，脱敏派生对象删除，PostgreSQL synthetic Job 残留为 0；不输出原始 Provider 响应或发送真实图片。远端人工确认生成 VerifiedQuestion 仍待 PLAN-0008 验收。
+- 下一步：继续执行 `PLAN-0008` 的远端人工确认、Cookie/CSRF、iPad 会话生命周期和备份恢复验收；真实视觉检测器和固定视觉评测仍作为后续实现项。

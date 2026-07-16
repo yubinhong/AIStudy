@@ -1,18 +1,22 @@
 import {
-  loadDemoChildren,
-  loadDemoDevices,
-  loadDemoTasks,
+  loadChildren,
+  loadDevices,
+  loadTasks,
   readDateLabel,
   readNumber,
   readString,
-} from "@/lib/demo-profile";
+} from "@/lib/household-data";
 import Link from "next/link";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 export default async function HomePage() {
+  const session = (await cookies()).get("study_session");
+  if (!session) redirect("/login");
   const [children, tasks, devices] = await Promise.all([
-    loadDemoChildren(),
-    loadDemoTasks(),
-    loadDemoDevices(),
+    loadChildren(),
+    loadTasks(),
+    loadDevices(),
   ]);
   const firstChild = children[0];
   const firstTask = tasks[0];
@@ -128,9 +132,9 @@ export default async function HomePage() {
               <p className="section-kicker">家庭成员</p>
               <h2 id="child-heading">孩子档案</h2>
             </div>
-            <button className="text-button" type="button">
+            <Link className="text-button" href="/accounts">
               管理
-            </button>
+            </Link>
           </div>
           {firstChild ? (
             <div className="child-row">

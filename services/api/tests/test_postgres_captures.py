@@ -5,6 +5,7 @@ from urllib.request import Request, urlopen
 from uuid import UUID, uuid4
 
 import pytest
+from auth_helpers import session_headers
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -81,11 +82,10 @@ class FakeObjectStorage:
         self.deleted.append(object_key)
 
 
-def _headers(role: str = "parent", child_id: str | None = None) -> dict[str, str]:
-    headers = {"X-Demo-Household-Id": HOUSEHOLD_A, "X-Demo-Role": role}
-    if child_id is not None:
-        headers["X-Demo-Child-Id"] = child_id
-    return headers
+def _headers(
+    client: TestClient, role: str = "parent", child_id: str | None = None
+) -> dict[str, str]:
+    return session_headers(client, role=role, child_id=child_id)
 
 
 def _client(
@@ -126,7 +126,7 @@ class SyntheticOcrAdapter:
 def _session(client: TestClient) -> str:
     task = client.post(
         f"/households/{HOUSEHOLD_A}/tasks",
-        headers={**_headers(), "Idempotency-Key": f"pg-capture-task-{uuid4()}"},
+        headers={**_headers(client), "Idempotency-Key": f"pg-capture-task-{uuid4()}"},
         json={
             "child_id": CHILD_A,
             "title": "Synthetic PostgreSQL capture task",
@@ -137,7 +137,7 @@ def _session(client: TestClient) -> str:
     response = client.post(
         f"/households/{HOUSEHOLD_A}/tasks/{task['id']}/sessions",
         headers={
-            **_headers("child", CHILD_A),
+            **_headers(client, "child", CHILD_A),
             "Idempotency-Key": f"pg-capture-session-{uuid4()}",
         },
         json={"expected_task_version": task["version"]},
@@ -153,7 +153,7 @@ def test_postgresql_capture_correction_is_transactional_and_idempotent() -> None
         capture_response = client.post(
             f"/households/{HOUSEHOLD_A}/sessions/{session_id}/captures",
             headers={
-                **_headers("child", CHILD_A),
+                **_headers(client, "child", CHILD_A),
                 "Idempotency-Key": f"pg-capture-create-{uuid4()}",
             },
             json={
@@ -165,7 +165,7 @@ def test_postgresql_capture_correction_is_transactional_and_idempotent() -> None
         assert capture_response.status_code == 201
         capture = capture_response.json()
         headers = {
-            **_headers("child", CHILD_A),
+            **_headers(client, "child", CHILD_A),
             "Idempotency-Key": f"pg-capture-correction-{uuid4()}",
         }
         payload = {"expected_capture_version": 1, "corrected_text": "synthetic corrected text"}
@@ -227,7 +227,7 @@ def test_postgresql_ocr_candidate_confirmation_reuses_capture_correction_transac
         capture_response = client.post(
             f"/households/{HOUSEHOLD_A}/sessions/{session_id}/captures",
             headers={
-                **_headers("child", CHILD_A),
+                **_headers(client, "child", CHILD_A),
                 "Idempotency-Key": f"pg-ocr-confirm-create-{uuid4()}",
             },
             json={
@@ -259,7 +259,7 @@ def test_postgresql_ocr_candidate_confirmation_reuses_capture_correction_transac
             f"{result.id}/confirmations"
         )
         headers = {
-            **_headers("child", CHILD_A),
+            **_headers(client, "child", CHILD_A),
             "Idempotency-Key": f"pg-ocr-confirm-{uuid4()}",
         }
         payload = {
@@ -304,7 +304,7 @@ def test_postgresql_capture_upload_keeps_object_key_internal_and_confirms_once()
         upload_response = client.post(
             f"/households/{HOUSEHOLD_A}/sessions/{session_id}/capture-uploads",
             headers={
-                **_headers("child", CHILD_A),
+                **_headers(client, "child", CHILD_A),
                 "Idempotency-Key": f"pg-capture-upload-{uuid4()}",
             },
             json={
@@ -322,7 +322,7 @@ def test_postgresql_capture_upload_keeps_object_key_internal_and_confirms_once()
         confirmation = client.post(
             f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/upload-confirmations",
             headers={
-                **_headers("child", CHILD_A),
+                **_headers(client, "child", CHILD_A),
                 "Idempotency-Key": f"pg-capture-confirm-{uuid4()}",
             },
             json={"expected_capture_version": capture["version"]},
@@ -369,7 +369,7 @@ def test_postgresql_image_analysis_receipt_is_household_scoped_and_idempotent() 
         upload_response = client.post(
             f"/households/{HOUSEHOLD_A}/sessions/{session_id}/capture-uploads",
             headers={
-                **_headers("child", CHILD_A),
+                **_headers(client, "child", CHILD_A),
                 "Idempotency-Key": f"pg-image-analysis-upload-{uuid4()}",
             },
             json={
@@ -384,7 +384,7 @@ def test_postgresql_image_analysis_receipt_is_household_scoped_and_idempotent() 
         confirmation = client.post(
             f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/upload-confirmations",
             headers={
-                **_headers("child", CHILD_A),
+                **_headers(client, "child", CHILD_A),
                 "Idempotency-Key": f"pg-image-analysis-confirm-{uuid4()}",
             },
             json={"expected_capture_version": capture["version"]},
@@ -409,7 +409,7 @@ def test_postgresql_image_analysis_receipt_is_household_scoped_and_idempotent() 
             "user_confirmed": True,
         }
         headers = {
-            **_headers("child", CHILD_A),
+            **_headers(client, "child", CHILD_A),
             "Idempotency-Key": "pg-image-analysis-start",
         }
         first = client.post(
@@ -429,7 +429,7 @@ def test_postgresql_image_analysis_receipt_is_household_scoped_and_idempotent() 
 
         read = client.get(
             f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/image-analysis-jobs/{first.json()['id']}",
-            headers=_headers("child", CHILD_A),
+            headers=_headers(client, "child", CHILD_A),
         )
         assert read.status_code == 200
         assert read.json()["sanitized_derivative_sha256"] == content_hash
@@ -457,7 +457,7 @@ def test_postgresql_minio_capture_upload_confirmation_is_end_to_end_synthetic() 
         upload_response = client.post(
             f"/households/{HOUSEHOLD_A}/sessions/{session_id}/capture-uploads",
             headers={
-                **_headers("child", CHILD_A),
+                **_headers(client, "child", CHILD_A),
                 "Idempotency-Key": f"pg-minio-capture-upload-{uuid4()}",
             },
             json={
@@ -488,7 +488,7 @@ def test_postgresql_minio_capture_upload_confirmation_is_end_to_end_synthetic() 
         confirmation = client.post(
             f"/households/{HOUSEHOLD_A}/captures/{capture_id}/upload-confirmations",
             headers={
-                **_headers("child", CHILD_A),
+                **_headers(client, "child", CHILD_A),
                 "Idempotency-Key": f"pg-minio-capture-confirm-{uuid4()}",
             },
             json={"expected_capture_version": upload["capture"]["version"]},
@@ -524,7 +524,7 @@ def test_postgresql_minio_ocr_worker_pipeline_is_visible_to_child_routes() -> No
         upload_response = client.post(
             f"/households/{HOUSEHOLD_A}/sessions/{session_id}/capture-uploads",
             headers={
-                **_headers("child", CHILD_A),
+                **_headers(client, "child", CHILD_A),
                 "Idempotency-Key": f"pg-minio-ocr-upload-{uuid4()}",
             },
             json={
@@ -554,7 +554,7 @@ def test_postgresql_minio_ocr_worker_pipeline_is_visible_to_child_routes() -> No
         confirmation = client.post(
             f"/households/{HOUSEHOLD_A}/captures/{capture_id}/upload-confirmations",
             headers={
-                **_headers("child", CHILD_A),
+                **_headers(client, "child", CHILD_A),
                 "Idempotency-Key": f"pg-minio-ocr-confirm-{uuid4()}",
             },
             json={"expected_capture_version": upload["capture"]["version"]},
@@ -564,14 +564,17 @@ def test_postgresql_minio_ocr_worker_pipeline_is_visible_to_child_routes() -> No
         enqueue = client.post(
             f"/households/{HOUSEHOLD_A}/captures/{capture_id}/ocr-jobs",
             headers={
-                **_headers("child", CHILD_A),
+                **_headers(client, "child", CHILD_A),
                 "Idempotency-Key": f"pg-minio-ocr-job-{uuid4()}",
             },
         )
         assert enqueue.status_code == 202
         job = enqueue.json()
         job_path = f"/households/{HOUSEHOLD_A}/captures/{capture_id}/ocr-jobs/{job['id']}"
-        assert client.get(job_path, headers=_headers("child", CHILD_A)).json()["status"] == "queued"
+        assert (
+            client.get(job_path, headers=_headers(client, "child", CHILD_A)).json()["status"]
+            == "queued"
+        )
 
         runner = LocalOcrJob(repository, storage, SyntheticOcrAdapter(), ocr_results)
         outcome = LocalOcrDispatcher(queue, runner).run_once()
@@ -579,12 +582,12 @@ def test_postgresql_minio_ocr_worker_pipeline_is_visible_to_child_routes() -> No
         assert outcome is not None
         assert outcome.status is OcrJobStatus.SUCCEEDED
         assert outcome.result_id is not None
-        completed = client.get(job_path, headers=_headers("child", CHILD_A)).json()
+        completed = client.get(job_path, headers=_headers(client, "child", CHILD_A)).json()
         assert completed["status"] == "succeeded"
         assert completed["result_id"] == str(outcome.result_id)
         result = client.get(
             f"/households/{HOUSEHOLD_A}/captures/{capture_id}/ocr-results/{outcome.result_id}",
-            headers=_headers("child", CHILD_A),
+            headers=_headers(client, "child", CHILD_A),
         )
         assert result.status_code == 200
         assert result.json()["candidates"][0]["text"] == "synthetic 3 + 4"
@@ -606,7 +609,7 @@ def test_postgresql_capture_cleanup_claims_expired_object_and_records_audit() ->
         upload_response = client.post(
             f"/households/{HOUSEHOLD_A}/sessions/{session_id}/capture-uploads",
             headers={
-                **_headers("child", CHILD_A),
+                **_headers(client, "child", CHILD_A),
                 "Idempotency-Key": f"pg-cleanup-upload-{uuid4()}",
             },
             json={
@@ -664,7 +667,7 @@ def test_postgresql_ocr_failure_uses_seven_day_retention_without_raw_error() -> 
         upload_response = client.post(
             f"/households/{HOUSEHOLD_A}/sessions/{session_id}/capture-uploads",
             headers={
-                **_headers("child", CHILD_A),
+                **_headers(client, "child", CHILD_A),
                 "Idempotency-Key": f"pg-ocr-failure-upload-{uuid4()}",
             },
             json={
@@ -679,7 +682,7 @@ def test_postgresql_ocr_failure_uses_seven_day_retention_without_raw_error() -> 
         confirmation = client.post(
             f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/upload-confirmations",
             headers={
-                **_headers("child", CHILD_A),
+                **_headers(client, "child", CHILD_A),
                 "Idempotency-Key": f"pg-ocr-failure-confirm-{uuid4()}",
             },
             json={"expected_capture_version": capture["version"]},
@@ -723,7 +726,7 @@ def test_postgresql_ocr_queue_is_idempotent_and_recovers_stale_lease() -> None:
         upload_response = client.post(
             f"/households/{HOUSEHOLD_A}/sessions/{session_id}/capture-uploads",
             headers={
-                **_headers("child", CHILD_A),
+                **_headers(client, "child", CHILD_A),
                 "Idempotency-Key": f"pg-ocr-queue-upload-{uuid4()}",
             },
             json={
@@ -738,7 +741,7 @@ def test_postgresql_ocr_queue_is_idempotent_and_recovers_stale_lease() -> None:
         confirmation = client.post(
             f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/upload-confirmations",
             headers={
-                **_headers("child", CHILD_A),
+                **_headers(client, "child", CHILD_A),
                 "Idempotency-Key": f"pg-ocr-queue-confirm-{uuid4()}",
             },
             json={"expected_capture_version": capture["version"]},
@@ -879,7 +882,7 @@ def test_postgresql_parent_save_and_delete_media_is_retryable() -> None:
         upload_response = client.post(
             f"/households/{HOUSEHOLD_A}/sessions/{session_id}/capture-uploads",
             headers={
-                **_headers("child", CHILD_A),
+                **_headers(client, "child", CHILD_A),
                 "Idempotency-Key": f"pg-parent-save-upload-{uuid4()}",
             },
             json={
@@ -894,21 +897,21 @@ def test_postgresql_parent_save_and_delete_media_is_retryable() -> None:
         confirmed = client.post(
             f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/upload-confirmations",
             headers={
-                **_headers("child", CHILD_A),
+                **_headers(client, "child", CHILD_A),
                 "Idempotency-Key": f"pg-parent-save-confirm-{uuid4()}",
             },
             json={"expected_capture_version": capture["version"]},
         )
         assert confirmed.status_code == 201
 
-        save_headers = {**_headers(), "Idempotency-Key": "pg-parent-save-001"}
+        save_headers = {**_headers(client), "Idempotency-Key": "pg-parent-save-001"}
         first_save = client.post(
             f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/save", headers=save_headers
         )
         replay_save = client.post(
             f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/save", headers=save_headers
         )
-        delete_headers = {**_headers(), "Idempotency-Key": "pg-parent-delete-001"}
+        delete_headers = {**_headers(client), "Idempotency-Key": "pg-parent-delete-001"}
         first_delete = client.delete(
             f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/media", headers=delete_headers
         )

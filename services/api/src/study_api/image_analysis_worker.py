@@ -21,7 +21,7 @@ from study_api.image_analysis_jobs import (
     ImageAnalysisJobRepository,
     PostgresImageAnalysisJobRepository,
 )
-from study_api.newapi_provider import NewApiConfig, NewApiVisionProvider
+from study_api.newapi_provider import NewApiConfig, NewApiProviderError, NewApiVisionProvider
 from study_api.object_storage import ObjectStorageConfig, S3ObjectStorage
 
 
@@ -46,26 +46,43 @@ class NewApiImageAnalysisRunner:
 
     def run(self, job: ImageAnalysisJob) -> UUID:
         pending = self._captures.get_capture_upload(job.household_id, job.capture_id, job.child_id)
-        safe_capture = read_safe_capture(
-            self._storage,
-            pending.object_key,
-            pending.capture.media_type,
-            pending.capture.byte_size,
-            pending.capture.content_sha256,
-        )
-        extraction = self._provider.analyze_sanitized_image(
-            safe_capture.data,
-            pending.capture.media_type,
-            sanitization_schema=job.sanitization_schema_version,
-        )
-        record, _ = self._extractions.create(
-            job.id,
-            job.household_id,
-            job.capture_id,
-            job.child_id,
-            extraction,
-        )
+        try:
+            safe_capture = read_safe_capture(
+                self._storage,
+                pending.object_key,
+                pending.capture.media_type,
+                pending.capture.byte_size,
+                pending.capture.content_sha256,
+            )
+            extraction = self._provider.analyze_sanitized_image(
+                safe_capture.data,
+                pending.capture.media_type,
+                sanitization_schema=job.sanitization_schema_version,
+            )
+            record, _ = self._extractions.create(
+                job.id,
+                job.household_id,
+                job.capture_id,
+                job.child_id,
+                extraction,
+            )
+        except Exception:
+            # A failed parse is retained only as a bounded lifecycle marker;
+            # the private derivative itself is never kept for retry here.
+            self._delete_derivative(pending.object_key, job)
+            self._captures.mark_capture_ocr_failed(job.household_id, job.capture_id)
+            raise
+        self._delete_derivative(pending.object_key, job)
         return record.id
+
+    def _delete_derivative(self, object_key: str, job: ImageAnalysisJob) -> None:
+        try:
+            self._storage.delete_object(object_key)
+        except Exception:
+            # Keep a retryable seven-day failure marker if storage deletion is
+            # temporarily unavailable; never report the object as deleted.
+            self._captures.mark_capture_ocr_failed(job.household_id, job.capture_id)
+            raise
 
 
 @dataclass(frozen=True)
@@ -88,6 +105,9 @@ class ImageAnalysisDispatcher:
             return None
         try:
             extraction_id = self._runner.run(job)
+        except NewApiProviderError as error:
+            self._jobs.fail(job.id, error_code=error.code)
+            return ImageAnalysisDispatchResult(job.id, "failed")
         except Exception:  # noqa: BLE001 -- durable queue stores only a stable code.
             self._jobs.fail(job.id)
             return ImageAnalysisDispatchResult(job.id, "failed")

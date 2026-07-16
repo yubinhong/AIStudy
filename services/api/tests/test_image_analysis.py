@@ -11,6 +11,7 @@ from test_capture_uploads import (  # noqa: PLC2701 -- reuse synthetic local fix
 )
 
 from study_api.main import create_app
+from study_api.privacy_models import QuestionExtraction
 
 
 def _receipt(content_sha256: str, *, safe: bool = True) -> dict[str, object]:
@@ -38,7 +39,7 @@ def _confirmed_capture() -> tuple[TestClient, FakeObjectStorage, dict[str, objec
     confirmed = client.post(
         f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/upload-confirmations",
         headers={
-            **_principal(role="child", child_id=CHILD_A),
+            **_principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": "image-analysis-confirm",
         },
         json={"expected_capture_version": capture["version"]},
@@ -55,7 +56,7 @@ def test_image_analysis_records_blocked_job_without_provider_or_image_bytes() ->
         "user_confirmed": True,
     }
     headers = {
-        **_principal(role="child", child_id=CHILD_A),
+        **_principal(client, role="child", child_id=CHILD_A),
         "Idempotency-Key": "image-analysis-start",
     }
     first = client.post(
@@ -78,7 +79,7 @@ def test_image_analysis_records_blocked_job_without_provider_or_image_bytes() ->
     job_id = first.json()["id"]
     read = client.get(
         f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/image-analysis-jobs/{job_id}",
-        headers=_principal(role="child", child_id=CHILD_A),
+        headers=_principal(client, role="child", child_id=CHILD_A),
     )
     assert read.status_code == 200
     assert read.json()["sanitized_derivative_sha256"] == capture["content_sha256"]
@@ -90,7 +91,7 @@ def test_image_analysis_blocks_unsafe_or_mismatched_receipts() -> None:
     unsafe_response = client.post(
         f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/image-analysis-jobs",
         headers={
-            **_principal(role="child", child_id=CHILD_A),
+            **_principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": "image-analysis-unsafe",
         },
         json={
@@ -106,7 +107,7 @@ def test_image_analysis_blocks_unsafe_or_mismatched_receipts() -> None:
     mismatch_response = client.post(
         f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/image-analysis-jobs",
         headers={
-            **_principal(role="child", child_id=CHILD_A),
+            **_principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": "image-analysis-mismatch",
         },
         json={
@@ -128,7 +129,7 @@ def test_image_analysis_queues_only_when_newapi_is_explicitly_enabled(monkeypatc
     response = client.post(
         f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/image-analysis-jobs",
         headers={
-            **_principal(role="child", child_id=CHILD_A),
+            **_principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": "image-analysis-queue",
         },
         json={
@@ -141,3 +142,88 @@ def test_image_analysis_queues_only_when_newapi_is_explicitly_enabled(monkeypatc
     assert response.status_code == 202
     assert response.json()["status"] == "queued"
     assert response.json()["error_code"] is None
+
+
+def test_parent_can_confirm_extraction_and_replay_without_mutating_candidate(monkeypatch) -> None:
+    monkeypatch.setenv("STUDY_NEWAPI_ENABLED", "true")
+    monkeypatch.setenv("STUDY_NEWAPI_BASE_URL", "http://127.0.0.1:3000")
+    monkeypatch.setenv("STUDY_NEWAPI_API_KEY", "local-test-key")
+    monkeypatch.setenv("STUDY_NEWAPI_VISION_MODEL", "local-vision")
+    storage = FakeObjectStorage()
+    app = create_app(object_storage=storage)
+    client = TestClient(app)
+    upload = _begin_upload(client, str(_session(client)["id"]), "verify-upload")
+    capture = upload["capture"]
+    storage.upload_declared_object("image/jpeg", 1024, capture["content_sha256"])
+    confirmed = client.post(
+        f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/upload-confirmations",
+        headers={
+            **_principal(client, role="child", child_id=CHILD_A),
+            "Idempotency-Key": "verify-upload-confirm",
+        },
+        json={"expected_capture_version": capture["version"]},
+    )
+    assert confirmed.status_code == 201
+
+    receipt = client.post(
+        f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/image-analysis-jobs",
+        headers={
+            **_principal(client, role="child", child_id=CHILD_A),
+            "Idempotency-Key": "verify-analysis-start",
+        },
+        json={
+            "expected_capture_version": confirmed.json()["version"],
+            "sanitization": _receipt(capture["content_sha256"]),
+            "user_confirmed": True,
+        },
+    )
+    assert receipt.status_code == 202
+    job = app.state.image_analysis_repository.claim_next()
+    assert job is not None
+    extraction, _ = app.state.question_extraction_repository.create(
+        job.id,
+        job.household_id,
+        job.capture_id,
+        job.child_id,
+        QuestionExtraction(
+            subject="math",
+            question_text="3/4 + 1/8 = ?",
+            options=(),
+            formulas=("3/4 + 1/8",),
+            has_diagram=False,
+            has_handwriting=False,
+            question_region_count=1,
+            confidence=0.94,
+        ),
+    )
+    app.state.image_analysis_repository.complete(job.id, extraction.id)
+
+    path = (
+        f"/households/{HOUSEHOLD_A}/captures/{capture['id']}"
+        f"/image-analysis-jobs/{job.id}/extraction/verify"
+    )
+    payload = {
+        "expected_capture_version": confirmed.json()["version"],
+        "question_text": "3/4 + 1/8 = ?",
+        "options": [],
+        "formulas": ["3/4 + 1/8"],
+        "has_diagram": False,
+        "has_handwriting": False,
+    }
+    headers = {**_principal(client, role="parent"), "Idempotency-Key": "verify-question-001"}
+    first = client.post(path, headers=headers, json=payload)
+    replay = client.post(path, headers=headers, json=payload)
+
+    assert first.status_code == 201
+    assert first.json()["verified_by"] == "parent"
+    assert replay.status_code == 200
+    assert replay.headers["Idempotency-Replayed"] == "true"
+    assert replay.json() == first.json()
+
+    read = client.get(
+        f"/households/{HOUSEHOLD_A}/captures/{capture['id']}"
+        f"/image-analysis-jobs/{job.id}/verified-question",
+        headers=_principal(client, role="child", child_id=CHILD_A),
+    )
+    assert read.status_code == 200
+    assert read.json()["question_text"] == "3/4 + 1/8 = ?"

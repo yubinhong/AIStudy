@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: 家庭 AI 学习助手 API
-  version: 0.5.0
-  description: Synthetic local/CI household and learning contract vertical slices.
+  version: 0.6.0
+  description: Self-hosted Household account/session and learning contract vertical slices.
 servers:
   - url: http://localhost:8000
 paths:
@@ -17,6 +17,200 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
+  /auth/login:
+    post:
+      operationId: login
+      summary: Create a revocable account session
+      description: The Web client receives an HttpOnly study_session cookie. Flutter requests client=flutter and stores the returned opaque token in platform secure storage.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Session created.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/me:
+    get:
+      operationId: getCurrentAccount
+      summary: Read the current account
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      responses:
+        '200':
+          description: Current account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountView'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/change-password:
+    post:
+      operationId: changePassword
+      summary: Change the current password and rotate all sessions
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '200':
+          description: Password changed and a new session issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/logout:
+    post:
+      operationId: logout
+      summary: Revoke the current session
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      responses:
+        '204':
+          description: Session revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/households/{household_id}/accounts:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+    get:
+      operationId: listAccounts
+      summary: List accounts in one household
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      responses:
+        '200':
+          description: Accounts without password hashes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AccountView'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /auth/households/{household_id}/accounts/children:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+    post:
+      operationId: createChildAccount
+      summary: Create a child account bound to one ChildProfile
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChildAccountRequest'
+      responses:
+        '201':
+          description: Child account created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountView'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+  /auth/households/{household_id}/accounts/{account_id}/status:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      operationId: setAccountStatus
+      summary: Enable or disable a child account
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetAccountStatusRequest'
+      responses:
+        '200':
+          description: Updated child account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountView'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /auth/households/{household_id}/accounts/{account_id}/reset-password:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: resetAccountPassword
+      summary: Reset a child account password and revoke its sessions
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '200':
+          description: Password reset; no password is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountView'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /households/{household_id}/children:
     parameters:
       - $ref: '#/components/parameters/HouseholdId'
@@ -24,8 +218,8 @@ paths:
       operationId: listChildren
       summary: List children in the caller's household
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
+        - SessionCookie: []
+        - BearerSession: []
       responses:
         '200':
           description: Children visible to the caller.
@@ -43,8 +237,8 @@ paths:
       operationId: createChild
       summary: Create a child profile in the caller's household
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
+        - SessionCookie: []
+        - BearerSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -94,8 +288,8 @@ paths:
       operationId: getChild
       summary: Get a child profile in the caller's household
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
+        - SessionCookie: []
+        - BearerSession: []
       responses:
         '200':
           description: Child profile.
@@ -112,8 +306,8 @@ paths:
       summary: Delete a child profile after cascading Capture object deletion
       description: Local/CI synthetic deletion only. The profile is not removed when any Capture object deletion fails; the same idempotency key may be retried.
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
+        - SessionCookie: []
+        - BearerSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
@@ -140,8 +334,8 @@ paths:
       operationId: listDevices
       summary: List devices in the caller's household
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
+        - SessionCookie: []
+        - BearerSession: []
       responses:
         '200':
           description: Devices visible to the caller.
@@ -161,8 +355,8 @@ paths:
       operationId: registerDevice
       summary: Register a device in the caller's household
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
+        - SessionCookie: []
+        - BearerSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -206,9 +400,8 @@ paths:
       operationId: listTasks
       summary: List tasks visible to the caller
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
-          DemoChild: []
+        - SessionCookie: []
+        - BearerSession: []
       responses:
         '200':
           description: Tasks visible to the parent or bound child.
@@ -228,8 +421,8 @@ paths:
       operationId: createTask
       summary: Create a math task for a child in the caller's household
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
+        - SessionCookie: []
+        - BearerSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -272,9 +465,8 @@ paths:
       operationId: startStudySession
       summary: Start a session for a task assigned to the bound child
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
-          DemoChild: []
+        - SessionCookie: []
+        - BearerSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -317,9 +509,8 @@ paths:
       operationId: recordAttempt
       summary: Append an attempt to the bound child's active study session
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
-          DemoChild: []
+        - SessionCookie: []
+        - BearerSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -361,9 +552,8 @@ paths:
       operationId: syncOfflineBatch
       summary: Apply a versioned batch of offline attempt events atomically
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
-          DemoChild: []
+        - SessionCookie: []
+        - BearerSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -395,9 +585,8 @@ paths:
       operationId: listCaptures
       summary: List Capture metadata visible to the bound child in a study session
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
-          DemoChild: []
+        - SessionCookie: []
+        - BearerSession: []
       responses:
         '200':
           description: Capture metadata. This endpoint never returns media bytes or object URLs.
@@ -418,9 +607,8 @@ paths:
       summary: Register bounded image metadata and require manual correction
       description: No image bytes, signed URLs, object keys, or OCR Provider calls are accepted in this contract version.
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
-          DemoChild: []
+        - SessionCookie: []
+        - BearerSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -468,9 +656,8 @@ paths:
       operationId: correctCapture
       summary: Append a manual correction for a Capture owned by the bound child
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
-          DemoChild: []
+        - SessionCookie: []
+        - BearerSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -523,8 +710,8 @@ paths:
       summary: Save a Capture image beyond its default retention window
       description: Parent-only local/CI operation. Saving does not expose media bytes, object keys, or storage credentials.
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
+        - SessionCookie: []
+        - BearerSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
@@ -552,8 +739,8 @@ paths:
       summary: Immediately delete one Capture image
       description: Parent-only local/CI operation. Deletion is private-object scoped, retryable, and does not delete Capture metadata.
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
+        - SessionCookie: []
+        - BearerSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
@@ -587,9 +774,8 @@ paths:
       summary: Create a pending Capture and issue one short-lived private PUT URL
       description: The response has no separate object-key field. The signed URL is short-lived and must not be logged or persisted by clients.
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
-          DemoChild: []
+        - SessionCookie: []
+        - BearerSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -644,9 +830,8 @@ paths:
       summary: Confirm a server-verified private object before manual correction
       description: The API verifies object media type and byte size server-side. It never accepts an object key or bytes from the client.
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
-          DemoChild: []
+        - SessionCookie: []
+        - BearerSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -699,9 +884,8 @@ paths:
       summary: Enqueue local OCR for a server-confirmed Capture
       description: The endpoint only records a bounded job request. OCR runs in a separate local Worker and returns manually confirmable candidates; it never accepts image bytes, object keys, or external Provider selection.
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
-          DemoChild: []
+        - SessionCookie: []
+        - BearerSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -760,9 +944,8 @@ paths:
       summary: Read bounded local OCR job status
       description: The response contains stable lifecycle fields only; Provider errors, image bytes, object keys, and OCR text are not returned by this endpoint.
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
-          DemoChild: []
+        - SessionCookie: []
+        - BearerSession: []
       responses:
         '200':
           description: OCR job status.
@@ -790,9 +973,8 @@ paths:
       summary: Record a user-confirmed sanitization receipt for one Capture
       description: The service queues a job only when NewAPI is explicitly enabled and the user-confirmed sanitization hash matches the Capture; otherwise it records a blocked job. Only the confirmed derivative may reach the self-hosted Provider.
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
-          DemoChild: []
+        - SessionCookie: []
+        - BearerSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -851,9 +1033,8 @@ paths:
       summary: Read provider-neutral ImageAnalysis job state
       description: The response contains only lifecycle, receipt hash, and stable error fields; no image, URL, object key, OCR text, or Provider response is returned.
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
-          DemoChild: []
+        - SessionCookie: []
+        - BearerSession: []
       responses:
         '200':
           description: ImageAnalysis job state.
@@ -887,10 +1068,8 @@ paths:
       summary: Read an unverified question extraction for manual review
       description: Returns only schema-validated extraction fields. The result is not a verified question and must not be used as a Tutor fact before human confirmation.
       security:
-        - BearerHouseholdToken: []
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
-          DemoChild: []
+        - SessionCookie: []
+        - BearerSession: []
       responses:
         '200':
           description: Unverified question extraction.
@@ -908,6 +1087,98 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /households/{household_id}/captures/{capture_id}/image-analysis-jobs/{job_id}/extraction/verify:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: capture_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: verifyQuestionExtraction
+      summary: Confirm and edit one extraction into a VerifiedQuestion
+      description: The unverified extraction remains immutable. Only explicitly submitted fields become a Tutor-safe fact after Household and Capture version checks.
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyQuestionRequest'
+      responses:
+        '201':
+          description: Human-confirmed question fact created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifiedQuestion'
+        '200':
+          description: Idempotent replay of the same confirmation.
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                const: 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifiedQuestion'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Capture version, extraction readiness, or idempotency conflict.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /households/{household_id}/captures/{capture_id}/image-analysis-jobs/{job_id}/verified-question:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: capture_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getVerifiedQuestion
+      summary: Read a human-confirmed question fact
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      responses:
+        '200':
+          description: Verified question.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifiedQuestion'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /households/{household_id}/tutor/hints:
     parameters:
       - $ref: '#/components/parameters/HouseholdId'
@@ -916,9 +1187,8 @@ paths:
       summary: Return a provider-free graduated hint for a verified question
       description: The current implementation is a deterministic zero-cost local fallback. It requires a child-bound corrected Capture and never returns a direct answer or calls a Provider.
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
-          DemoChild: []
+        - SessionCookie: []
+        - BearerSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -966,9 +1236,8 @@ paths:
       summary: Get unverified OCR candidates for the bound child
       description: The child-only response is rechecked against Household, Child, and Capture ownership. Candidates remain unverified and must be manually confirmed before entering the learning workflow.
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
-          DemoChild: []
+        - SessionCookie: []
+        - BearerSession: []
       responses:
         '200':
           description: OCR result and candidates awaiting manual confirmation.
@@ -987,9 +1256,8 @@ paths:
       summary: Confirm one OCR candidate as a manual Capture correction
       description: The server resolves the candidate by ID under the bound Household, Child, result, and Capture, then appends its text to CaptureCorrection. The OCR result remains an unverified model output.
       security:
-        - DemoHouseholdPrincipal: []
-          DemoRole: []
-          DemoChild: []
+        - SessionCookie: []
+        - BearerSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -1060,27 +1328,128 @@ components:
         type: string
         format: uuid
   securitySchemes:
-    BearerHouseholdToken:
+    BearerSession:
       type: http
       scheme: bearer
-      bearerFormat: st1 HMAC household token
-      description: Self-hosted single-household bearer token issued by the local API script; no third-party IdP is required.
-    DemoHouseholdPrincipal:
+      bearerFormat: opaque 256-bit session token
+      description: Flutter session token; only a SHA-256 digest is stored by the API.
+    SessionCookie:
       type: apiKey
-      in: header
-      name: X-Demo-Household-Id
-      description: Synthetic local/CI principal adapter; not production authentication.
-    DemoRole:
-      type: apiKey
-      in: header
-      name: X-Demo-Role
-      description: Synthetic local/CI role adapter; not production authorization.
-    DemoChild:
-      type: apiKey
-      in: header
-      name: X-Demo-Child-Id
-      description: Synthetic child binding for local/CI child-only learning operations; not production authentication.
+      in: cookie
+      name: study_session
+      description: HttpOnly SameSite=Lax Web session cookie.
   schemas:
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 80
+        password:
+          type: string
+          minLength: 1
+          maxLength: 128
+        client:
+          type: string
+          enum: [web, flutter]
+          default: web
+    LoginResponse:
+      type: object
+      additionalProperties: false
+      required: [account, expires_at]
+      properties:
+        account:
+          $ref: '#/components/schemas/AccountView'
+        access_token:
+          type: string
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+    AccountView:
+      type: object
+      additionalProperties: false
+      required: [id, household_id, username, role, must_change_password, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        household_id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        role:
+          type: string
+          enum: [parent, child]
+        child_id:
+          type: string
+          format: uuid
+          nullable: true
+        must_change_password:
+          type: boolean
+        status:
+          type: string
+          enum: [active, disabled]
+        created_at:
+          type: string
+          format: date-time
+    ChangePasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [current_password, new_password]
+      properties:
+        current_password:
+          type: string
+          minLength: 1
+          maxLength: 128
+        new_password:
+          type: string
+          minLength: 1
+          maxLength: 128
+    CreateChildAccountRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password, child_id]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 80
+        password:
+          type: string
+          minLength: 1
+          maxLength: 128
+        child_id:
+          type: string
+          format: uuid
+    SetAccountStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [enabled, current_password]
+      properties:
+        enabled:
+          type: boolean
+        current_password:
+          type: string
+          minLength: 1
+          maxLength: 128
+    ResetPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [current_password, new_password]
+      properties:
+        current_password:
+          type: string
+          minLength: 1
+          maxLength: 128
+        new_password:
+          type: string
+          minLength: 1
+          maxLength: 128
     HealthResponse:
       type: object
       additionalProperties: false
@@ -1460,6 +1829,36 @@ components:
         created_at:
           type: string
           format: date-time
+    VerifyQuestionRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_capture_version, question_text, options, formulas, has_diagram, has_handwriting]
+      properties:
+        expected_capture_version:
+          type: integer
+          minimum: 1
+        question_text:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        options:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+        formulas:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+        has_diagram:
+          type: boolean
+        has_handwriting:
+          type: boolean
+        answer_text:
+          type: string
+          maxLength: 1000
+          nullable: true
     VerifiedQuestion:
       type: object
       additionalProperties: false

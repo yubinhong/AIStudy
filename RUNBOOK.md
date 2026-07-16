@@ -3,7 +3,7 @@
 ## 1. 服务概览
 
 - 服务：家庭 AI 学习助手（目标包括 Flutter 孩子端、Web/PWA、FastAPI/Worker、PostgreSQL、Redis、S3/MinIO 和 AI Provider）。
-- 当前状态：`NOT_DEPLOYED`。仓库已有 P0 API/Web/Flutter 骨架、Compose、CI 草案和 local synthetic PostgreSQL migration/MinIO 上传确认/过期清理器，但没有 staging/production、Dashboard 或日志平台；本 Runbook 仅定义生产前必须补齐的运维契约。`ADR-0008` 已 Accepted，仍不构成部署批准。
+- 当前状态：`SELF_HOSTED_DEV_VALIDATED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 已运行一次自用 Compose 验证栈；没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
 - Owner/值班：`TBD（项目 Owner/运维负责人在 staging 前确认）`。
 - 用户影响：服务中断会阻止同步、拍题、AI 提示和周报；孩子端必须保留离线任务/作答，不能因服务中断丢学习记录。
 - 外部依赖：单一获批云视觉 Provider、Tutor Provider、HMS（或应用内提醒）和对象存储；具体供应商 `TBD`。本地 OCR 仅是目标 PrivacySanitizer 的隐私检测依赖，不是外部 Provider。
@@ -28,40 +28,39 @@ SLO 必须在 staging 获得基线后由产品/技术 Owner 批准，不在零�
 
 ### 当前环境
 
-- local：`infra/compose/compose.yml` 已编排 PostgreSQL、Redis、MinIO、API、家长 Web、一次性 Alembic migration 和默认启动的 ImageAnalysis worker；Compose 配置已通过静态展开检查，`linux/arm64` API 调试镜像已在 Apple Silicon 上构建成功，完整 Compose 启动烟测仍未执行。NewAPI 默认关闭；此时 worker 保持空闲。当前认证仍为 HMAC Bearer；ADR-0017 的账号密码、首次改密和可撤销会话尚未实现。题目人工确认接口、真实视觉检测器、临时脱敏副本清理、备份恢复和生产监控未实现，当前只能按自用全栈部署文档使用。
+- local：`infra/compose/compose.yml` 已编排 PostgreSQL、Redis、MinIO、API、家长 Web、一次性 Alembic migration 和默认启动的 ImageAnalysis worker；Apple Silicon `linux/arm64` 调试镜像构建成功。NewAPI 默认关闭；此时 worker 保持空闲。
+- Ubuntu 自用验收：宿主确认 Ubuntu 24.04/x86_64、Docker 29.1.3、Compose 2.40.3；Docker IPv6 已关闭并经 `socks5://192.168.1.100:7893` 出网。远端 Compose config、`0011` migration、amd64 Paddle 模型镜像、API/Web healthz、loopback bootstrap login、重启恢复和内存 synthetic OCR smoke 已通过；远端 `.env` 未进入仓库且权限为 600。NewAPI Key/模型已配置并启用；Cloudflare 1010 拦截 Python 默认 User-Agent 后，受限 `study-api/0.5` 请求已成功完成 synthetic `queued → Extraction`，临时派生对象删除且残留 Job 为 0。首次改密、Cookie/CSRF、孩子账号/iPad 生命周期、备份恢复和生产监控仍未执行。
 - staging：未建立。
 - production：未建立且未获部署授权。
 
-### 账号密码认证切换计划（ADR-0017；尚不可执行）
+### 账号密码认证切换（ADR-0017；代码已实现，环境验收待执行）
 
-PLAN-0007 完成后，自用首次启动和迁移必须按以下顺序执行；当前仓库还没有对应 migration、API、页面或恢复命令，因此本节不能作为现有操作手册直接运行：
+自用首次启动和迁移按以下顺序执行；`0011_account_password_session` 已提供 migration/API，Ubuntu Compose 健康与 loopback bootstrap login 已验证，首次改密和真实设备验收仍需执行：
 
 1. 先让 Web/API 只监听 loopback，应用 Account/AuthSession 前滚迁移；仅当账号表为空时创建一次性 `admin/admin123456`，确认数据库只含 Argon2id 哈希且 `must_change_password=true`。
 2. 从服务器本机登录，验证除当前账号、改密和退出外的家庭数据接口均返回 `password_change_required`；立即修改管理员密码。
 3. 确认所有引导会话已撤销，新会话可读取同一 Household 数据后，才允许把 Web 暴露到家庭局域网；禁止让默认密码在非 loopback 环境继续有效。
 4. 在 Web 创建孩子账号并绑定 ChildProfile；验证孩子只能访问自己的任务/会话，不能访问家长管理接口或兄弟孩子数据。
-5. 验证登出、改密、停用、重置和 30 天到期均能撤销会话；Web Cookie/CSRF 与 Flutter Keychain/Android Keystore 路径通过后，再关闭 `legacy_bearer`。
-6. 唯一管理员忘记密码时只允许在服务器本机执行未来提供的受审计恢复命令；不提供短信、邮箱或 MFA 恢复。
+5. 验证登出、改密、停用、重置和 30 天到期均能撤销会话；验证 Web Cookie/CSRF、Flutter 登录前服务端地址配置和 Keychain/Android Keystore 生命周期。
+6. 唯一管理员忘记密码时当前仅允许服务器本机维护人员按恢复方案处理；正式受审计恢复命令仍待实现，不提供短信、邮箱或 MFA 恢复。
 
-回滚时可在短期迁移窗口重新开启显式 `legacy_bearer` 并回退应用，但不得删除 Account/AuthSession 表或恢复已撤销会话；优先前滚修复。具体命令、迁移版本和校验脚本须在 TASK-0007 实现并实测后替换本段的计划描述。
+回滚时优先前滚修复；确需回退时只回退到上一应用版本，不删除 Account/AuthSession 表或恢复已撤销会话。上一版本包含的 HMAC/Demo 路径不视为安全回滚方案，若必须启用需项目 Owner 另行明确批准且限于隔离环境。迁移版本为 `0011_account_password_session`，真实回滚/恢复脚本仍待实测。
 
 ### 自用 NewAPI 启用流程
 
-以下是 PLAN-0007 完成前仍可运行的 HMAC 过渡流程，不是最终认证操作方式；账号密码切换完成后应删除 `STUDY_AUTH_SECRET` 和签发 Token 步骤。默认 `STUDY_NEWAPI_ENABLED=false`，此时图片分析只记录 `provider_not_enabled` 的 blocked 回执，默认 worker 保持空闲，不读图片、不出网。自用部署者在本机 NewAPI 已可达并确认模型支持视觉后，注入以下环境变量，再重启 API 和 worker：
+默认 `STUDY_NEWAPI_ENABLED=false`，此时图片分析只记录 `provider_not_enabled` 的 blocked 回执，worker 保持空闲，不读图片、不出网。自用部署者在本机 NewAPI 已可达并确认模型支持视觉后，注入对应环境变量，再重启 API 和 worker：
 
 ```bash
-export STUDY_AUTH_MODE=bearer
-export STUDY_AUTH_SECRET="$(openssl rand -base64 36)"
 export STUDY_NEWAPI_ENABLED=true
 export STUDY_NEWAPI_BASE_URL=http://127.0.0.1:3000
 export STUDY_NEWAPI_API_KEY="<local-newapi-key>"
 export STUDY_NEWAPI_VISION_MODEL="<vision-model>"
+export STUDY_NEWAPI_USER_AGENT="study-api/0.5"
 cd services/api
-uv run python scripts/issue_auth_token.py --household-id <household-uuid> --role parent
 uv run python scripts/run_image_analysis_worker.py --watch
 ```
 
-启用前先用 synthetic 图片验证 NewAPI 返回 `question-extraction.v1` JSON；worker 的失败只写稳定错误码，原始 Provider 请求/响应不写日志。发现外发范围、模型行为或成本异常时，立即将 `STUDY_NEWAPI_ENABLED=false` 并停止 worker；已入队任务不会在关闭开关后继续被新 worker 领取。
+启用前先用 synthetic 图片验证 NewAPI 返回 `question-extraction.v1` JSON；默认 `STUDY_NEWAPI_USER_AGENT=study-api/0.5`，用于兼容会拦截 Python 默认 `urllib` 签名的前置网关。该值只能是 1–256 个可打印 ASCII 字符，禁止换行或其他控制字符。worker 的失败只写稳定错误码，原始 Provider 请求/响应不写日志。发现外发范围、模型行为或成本异常时，立即将 `STUDY_NEWAPI_ENABLED=false` 并停止 worker；已入队任务不会在关闭开关后继续被新 worker 领取。
 
 ### 生产前置检查
 
@@ -69,7 +68,7 @@ uv run python scripts/run_image_analysis_worker.py --watch
 - [ ] 版本化产物、配置清单、迁移、容量、功能开关、模型/Prompt/Policy 版本已审查。
 - [ ] 备份、恢复演练、数据导出/删除、成本和安全告警就绪。
 - [ ] 适用法域、儿童隐私、保留期限、Owner/值班和安全联系渠道已批准。
-- [ ] ADR-0017 已实现并验证：默认管理员仅本机首次登录、首次改密完成、无有效默认凭据、会话可撤销、Web Cookie/CSRF 和孩子账号反向授权通过；当前 HMAC 默认认证已关闭。
+- [ ] ADR-0017 环境验收：代码已实现默认管理员仅本机首次登录、首次改密、会话撤销、Web Cookie/CSRF 和孩子账号反向授权；完整 Compose、浏览器 E2E 和真实设备验证后才能勾选。
 - [ ] 自用 NewAPI 的 URL、API key、视觉模型、响应 Schema、停用开关和本地 synthetic 联调已验证；PrivacySanitizer/用户确认/临时副本删除 eval 已通过。
 - [ ] 发布、停止、回滚和前滚负责人明确，真实数据不来自开发环境。
 

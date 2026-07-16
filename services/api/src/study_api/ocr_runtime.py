@@ -38,8 +38,15 @@ def run_preflight(
     python_version: str | None = None,
     os_release: Mapping[str, str] | None = None,
     package_versions: Mapping[str, str | None] | None = None,
+    allow_locked_container: bool = False,
 ) -> OcrRuntimePreflight:
-    """Check only the locked runtime prerequisites; never downloads or reads images."""
+    """Check locked host or explicitly selected container prerequisites.
+
+    The host gate remains Ubuntu 24.04. The amd64 release image uses a pinned
+    Debian 13 slim runtime, so callers must opt into that exact container
+    release explicitly; this never changes the Linux, architecture, Python,
+    package, or model-marker checks.
+    """
 
     resolved_system = system or platform.system()
     resolved_machine = machine or platform.machine()
@@ -53,7 +60,13 @@ def run_preflight(
 
     if resolved_system != "Linux":
         failures.append("platform_not_linux")
-    if resolved_os.get("ID") != "ubuntu" or resolved_os.get("VERSION_ID") != "24.04":
+    locked_host = resolved_os.get("ID") == "ubuntu" and resolved_os.get("VERSION_ID") == "24.04"
+    locked_container = (
+        allow_locked_container
+        and resolved_os.get("ID") == "debian"
+        and resolved_os.get("VERSION_ID") == "13"
+    )
+    if not locked_host and not locked_container:
         failures.append("os_not_ubuntu_24_04")
     if resolved_machine not in {"x86_64", "amd64"}:
         failures.append("cpu_arch_not_x86_64")

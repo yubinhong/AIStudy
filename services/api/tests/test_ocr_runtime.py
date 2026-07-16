@@ -52,3 +52,22 @@ def test_preflight_reports_stable_failures_without_touching_model_downloads(tmp_
         "paddlepaddle_version_mismatch",
         "models_not_verified",
     )
+
+
+def test_preflight_accepts_only_the_pinned_debian_container_when_explicitly_enabled(
+    tmp_path: Path,
+) -> None:
+    _verified_models(tmp_path)
+
+    result = run_preflight(
+        model_root=tmp_path,
+        system="Linux",
+        machine="x86_64",
+        python_version="3.12.13",
+        os_release={"ID": "debian", "VERSION_ID": "13"},
+        package_versions={"paddleocr": "3.7.0", "paddlepaddle": "3.3.1"},
+        allow_locked_container=True,
+    )
+
+    assert result.status == "ready"
+    assert result.failures == ()

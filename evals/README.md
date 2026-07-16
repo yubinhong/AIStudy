@@ -59,5 +59,29 @@ PADDLE_MODEL_ROOT=/opt/study/models \
 ```
 
 The command first requires the Ubuntu 24.04/x86_64/Python 3.12/Paddle version
-and model-marker preflight. On other hosts it exits with `blocked` and does not
-instantiate PaddleOCR.
+and model-marker preflight. The amd64 release image may explicitly set
+`STUDY_OCR_CONTAINER_RUNTIME=true` to accept its pinned Debian 13 runtime; this
+does not relax the Linux, x86_64, Python, package, or model-marker checks. On
+other hosts it exits with `blocked` and does not instantiate PaddleOCR.
+
+## Self-hosted NewAPI live evaluation
+
+`services/api/scripts/run_newapi_live_eval.py` is an environment-only check. It
+generates one synthetic math PNG in memory, sends it through the real
+PostgreSQL/MinIO/worker/NewAPI boundary, verifies the derivative is deleted,
+and removes the task, Capture, job, extraction, idempotency, and audit rows it
+created. It prints only stable status and extraction metadata; it never prints
+the API key or raw Provider response. Run it only after explicitly setting
+`STUDY_NEWAPI_ENABLED=true`:
+
+```bash
+docker compose -f infra/compose/compose.yml exec -T api \
+  python scripts/run_newapi_live_eval.py
+```
+
+On 2026-07-16 the Ubuntu x86_64 environment completed this evaluation with
+`gemini-3.1-flash-lite`: the job reached a `needs_confirmation=true`
+Extraction, deleted the derivative, and left no synthetic Job record. The
+adapter used `study-api/0.5` because Cloudflare rejected Python's default
+`urllib` user-agent with error 1010. This is still not a real-child-data or
+VerifiedQuestion confirmation test.

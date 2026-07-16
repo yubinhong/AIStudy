@@ -1,22 +1,21 @@
-const demoHouseholdId = "00000000-0000-0000-0000-000000000001";
+import { cookies } from "next/headers";
+
+const householdId = "00000000-0000-0000-0000-000000000001";
 const apiBaseUrl = process.env.STUDY_API_URL ?? "http://localhost:8000";
-const apiToken = process.env.STUDY_API_TOKEN;
 
-export const DEMO_HOUSEHOLD_ID = demoHouseholdId;
+type HouseholdResource = "children" | "tasks" | "devices";
 
-type DemoResource = "children" | "tasks" | "devices";
-
-async function loadDemoResource(resource: DemoResource): Promise<unknown[]> {
+async function loadHouseholdResource(
+  resource: HouseholdResource,
+): Promise<unknown[]> {
   try {
+    const cookieStore = await cookies();
+    const session = cookieStore.get("study_session");
+    if (!session) return [];
     const response = await fetch(
-      `${apiBaseUrl}/households/${demoHouseholdId}/${resource}`,
+      `${apiBaseUrl}/households/${householdId}/${resource}`,
       {
-        headers: apiToken
-          ? { Authorization: `Bearer ${apiToken}` }
-          : {
-              "X-Demo-Household-Id": demoHouseholdId,
-              "X-Demo-Role": "parent",
-            },
+        headers: { Cookie: `study_session=${session.value}` },
         cache: "no-store",
       },
     );
@@ -29,16 +28,16 @@ async function loadDemoResource(resource: DemoResource): Promise<unknown[]> {
   }
 }
 
-export async function loadDemoChildren(): Promise<unknown[]> {
-  return loadDemoResource("children");
+export async function loadChildren(): Promise<unknown[]> {
+  return loadHouseholdResource("children");
 }
 
-export async function loadDemoTasks(): Promise<unknown[]> {
-  return loadDemoResource("tasks");
+export async function loadTasks(): Promise<unknown[]> {
+  return loadHouseholdResource("tasks");
 }
 
-export async function loadDemoDevices(): Promise<unknown[]> {
-  return loadDemoResource("devices");
+export async function loadDevices(): Promise<unknown[]> {
+  return loadHouseholdResource("devices");
 }
 
 export function readString(record: unknown, key: string): string | null {

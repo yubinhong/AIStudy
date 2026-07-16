@@ -2,6 +2,7 @@ from datetime import date
 from uuid import UUID, uuid4
 
 import pytest
+from auth_helpers import session_headers
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -52,20 +53,16 @@ def test_ocr_result_draft_normalizes_parser_output_and_keeps_manual_gate() -> No
         )
 
 
-def _headers(role: str = "parent", child_id: UUID | None = None) -> dict[str, str]:
-    headers = {
-        "X-Demo-Household-Id": str(HOUSEHOLD_A),
-        "X-Demo-Role": role,
-    }
-    if child_id is not None:
-        headers["X-Demo-Child-Id"] = str(child_id)
-    return headers
+def _headers(
+    client: TestClient, role: str = "parent", child_id: UUID | None = None
+) -> dict[str, str]:
+    return session_headers(client, role=role, child_id=child_id)
 
 
 def _capture(client: TestClient) -> UUID:
     task = client.post(
         f"/households/{HOUSEHOLD_A}/tasks",
-        headers={**_headers(), "Idempotency-Key": f"ocr-task-{uuid4()}"},
+        headers={**_headers(client), "Idempotency-Key": f"ocr-task-{uuid4()}"},
         json={
             "child_id": str(CHILD_A),
             "title": "OCR persistence task",
@@ -76,13 +73,13 @@ def _capture(client: TestClient) -> UUID:
     assert task.status_code == 201
     session = client.post(
         f"/households/{HOUSEHOLD_A}/tasks/{task.json()['id']}/sessions",
-        headers={**_headers("child", CHILD_A), "Idempotency-Key": f"ocr-session-{uuid4()}"},
+        headers={**_headers(client, "child", CHILD_A), "Idempotency-Key": f"ocr-session-{uuid4()}"},
         json={"expected_task_version": 1},
     )
     assert session.status_code == 201
     capture = client.post(
         f"/households/{HOUSEHOLD_A}/sessions/{session.json()['id']}/captures",
-        headers={**_headers("child", CHILD_A), "Idempotency-Key": f"ocr-capture-{uuid4()}"},
+        headers={**_headers(client, "child", CHILD_A), "Idempotency-Key": f"ocr-capture-{uuid4()}"},
         json={
             "media_type": "image/png",
             "byte_size": 2048,

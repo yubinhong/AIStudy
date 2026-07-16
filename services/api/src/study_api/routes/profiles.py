@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 
-from study_api.auth import DemoPrincipal, get_demo_principal, require_household, require_parent
+from study_api.auth import AuthenticatedPrincipal, get_principal, require_household, require_parent
 from study_api.domain.capture_repository import CaptureRepository
 from study_api.domain.models import (
     ChildProfile,
@@ -19,7 +19,7 @@ from study_api.media_lifecycle import CaptureObjectCascadeDeletion
 from study_api.object_storage import CaptureObjectStorage
 
 router = APIRouter(prefix="/households/{household_id}", tags=["profiles"])
-Principal = Annotated[DemoPrincipal, Depends(get_demo_principal)]
+Principal = Annotated[AuthenticatedPrincipal, Depends(get_principal)]
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=128)]
 
 

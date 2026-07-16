@@ -2,6 +2,7 @@ from datetime import date
 from hashlib import sha256
 from uuid import uuid4
 
+from auth_helpers import session_headers
 from fastapi.testclient import TestClient
 
 from study_api.main import create_app
@@ -13,18 +14,18 @@ CHILD_B = "00000000-0000-0000-0000-000000000102"
 
 
 def _principal(
-    household_id: str = HOUSEHOLD_A, role: str = "parent", child_id: str | None = None
+    client: TestClient,
+    household_id: str = HOUSEHOLD_A,
+    role: str = "parent",
+    child_id: str | None = None,
 ) -> dict[str, str]:
-    headers = {"X-Demo-Household-Id": household_id, "X-Demo-Role": role}
-    if child_id is not None:
-        headers["X-Demo-Child-Id"] = child_id
-    return headers
+    return session_headers(client, role=role, household_id=household_id, child_id=child_id)
 
 
 def _session(client: TestClient) -> dict[str, object]:
     task = client.post(
         f"/households/{HOUSEHOLD_A}/tasks",
-        headers={**_principal(), "Idempotency-Key": f"capture-task-{uuid4()}"},
+        headers={**_principal(client), "Idempotency-Key": f"capture-task-{uuid4()}"},
         json={
             "child_id": CHILD_A,
             "title": "Synthetic capture task",
@@ -35,7 +36,7 @@ def _session(client: TestClient) -> dict[str, object]:
     response = client.post(
         f"/households/{HOUSEHOLD_A}/tasks/{task['id']}/sessions",
         headers={
-            **_principal(role="child", child_id=CHILD_A),
+            **_principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": f"capture-session-{uuid4()}",
         },
         json={"expected_task_version": task["version"]},
@@ -48,7 +49,7 @@ def _create_capture(client: TestClient, session_id: str) -> dict[str, object]:
     response = client.post(
         f"/households/{HOUSEHOLD_A}/sessions/{session_id}/captures",
         headers={
-            **_principal(role="child", child_id=CHILD_A),
+            **_principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": "capture-create-001",
         },
         json={
@@ -65,9 +66,9 @@ def test_capture_requires_bound_child_and_starts_with_manual_correction() -> Non
     client = TestClient(create_app())
     session = _session(client)
 
-    missing_child = client.post(
+    parent_attempt = client.post(
         f"/households/{HOUSEHOLD_A}/sessions/{session['id']}/captures",
-        headers={**_principal(role="child"), "Idempotency-Key": "capture-missing-child"},
+        headers={**_principal(client), "Idempotency-Key": "capture-parent-attempt"},
         json={
             "media_type": "image/jpeg",
             "byte_size": 1024,
@@ -76,7 +77,7 @@ def test_capture_requires_bound_child_and_starts_with_manual_correction() -> Non
     )
     capture = _create_capture(client, str(session["id"]))
 
-    assert missing_child.status_code == 403
+    assert parent_attempt.status_code == 403
     assert capture["status"] == "needs_correction"
     assert capture["version"] == 1
 
@@ -85,7 +86,7 @@ def test_capture_correction_is_append_only_idempotent_and_versioned() -> None:
     client = TestClient(create_app())
     capture = _create_capture(client, str(_session(client)["id"]))
     headers = {
-        **_principal(role="child", child_id=CHILD_A),
+        **_principal(client, role="child", child_id=CHILD_A),
         "Idempotency-Key": "capture-correction-001",
     }
     payload = {"expected_capture_version": capture["version"], "corrected_text": "synthetic 3 + 4"}
@@ -122,7 +123,7 @@ def test_capture_cross_household_and_sibling_access_are_not_enumerable() -> None
     sibling = client.post(
         f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/corrections",
         headers={
-            **_principal(role="child", child_id=CHILD_B),
+            **_principal(client, role="child", child_id=CHILD_B),
             "Idempotency-Key": "capture-sibling-001",
         },
         json={"expected_capture_version": 1, "corrected_text": "synthetic sibling"},
@@ -130,7 +131,7 @@ def test_capture_cross_household_and_sibling_access_are_not_enumerable() -> None
     other_household = client.post(
         f"/households/{HOUSEHOLD_B}/captures/{capture['id']}/corrections",
         headers={
-            **_principal(HOUSEHOLD_B, "child", CHILD_B),
+            **_principal(client, HOUSEHOLD_B, "child", CHILD_B),
             "Idempotency-Key": "capture-household-001",
         },
         json={"expected_capture_version": 1, "corrected_text": "synthetic household"},
@@ -143,7 +144,7 @@ def test_capture_cross_household_and_sibling_access_are_not_enumerable() -> None
 def test_parent_save_and_immediate_delete_are_idempotent_and_child_forbidden() -> None:
     client = TestClient(create_app())
     capture = _create_capture(client, str(_session(client)["id"]))
-    save_headers = {**_principal(), "Idempotency-Key": "capture-save-001"}
+    save_headers = {**_principal(client), "Idempotency-Key": "capture-save-001"}
     first_save = client.post(
         f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/save", headers=save_headers
     )
@@ -153,17 +154,17 @@ def test_parent_save_and_immediate_delete_are_idempotent_and_child_forbidden() -
     child_save = client.post(
         f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/save",
         headers={
-            **_principal(role="child", child_id=CHILD_A),
+            **_principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": "capture-save-child",
         },
     )
     first_delete = client.delete(
         f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/media",
-        headers={**_principal(), "Idempotency-Key": "capture-delete-001"},
+        headers={**_principal(client), "Idempotency-Key": "capture-delete-001"},
     )
     replay_delete = client.delete(
         f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/media",
-        headers={**_principal(), "Idempotency-Key": "capture-delete-001"},
+        headers={**_principal(client), "Idempotency-Key": "capture-delete-001"},
     )
 
     assert first_save.status_code == 204

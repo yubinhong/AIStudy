@@ -95,7 +95,10 @@ def run_eval(model_root: Path) -> dict[str, Any]:
 
 def main() -> int:
     model_root = os.environ.get("PADDLE_MODEL_ROOT")
-    preflight = run_preflight(model_root=Path(model_root) if model_root else None)
+    preflight = run_preflight(
+        model_root=Path(model_root) if model_root else None,
+        allow_locked_container=os.environ.get("STUDY_OCR_CONTAINER_RUNTIME") == "true",
+    )
     if preflight.status != "ready":
         print(
             json.dumps(

@@ -13,7 +13,9 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-def _no_control_characters(value: str) -> str:
+def _no_control_characters(value: str | None) -> str | None:
+    if value is None:
+        return None
     if any(ord(character) < 0x20 and character not in "\n\t" for character in value):
         raise ValueError("text cannot contain control characters")
     return value
@@ -135,6 +137,27 @@ class QuestionExtractionRecord(BaseModel):
     child_id: UUID
     extraction: QuestionExtraction
     created_at: datetime
+
+
+class VerifyQuestionRequest(BaseModel):
+    """User-edited fields that turn one extraction into a Tutor-safe fact."""
+
+    model_config = ConfigDict(frozen=True)
+
+    expected_capture_version: int = Field(ge=1)
+    question_text: str = Field(min_length=1, max_length=4000)
+    options: tuple[str, ...] = Field(default=(), max_length=20)
+    formulas: tuple[str, ...] = Field(default=(), max_length=50)
+    has_diagram: bool = False
+    has_handwriting: bool = False
+    answer_text: str | None = Field(default=None, max_length=1000)
+
+    _question_text_has_no_controls = field_validator("question_text", "answer_text")(
+        _no_control_characters
+    )
+    _options_have_no_controls = field_validator("options", "formulas")(
+        lambda values: tuple(_no_control_characters(value) for value in values)
+    )
 
 
 class VerifiedQuestion(BaseModel):

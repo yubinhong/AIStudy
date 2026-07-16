@@ -2,9 +2,9 @@
 
 ## 文档信息
 
-- 状态：`ACTIVE`（产品与目标架构已形成 v1.0 设计；P0 骨架、合成 Learning/Capture 切片和 ADR-0001～0011、0013～0017 已完成/接受；ADR-0012 已被替代；ADR-0017 认证方案待实现）
+- 状态：`ACTIVE`（产品与目标架构已形成 v1.0 设计；P0 骨架、合成 Learning/Capture 切片和 ADR-0001～0011、0013～0017 已完成/接受；ADR-0012 已被替代；TASK-0006 代码闭环完成，PLAN-0007 认证实现进行中）
 - Owner：`TBD（项目发起人确认）`
-- 最后更新：`2026-07-15`
+- 最后更新：`2026-07-16`
 - 项目仓库：本地 Git 仓库 `/Users/ybh/PycharmProjects/study`；远程地址 `TBD（项目 Owner 确认）`
 - 设计基线：`家庭AI学习助手_架构设计_v1.0.docx`
 
@@ -90,10 +90,10 @@
 
 | 层 | 选型 | 版本 | 说明 |
 | --- | --- | --- | --- |
-| 孩子/移动端 | Flutter（iOS/Android） | Flutter stable `3.44.6`（`ADR-0007` Accepted）；`image_picker 1.2.3`、`crypto 3.0.7`（`ADR-0013/0014` Accepted） | iPad 为孩子主端；Android 不依赖 Google Play Services；首页内容在 1.2 秒有限启动过渡后方并行加载并遵循减少动态效果设置；相机/相册选择后已进入本地脱敏预览，可手动涂抹并确认生成脱敏 PNG/哈希后再上传；当前仍注入 HMAC Bearer，PLAN-0007 将改为孩子账号密码登录并把会话保存在 Keychain/Android Keystore |
-| Web/PWA | Next.js + TypeScript | Next.js `16.2.10`（`ADR-0007` Accepted） | 家长后台和 Windows 首版入口；PLAN-0007 增加登录、强制首次改密、退出以及孩子账号创建/停用/重置 |
+| 孩子/移动端 | Flutter（iOS/Android） | Flutter stable `3.44.6`（`ADR-0007` Accepted）；`image_picker 1.2.3`、`crypto 3.0.7`、`flutter_secure_storage 9.2.4` | iPad 为孩子主端；Android 不依赖 Google Play Services；首页内容在 1.2 秒有限启动过渡后方并行加载；相机/相册选择后进入本地脱敏预览，可手动涂抹并确认生成脱敏 PNG/哈希后再上传；登录前可配置并持久化服务端地址，地址变更清除旧会话；账号密码登录令牌保存在 Keychain/Android Keystore，真实设备重启验证待执行 |
+| Web/PWA | Next.js + TypeScript | Next.js `16.2.10`（`ADR-0007` Accepted） | 家长后台和 Windows 首版入口；已实现登录、强制首次改密、退出以及孩子账号创建/停用/重置 |
 | API/Worker | Python + FastAPI + 异步 Worker | Python `3.12.x`、FastAPI `0.136.3`、boto3 `1.43.46`、Pillow `12.3.0`、PaddleOCR `3.7.0`、PaddlePaddle CPU `3.3.1` | 模块化单体；当前 Capture 已实现被 ADR-0015 替代的本地完整 OCR 路线及 MinIO/授权/人工确认/生命周期安全基础，并新增上传对象实际 SHA-256 核验、Provider-neutral PrivacySanitizer 核心、OCR/规则信号、receipt-only ImageAnalysis ledger/API、offline Tutor Policy API、五份 Schema 和 synthetic eval。Paddle 在 macOS ARM64 与 Linux x86_64 安装；Linux ARM64 调试镜像因锁定版本无 aarch64 wheel 而不包含该回滚能力。目标仍为本地检测 + 用户确认 + 单一获批云视觉解析；真实视觉检测器、云视觉/Tutor Provider、临时副本删除与云视觉固定 eval 尚未实现。现有 Paddle 版本是当前代码事实，不代表后续轻量隐私模型已选定 |
-| 云端视觉/推理 | Provider Adapter + 固定 JSON Schema / Tutor Policy | 自用 NewAPI URL/key/model 通过环境注入；默认关闭 | 图片解析与 Tutor 分离；服务端只向单一自托管 Provider 发送用户确认的脱敏副本，不在客户端保存密钥，不自动跨 Provider 广播；NewAPI Adapter 和 ImageAnalysis worker 已实现，人工确认持久化/联调仍待完成 |
+| 云端视觉/推理 | Provider Adapter + 固定 JSON Schema / Tutor Policy | 自用 NewAPI URL/key/model 通过环境注入；默认关闭 | 图片解析与 Tutor 分离；服务端只向单一自托管 Provider 发送用户确认的脱敏副本；NewAPI Adapter、ImageAnalysis worker 和 VerifiedQuestion 人工确认持久化已实现，实际实例联调仍待执行 |
 | 业务数据 | PostgreSQL + pgvector | `TBD（P0 锁定）` | PostgreSQL 是业务事实来源；目标同时保存 Account、Argon2id 密码哈希和 AuthSession 摘要；pgvector 仅用于知识检索，不替代关系数据 |
 | 缓存/队列 | Redis | `TBD（P0 锁定）` | 不作为长期业务事实来源 |
 | 文件 | 本地 MinIO / S3 兼容 Adapter | MinIO `RELEASE.2025-09-07T16-13-09Z`；boto3 `1.43.46` | 私有 Bucket、短期预签名 URL；保留策略和清理器见 ADR-0010/0011 |
@@ -108,11 +108,13 @@
 | staging | 集成、设备、AI 评测和迁移/恢复验证 | `TBD（P0/P1 建立）` | sanitized/synthetic | CI 产物，禁止从个人工作区直接发布 |
 | production | 家庭正式使用 | `TBD（发布方案和 RUNBOOK 批准后建立）` | restricted | 仅允许已通过发布门槛的版本化产物 |
 
-当前事实：Git 位于 `master`，最近提交为 `c3a107e`；P0 目标目录、入口、最小测试、Compose 配置、CI、三类锁文件、Profile/Device 合成 API 以及 Learning/Capture `0.5.0` 合同/语义已创建。ADR-0001～0011、0013～0017 已 Accepted，ADR-0012 已被 ADR-0015 替代；Learning/Capture/OCR/ImageAnalysis PostgreSQL migration/事务仓储、私有 MinIO 预签名上传、服务端对象确认（含实际 SHA-256）、过期清理、按 Household/Child 的 Capture 对象级联删除编排、local/CI 家长删除顺序、完整像素规范化、本地 OCR 候选结果、text/formula Job、ImageAnalysis queued worker、QuestionExtraction 持久化、API/迁移 `linux/amd64` 发布镜像、无 Paddle 的 `linux/arm64` 调试镜像和 Compose 配置展开均是已验证实现事实。Provider-neutral PrivacySanitizer 核心、OCR/规则信号、Schema、6-case synthetic 脱敏评测、Flutter 本地预览/手动涂抹/确认后脱敏 PNG+哈希上传、有限启动过渡、自用 Bearer 和 NewAPI Adapter 已新增；ADR-0017 的账号/密码/会话表、登录接口和 Web/Flutter 登录页尚未实现，当前运行时仍是 HMAC Bearer。真实视觉检测器、人工确认接口、临时脱敏副本清理、实际 NewAPI 联调、完整 Compose 启动、SQLite 落盘、生产 Profile/数据库与备份级联仍未完成。不得把未确认提取或认证计划描述成已实现。
+当前事实：Git 位于 `master`；P0 目标目录、入口、最小测试、Compose 配置、CI、三类锁文件、Profile/Device 合成 API 以及 Learning/Capture/Account Session `0.6.0` 合同已创建。Learning/Capture/OCR/ImageAnalysis/Account/AuthSession PostgreSQL migration/事务仓储、私有 MinIO、PrivacySanitizer、ImageAnalysis queued worker、QuestionExtraction/VerifiedQuestion、NewAPI Adapter、账号密码/Argon2id/可撤销会话、Web/Flutter 登录和 Compose 是已实现的代码事实；HMAC、Demo Header、Web 免登录和静态 Token 路径已删除，Flutter 支持登录前服务端地址配置。真实视觉检测器、实际 NewAPI 成功联调、SQLite 落盘、生产 Profile/数据库与备份级联仍未完成。不得把未确认提取或环境验收项描述成已实现。
 
-现状修订（2026-07-15）：上一段中的“PrivacySanitization receipt/新 ImageAnalysis 接口未实现”是历史快照；当前已完成 `0008_image_analysis_job` receipt/API、`0009_question_extraction` 提取结果持久化、无 Provider `offline-tutor-policy.v1`、自用 Bearer 认证、NewAPI Adapter 和可开关 ImageAnalysis worker。Web 家长学习概览和 synthetic eval 已通过质量门槛；人工确认接口、真实 NewAPI 联调、SQLite 和备份恢复仍未完成。
+现状修订（2026-07-15）：上一段中的“PrivacySanitization receipt/新 ImageAnalysis 接口未实现”是历史快照；当前已完成 `0008_image_analysis_job` receipt/API、`0009_question_extraction` 提取结果持久化、无 Provider `offline-tutor-policy.v1`、NewAPI Adapter 和可开关 ImageAnalysis worker。Web 家长学习概览和 synthetic eval 已通过质量门槛。
 
-认证规划修订（2026-07-15）：项目 Owner 接受 ADR-0017 和 PLAN-0007。目标是单家庭自用的家长/孩子账号密码与可撤销会话，不接入短信、邮箱、社交登录、OIDC 或 MFA。空账号库仅可初始化一次 `admin/admin123456`，只允许本机首次登录并强制改密；改密前不得读取家庭数据。该方案排在当前 TASK-0006 之后，尚未修改代码、OpenAPI、数据库或 Compose。
+现状修订（2026-07-16）：`0010_verified_question` 已把人工确认输入持久化为 Tutor-safe VerifiedQuestion，worker 已覆盖派生对象成功/失败清理；`0011_account_password_session` 已实现 Argon2id 账号密码、可撤销会话、首次改密、Web/Flutter 登录和 Compose password 默认。真实 NewAPI、真实视觉检测器、SQLite、完整 Compose、备份恢复和真实设备认证生命周期仍待执行。
+
+认证实现修订（2026-07-16）：项目 Owner 接受 ADR-0017，并在 TASK-0007 明确只保留用户名/密码+可撤销会话。API 已实现 Argon2id、首次改密阻断、失败锁定、审计、Web Cookie/CSRF、Flutter 安全存储/登录前服务端地址配置和孩子账号管理；HMAC/Demo/免登录路径已删除。迁移为 `0011_account_password_session`。实际浏览器 E2E、iPad 生命周期和备份恢复仍未执行。
 
 ## 8. 仓库与服务边界
 

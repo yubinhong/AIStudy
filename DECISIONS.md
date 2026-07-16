@@ -33,7 +33,7 @@
 | [ADR-0014](docs/adr/0014-flutter-capture-upload-client.md) | Flutter 使用 Dart `HttpClient` 和 `crypto 3.0.7` 完成 SHA-256、预签名上传、服务端确认和幂等 OCR 入队 | local MinIO 必须提供 iPad 可达的预签名地址；任务/会话同步与生产认证仍未接线 |
 | [ADR-0015](docs/adr/0015-local-privacy-sanitization-and-cloud-vision-parsing.md) | 原图留在家庭边界，本地 OCR/规则/视觉只生成不可逆脱敏副本；用户确认后由单一获批云端视觉 Provider 结构化解析 | 本地脱敏回执、哈希门禁、Provider-neutral Schema 和可开关 worker 已实现；人工确认持久化、临时副本删除、实际 Provider 联调和固定视觉 eval 仍待完成 |
 | [ADR-0016](docs/adr/0016-self-hosted-auth-and-newapi-provider.md) | HMAC 家庭认证与 NewAPI OpenAI-compatible Adapter | HMAC 认证已被 ADR-0017 替代；NewAPI 默认关闭、单 Provider、脱敏副本和 Adapter 边界继续有效 |
-| [ADR-0017](docs/adr/0017-self-hosted-password-accounts-and-sessions.md) | 自用 PostgreSQL 账号密码、一次性默认管理员、家长创建孩子账号和可撤销会话 | 已批准但尚未实现；必须完成强制改密/回环引导、Argon2id、会话撤销、Cookie/CSRF、Flutter 安全存储和旧 HMAC 迁移 |
+| [ADR-0017](docs/adr/0017-self-hosted-password-accounts-and-sessions.md) | 自用 PostgreSQL 账号密码、一次性默认管理员、家长创建孩子账号和可撤销会话 | 已批准并完成 API/Web/Flutter/Compose 代码切换；2026-07-16 批准删除全部 HMAC/Demo 运行时兼容，Flutter 改为登录前配置服务端地址；环境验收仍未全部完成 |
 
 ## Proposed ADR
 

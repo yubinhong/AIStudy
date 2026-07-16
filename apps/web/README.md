@@ -4,10 +4,11 @@ Next.js App Router parent workspace for the Windows/PWA experience. The first
 vertical slice renders a bright, low-distraction learning overview from the
 shared API contract: children, today's tasks, connected devices, and the local
 privacy boundary. It does not define duplicate domain models, and the demo
-principal is intentionally not authentication.
+principal adapter has been removed.
 
-For self-hosted bearer mode, set `STUDY_API_TOKEN` on the server-rendered Web
-process. If it is absent, the local synthetic demo headers are used.
+Users always sign in with a Household username and password at `/login`; the
+server keeps the revocable session in an HttpOnly cookie. There is no demo,
+static bearer-token, or unauthenticated dashboard fallback.
 
 Available synthetic API routes are documented in the contract:
 `GET/POST /households/{household_id}/children`,

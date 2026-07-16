@@ -4,6 +4,7 @@ from threading import Barrier
 from uuid import UUID, uuid4
 
 import pytest
+from auth_helpers import session_headers
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -19,11 +20,10 @@ CHILD_A = "00000000-0000-0000-0000-000000000101"
 pytestmark = pytest.mark.integration
 
 
-def _principal(role: str = "parent", child_id: str | None = None) -> dict[str, str]:
-    headers = {"X-Demo-Household-Id": HOUSEHOLD_A, "X-Demo-Role": role}
-    if child_id is not None:
-        headers["X-Demo-Child-Id"] = child_id
-    return headers
+def _principal(
+    client: TestClient, role: str = "parent", child_id: str | None = None
+) -> dict[str, str]:
+    return session_headers(client, role=role, child_id=child_id)
 
 
 def _create_client() -> tuple[TestClient, PostgresLearningRepository]:
@@ -36,7 +36,7 @@ def _create_task_and_session(client: TestClient) -> tuple[str, int, str]:
     task_key = f"pg-task-{uuid4()}"
     created = client.post(
         f"/households/{HOUSEHOLD_A}/tasks",
-        headers={**_principal(), "Idempotency-Key": task_key},
+        headers={**_principal(client), "Idempotency-Key": task_key},
         json={
             "child_id": CHILD_A,
             "title": "Synthetic PostgreSQL fraction practice",
@@ -49,7 +49,7 @@ def _create_task_and_session(client: TestClient) -> tuple[str, int, str]:
     started = client.post(
         f"/households/{HOUSEHOLD_A}/tasks/{task['id']}/sessions",
         headers={
-            **_principal("child", CHILD_A),
+            **_principal(client, "child", CHILD_A),
             "Idempotency-Key": f"pg-session-{uuid4()}",
         },
         json={"expected_task_version": task["version"]},
@@ -64,7 +64,7 @@ def test_postgresql_repository_persists_append_only_attempts_and_reconnects_pool
         _, _, session_id = _create_task_and_session(client)
         event_id = str(uuid4())
         headers = {
-            **_principal("child", CHILD_A),
+            **_principal(client, "child", CHILD_A),
             "Idempotency-Key": f"pg-attempt-{uuid4()}",
         }
         payload = {"event_id": event_id, "answer_summary": "synthetic persisted answer"}
@@ -181,7 +181,7 @@ def test_postgresql_sync_preflight_rejects_conflicting_batch_without_writes() ->
         response = client.post(
             f"/households/{HOUSEHOLD_A}/sync-batches",
             headers={
-                **_principal("child", CHILD_A),
+                **_principal(client, "child", CHILD_A),
                 "Idempotency-Key": f"pg-batch-{uuid4()}",
             },
             json={

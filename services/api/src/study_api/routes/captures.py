@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse, Response
 
 from study_api.auth import (
-    DemoPrincipal,
-    get_demo_principal,
+    AuthenticatedPrincipal,
+    get_principal,
     require_bound_child,
     require_household,
     require_parent,
@@ -36,7 +36,7 @@ from study_api.object_storage import CaptureObjectStorage, ObjectStorageError
 from study_api.ocr_jobs import OcrJobIdempotencyConflictError, OcrJobQueue
 
 router = APIRouter(prefix="/households/{household_id}", tags=["captures"])
-Principal = Annotated[DemoPrincipal, Depends(get_demo_principal)]
+Principal = Annotated[AuthenticatedPrincipal, Depends(get_principal)]
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=128)]
 
 

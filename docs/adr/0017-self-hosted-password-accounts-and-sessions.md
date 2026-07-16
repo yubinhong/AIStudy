@@ -1,6 +1,6 @@
 # ADR-0017：自用账号密码与可撤销会话认证
 
-- 状态：`Accepted`
+- 状态：`Accepted（代码实现；环境验收进行中）`
 - 日期：`2026-07-15`
 - Owner：项目 Owner
 - 决策者：项目 Owner（用户；2026-07-15 对话明确要求）
@@ -33,7 +33,7 @@
 ### 账号与密码
 
 1. PostgreSQL 保存 `Account`，至少包含 `id`、`household_id`、规范化 `username`、`role`、`password_hash`、`must_change_password`、`status`、失败计数/锁定时间和服务端时间戳。角色首期只有 `parent_admin` 与 `child`；孩子账号必须绑定一个同 Household 的 `ChildProfile`。
-2. 密码只使用带独立盐的 Argon2id 哈希保存，不保存、记录、回显或可逆加密明文。实现阶段优先评审 `argon2-cffi`，锁定版本、许可证和传递依赖后再加入 `pyproject.toml`。
+2. 密码只使用带独立盐的 Argon2id 哈希保存，不保存、记录、回显或可逆加密明文。已锁定 `argon2-cffi==25.1.0`；其用途是 Python Argon2id 实现，替代方案为 libsodium/系统 Argon2，传递依赖只包含平台绑定与 cffi，客户端不增加该依赖。
 3. 用户名在 Household 内大小写不敏感唯一；登录错误统一返回相同响应，禁止枚举账号。新家长密码至少 12 个字符，孩子密码至少 8 个字符，最大 128 个字符；不强制无意义的字符种类组合。
 4. 连续 5 次失败后锁定 15 分钟；成功登录、管理员重置或锁定到期后清零。限速以账号和来源摘要双维度执行，但日志不记录原始密码、会话值或不必要的网络身份。
 
@@ -47,12 +47,12 @@
 
 8. 登录成功生成至少 256 bit 随机不透明会话值；数据库只保存其 SHA-256 摘要、账号、到期时间、最近使用时间、撤销时间和最小设备标签。首期会话最长 30 天，可单独退出/撤销；改密、禁用账号或管理员重置密码时撤销该账号全部既有会话。
 9. Web 使用 `HttpOnly`、`SameSite=Lax` Cookie；TLS 环境强制 `Secure`。所有修改请求必须有 CSRF 防护。Flutter 使用同一会话语义的 Bearer 值，并存入 Keychain/Android Keystore；不得继续通过 `--dart-define` 固化长期凭据。
-10. 高风险管理操作（数据导出/删除、Provider/成本配置、孩子密码重置）要求最近 10 分钟内重新输入家长密码，并记录不含账号名/密码的稳定审计事件。
+10. 高风险管理操作（数据导出/删除、Provider/成本配置、孩子密码重置）目标要求最近 10 分钟内重新输入家长密码，并记录不含账号名/密码的稳定审计事件；当前孩子账号启停/重置已采用每次当前密码再验证，认证生命周期审计已接入现有 `audit_events`，未来模块的 10 分钟窗口仍待实现。
 
 ### 家长与孩子流程
 
-11. Web 提供登录、首次强制改密、退出、当前账号、孩子账号列表、创建、禁用/启用和重置密码页面。家长可以设置孩子的临时密码，但系统只能在提交/响应当次处理明文，之后不能查看现有密码。
-12. Flutter 提供孩子用户名/密码登录、退出和会话失效恢复；孩子只能访问绑定的 `ChildProfile`，不能创建账号、修改 Household 或执行家长操作。
+11. Web 已提供登录、首次强制改密、退出、当前账号、孩子账号列表、创建、禁用/启用和重置密码页面。家长可以设置孩子的临时密码，但系统只能在提交/响应当次处理明文，之后不能查看现有密码。
+12. Flutter 已提供孩子用户名/密码登录并将会话写入 `flutter_secure_storage==9.2.4`；登录页在提交凭据前可编辑并持久化无 user-info/查询/片段/路径的 HTTP(S) 服务端地址，地址变更必须先清除旧服务端会话。孩子只能访问绑定的 `ChildProfile`，不能创建账号、修改 Household 或执行家长操作。真实设备重启/过期恢复仍待验证。
 13. 不实现短信、邮箱验证、密码找回邮件、社交登录、MFA 或多家庭注册。家长忘记密码时使用仅本机可执行、会写审计事件的恢复命令重置 `admin`，不能通过公开 HTTP 接口绕过认证。
 
 ## Consequences
@@ -64,19 +64,19 @@
 
 ## Compatibility and Migration
 
-1. 先以兼容增量新增账号、会话迁移和 `/auth` 合同，不改变 Household 资源 ID 和现有授权语义。
-2. Web 改用 HttpOnly 会话并移除 `STUDY_API_TOKEN`；Flutter 改用登录和安全存储。两端迁移完成前，旧 HMAC 只允许在显式 `legacy_bearer` 兼容模式短期开启。
-3. 客户端和 Compose 切换后删除 HMAC 签发脚本、自用 `STUDY_AUTH_SECRET` 认证用途和长期静态 Token；demo headers 只保留 local/CI synthetic 测试。
-4. 回滚应用时保留账号/会话表，不删除密码哈希或审计；可短期开启 legacy 模式恢复已验证客户端，但不得退回公开 demo headers。数据库优先前向修复。
+1. 账号、会话迁移和 `/auth` 合同已以 `0011_account_password_session` 落地，Household 资源 ID 和授权语义不变。
+2. Web 只使用 HttpOnly 会话，Flutter 只使用登录后的不透明 Bearer Session。`STUDY_API_TOKEN`、`STUDY_AUTH_MODE`、`STUDY_AUTH_SECRET`、HMAC 签发脚本、Demo Header 和 Web 免登录开关已全部删除。
+3. 这是项目 Owner 于 2026-07-16 明确批准的破坏性安全收敛；旧 HMAC/Demo 客户端必须升级，不提供运行时兼容开关。OpenAPI 从 `0.5.0` 升为 `0.6.0`，业务端点只声明 Cookie/Bearer Session。
+4. 回滚应用时保留账号/会话表，不删除密码哈希或审计；优先前向修复。回到含 HMAC/Demo 的旧应用版本需项目 Owner 再次明确批准并限于隔离环境，不作为默认回滚手段。
 
 ## Validation
 
 - 覆盖初始化只执行一次、并发启动、强制改密、改密前数据阻断、默认凭据非本机拒绝和改密后旧会话失效。
 - 覆盖正确/错误登录、账号枚举一致响应、Argon2id 参数、失败限速/锁定、过期/撤销、登出、改密、管理员重置和恢复命令。
-- 覆盖 parent_admin/child、同家庭兄弟孩子、跨 Household、禁用账号、ID 枚举和高风险重新验证。
+- 覆盖 parent_admin/child、同家庭兄弟孩子、跨 Household、禁用账号和 ID 枚举；认证审计的稳定事件和敏感字段排除已通过内存回归，高风险重新验证的正向审计、PostgreSQL 迁移往返、浏览器 E2E 和真实设备生命周期仍待执行。
 - Web 覆盖 Cookie 属性、CSRF、服务端渲染重定向和凭据不进入 HTML/JS；Flutter 覆盖安全存储、退出清除、会话过期和设备重启。
 - 日志、错误、审计、测试夹具和数据库检查不得出现明文密码、原始会话或真实儿童数据。
 
 ## Rollback
 
-认证切换按“扩展账号/会话表 → 切换 Web → 切换 Flutter → 关闭 HMAC”分阶段发布。任一阶段失败时优先前向修复；确需回退应用时保留 Account/AuthSession 和审计记录，可在限定时间内显式启用 `legacy_bearer` 兼容已验证客户端，但不得删除密码哈希、恢复已撤销会话、重新开放默认凭据或退回公开 demo headers。
+认证切换已完成到“扩展账号/会话表 → 切换 Web → 切换 Flutter → 删除 HMAC/Demo”。失败时优先前向修复；确需回退应用时保留 Account/AuthSession 和审计记录，不得删除密码哈希、恢复已撤销会话或重新开放默认凭据。任何对旧认证路径的回退都需单独批准。

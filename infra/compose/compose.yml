@@ -71,7 +71,8 @@ services:
       STUDY_API_OCR_QUEUE: postgres
       STUDY_API_OCR_RESULTS: postgres
       STUDY_API_IMAGE_ANALYSIS_REPOSITORY: postgres
-      STUDY_AUTH_MODE: bearer
+      STUDY_API_AUTH_REPOSITORY: postgres
+      STUDY_COOKIE_SECURE: ${STUDY_COOKIE_SECURE:-false}
       PADDLE_MODEL_ROOT: /opt/study/models
     ports:
       - "${API_PORT:-8000}:8000"
@@ -95,7 +96,6 @@ services:
       dockerfile: Dockerfile
     environment:
       STUDY_API_URL: http://api:8000
-      STUDY_API_TOKEN: ${STUDY_API_TOKEN:-}
       HOSTNAME: 0.0.0.0
       PORT: 3000
     ports:

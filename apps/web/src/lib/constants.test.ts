@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { WEB_APP_VERSION } from "./constants";
-import { readDateLabel, readNumber, readString } from "./demo-profile";
+import { readDateLabel, readNumber, readString } from "./household-data";
 
 describe("web shell", () => {
   it("exposes the P0 version", () => {

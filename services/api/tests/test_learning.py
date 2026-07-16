@@ -1,6 +1,7 @@
 from datetime import date
 from uuid import uuid4
 
+from auth_helpers import session_headers
 from fastapi.testclient import TestClient
 
 from study_api.main import create_app
@@ -12,18 +13,18 @@ CHILD_B = "00000000-0000-0000-0000-000000000102"
 
 
 def principal(
-    household_id: str = HOUSEHOLD_A, role: str = "parent", child_id: str | None = None
+    client: TestClient,
+    household_id: str = HOUSEHOLD_A,
+    role: str = "parent",
+    child_id: str | None = None,
 ) -> dict[str, str]:
-    headers = {"X-Demo-Household-Id": household_id, "X-Demo-Role": role}
-    if child_id is not None:
-        headers["X-Demo-Child-Id"] = child_id
-    return headers
+    return session_headers(client, role=role, household_id=household_id, child_id=child_id)
 
 
 def create_task(client: TestClient) -> dict[str, object]:
     response = client.post(
         f"/households/{HOUSEHOLD_A}/tasks",
-        headers={**principal(), "Idempotency-Key": "task-create-001"},
+        headers={**principal(client), "Idempotency-Key": "task-create-001"},
         json={
             "child_id": CHILD_A,
             "title": "Synthetic fraction practice",
@@ -39,7 +40,7 @@ def start_session(client: TestClient, task: dict[str, object]) -> dict[str, obje
     response = client.post(
         f"/households/{HOUSEHOLD_A}/tasks/{task['id']}/sessions",
         headers={
-            **principal(role="child", child_id=CHILD_A),
+            **principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": "session-start-001",
         },
         json={"expected_task_version": task["version"]},
@@ -54,14 +55,11 @@ def test_parent_creates_task_and_bound_child_sees_only_assigned_tasks() -> None:
 
     visible = client.get(
         f"/households/{HOUSEHOLD_A}/tasks",
-        headers=principal(role="child", child_id=CHILD_A),
+        headers=principal(client, role="child", child_id=CHILD_A),
     )
-    unbound = client.get(f"/households/{HOUSEHOLD_A}/tasks", headers=principal(role="child"))
 
     assert visible.status_code == 200
     assert [item["id"] for item in visible.json()] == [task["id"]]
-    assert unbound.status_code == 403
-    assert unbound.json() == {"code": "HTTP_403", "message": "bound child principal required"}
 
 
 def test_child_cannot_start_session_for_another_household_or_child() -> None:
@@ -71,7 +69,7 @@ def test_child_cannot_start_session_for_another_household_or_child() -> None:
     sibling = client.post(
         f"/households/{HOUSEHOLD_A}/tasks/{task['id']}/sessions",
         headers={
-            **principal(role="child", child_id=CHILD_B),
+            **principal(client, role="child", child_id=CHILD_B),
             "Idempotency-Key": "session-start-other-child",
         },
         json={"expected_task_version": task["version"]},
@@ -79,7 +77,7 @@ def test_child_cannot_start_session_for_another_household_or_child() -> None:
     cross_household = client.post(
         f"/households/{HOUSEHOLD_B}/tasks/{task['id']}/sessions",
         headers={
-            **principal(HOUSEHOLD_B, "child", CHILD_B),
+            **principal(client, HOUSEHOLD_B, "child", CHILD_B),
             "Idempotency-Key": "session-start-other-household",
         },
         json={"expected_task_version": task["version"]},
@@ -95,7 +93,7 @@ def test_session_and_attempt_writes_are_idempotent_and_append_only() -> None:
     session = start_session(client, task)
     event_id = str(uuid4())
     headers = {
-        **principal(role="child", child_id=CHILD_A),
+        **principal(client, role="child", child_id=CHILD_A),
         "Idempotency-Key": "attempt-record-001",
     }
     payload = {"event_id": event_id, "answer_summary": "synthetic answer 1/2"}
@@ -130,7 +128,7 @@ def test_offline_batch_replays_events_and_rejects_conflicts_without_partial_writ
     session = start_session(client, task)
     event_id = str(uuid4())
     headers = {
-        **principal(role="child", child_id=CHILD_A),
+        **principal(client, role="child", child_id=CHILD_A),
         "Idempotency-Key": "sync-batch-001",
     }
     payload = {
@@ -180,7 +178,7 @@ def test_outdated_task_version_is_an_explicit_conflict() -> None:
     stale = client.post(
         f"/households/{HOUSEHOLD_A}/tasks/{task['id']}/sessions",
         headers={
-            **principal(role="child", child_id=CHILD_A),
+            **principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": "session-start-stale",
         },
         json={"expected_task_version": task["version"]},

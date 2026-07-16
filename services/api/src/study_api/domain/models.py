@@ -8,8 +8,8 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class DemoRole(StrEnum):
-    """Roles supported by the local-only synthetic principal adapter."""
+class AccountRole(StrEnum):
+    """Roles supported by Household password accounts."""
 
     PARENT = "parent"
     CHILD = "child"

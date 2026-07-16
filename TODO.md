@@ -26,11 +26,11 @@
 | TODO-005 | 完成儿童数据法域、同意、保留、导出/删除和备份决策 | 解除真实儿童数据和 production 阻塞 | P0 | `TBD（安全/法务/产品）` | Owner 与目标法域明确 | Planned |
 | TODO-006 | 修复设计稿跨环境中文字体渲染 | 当前 LibreOffice 渲染缺字，影响后续设计稿维护/发布 | P2 | `TBD` | 确认目标阅读/发布环境 | Planned |
 | TODO-007 | 实现任务/会话/Attempt 与离线同步 | 建立学习过程和断网不丢的核心底座 | P1 | Codex（执行） | ADR-0003 Accepted | Done（TASK-0005；synthetic PostgreSQL 事务与队列边界，真实设备离线待后续） |
-| TODO-008 | 实现 Capture/本地隐私脱敏/云视觉解析/人工校正 | 支持数学单题输入，保证原图不外发并控制脱敏漏检、模型误解析和低置信度风险 | P1 | Codex（执行） | ADR-0010/0011/0015/0016 Accepted；自托管 NewAPI 已部署后才能联调 | In progress（TASK-0006；MinIO/授权/生命周期/人工校正基础、对象实际 SHA-256、Provider-neutral Schema、本地脱敏核心/规则信号、Flutter 确认上传、6-case eval、0008 receipt/API、0009 提取结果仓储、Bearer 认证、NewAPI Adapter 和可开关 worker 已实现；待完成人工确认接口、临时副本删除演练、真实检测器和 NewAPI 联调） |
+| TODO-008 | 实现 Capture/本地隐私脱敏/云视觉解析/人工校正 | 支持数学单题输入，保证原图不外发并控制脱敏漏检、模型误解析和低置信度风险 | P1 | Codex（执行） | ADR-0010/0011/0015/0016 Accepted；自托管 NewAPI 已部署后才能联调 | Done（TASK-0006；人工确认生成 VerifiedQuestion、派生对象成功/失败清理、MinIO/授权/生命周期、对象实际 SHA-256、Provider-neutral Schema、本地脱敏核心/规则信号、Flutter 确认上传、固定 synthetic eval、0008/0009 receipt 与提取仓储、NewAPI Adapter 和可开关 worker 已实现；真实视觉检测器、实例联调、iPad 回归和备份演练保留为环境验收） |
 | TODO-009 | 实现 Tutor Policy、Provider Adapter 和固定 AI eval | 只消费人工确认的 VerifiedQuestion，提供分级提示并控制安全、Schema 和成本 | P1 | Codex（执行） | ADR-0015/0016；本地 NewAPI 可选，默认离线降级 | In progress（offline Tutor Policy 1～3 级提示与 synthetic eval、NewAPI 结构化 Adapter 已实现；Tutor 仍只接受人工确认的 VerifiedQuestion，真实 Tutor Provider 暂不接入） |
 | TODO-010 | 实现错题、复习和可追溯周报 | 完成孩子学习到家长反馈的闭环 | P1 | `TBD` | Session/Tutor 数据稳定 | Planned |
 | TODO-011 | 恢复可复现的 uv 可执行入口 | 当前临时 uv 路径已清理，依赖锁可用但标准 `uv` 命令不可发现 | P0 | `TBD` | 确认项目级或用户级 uv 安装策略 | Planned |
-| TODO-012 | 用账号密码和可撤销会话替换静态家庭 Token | 家长 Web 需要真实登录、首次改密和孩子账号管理；孩子需要独立可撤销身份，不能继续共享长期 HMAC Token | P0 | Codex（待执行） | ADR-0017 Accepted；当前 TASK-0006 完成或由 Owner 明确暂停后进入 TASK | Planned（下一优先级；PLAN-0007 已建立） |
+| TODO-012 | 收敛账号密码与可撤销会话认证 | 家长 Web 和孩子 Flutter 只保留用户名/密码入口，不能继续暴露 HMAC、Demo Header 或 Web 免登录旁路 | P0 | Codex（执行） | ADR-0017 Accepted；TASK-0007 / PLAN-0008 阶段 5a | Done（TASK-0007：HMAC/Demo/免登录和旧配置已删除，OpenAPI `0.6.0` 只保留 Session，Flutter 已支持登录前服务端地址配置；远端部署、浏览器和实体设备验收继续由 PLAN-0008 跟踪） |
 
 ## Later — P2 候选，不承诺
 

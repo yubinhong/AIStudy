@@ -5,11 +5,52 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'package:study_child/auth_client.dart';
 import 'package:study_child/main.dart';
 import 'package:study_child/privacy_sanitization_preview.dart';
 import 'package:study_child/startup_transition.dart';
 
 void main() {
+  testWidgets('configures and persists the server before password login', (
+    tester,
+  ) async {
+    final store = _MemoryChildAuthStore();
+    String? usedBaseUrl;
+    String? savedToken;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChildLoginScreen(
+          initialServerBaseUrl: defaultServerBaseUrl,
+          store: store,
+          loginAction: (baseUrl, username, password) async {
+            usedBaseUrl = baseUrl;
+            expect(username, 'child-a');
+            expect(password, 'child-password');
+            return 'configured-session';
+          },
+          onLoggedIn: (baseUrl, token) {
+            expect(baseUrl, 'http://192.168.1.4:8000');
+            savedToken = token;
+          },
+        ),
+      ),
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey('server-base-url')),
+      'http://192.168.1.4:8000/',
+    );
+    await tester.enterText(find.bySemanticsLabel('用户名'), 'child-a');
+    await tester.enterText(find.bySemanticsLabel('密码'), 'child-password');
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));
+    await tester.pumpAndSettle();
+
+    expect(usedBaseUrl, 'http://192.168.1.4:8000');
+    expect(store.serverBaseUrl, usedBaseUrl);
+    expect(store.sessionToken, 'configured-session');
+    expect(savedToken, 'configured-session');
+  });
+
   testWidgets('shows a finite startup transition while the profile loads', (
     tester,
   ) async {
@@ -164,4 +205,29 @@ void main() {
       expect(selection!.sha256, hasLength(64));
     },
   );
+}
+
+class _MemoryChildAuthStore implements ChildAuthStore {
+  String? serverBaseUrl;
+  String? sessionToken = 'old-server-session';
+
+  @override
+  Future<void> clearSessionToken() async => sessionToken = null;
+
+  @override
+  Future<String?> readServerBaseUrl() async => serverBaseUrl;
+
+  @override
+  Future<String?> readSessionToken() async => sessionToken;
+
+  @override
+  Future<String> saveServerBaseUrl(String value) async {
+    final normalized = normalizeServerBaseUrl(value);
+    if (serverBaseUrl != normalized) await clearSessionToken();
+    serverBaseUrl = normalized;
+    return normalized;
+  }
+
+  @override
+  Future<void> writeSessionToken(String token) async => sessionToken = token;
 }
