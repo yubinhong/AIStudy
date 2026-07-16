@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://study.local/contracts/verified-question.v1.json",
+  "title": "VerifiedQuestion",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id", "capture_id", "extraction_id", "version", "subject", "question_text",
+    "options", "formulas", "has_diagram", "has_handwriting", "verified_by",
+    "verified_at"
+  ],
+  "properties": {
+    "id": {"type": "string", "format": "uuid"},
+    "capture_id": {"type": "string", "format": "uuid"},
+    "extraction_id": {"type": "string", "format": "uuid"},
+    "version": {"type": "integer", "minimum": 1},
+    "subject": {"const": "math"},
+    "question_text": {"type": "string", "minLength": 1, "maxLength": 4000},
+    "options": {"type": "array", "maxItems": 20, "items": {"type": "string"}},
+    "formulas": {"type": "array", "maxItems": 50, "items": {"type": "string"}},
+    "has_diagram": {"type": "boolean"},
+    "has_handwriting": {"type": "boolean"},
+    "answer_text": {"type": ["string", "null"], "maxLength": 1000},
+    "verified_by": {"enum": ["child", "parent"]},
+    "verified_at": {"type": "string", "format": "date-time"}
+  }
+}

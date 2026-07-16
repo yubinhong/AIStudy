@@ -6,7 +6,7 @@
 - 当前状态：`NOT_DEPLOYED`。仓库已有 P0 API/Web/Flutter 骨架、Compose、CI 草案和 local synthetic PostgreSQL migration/MinIO 上传确认/过期清理器，但没有 staging/production、Dashboard 或日志平台；本 Runbook 仅定义生产前必须补齐的运维契约。`ADR-0008` 已 Accepted，仍不构成部署批准。
 - Owner/值班：`TBD（项目 Owner/运维负责人在 staging 前确认）`。
 - 用户影响：服务中断会阻止同步、拍题、AI 提示和周报；孩子端必须保留离线任务/作答，不能因服务中断丢学习记录。
-- 外部依赖：AI/OCR Provider、HMS（或应用内提醒）、对象存储；具体供应商 `TBD`。
+- 外部依赖：单一获批云视觉 Provider、Tutor Provider、HMS（或应用内提醒）和对象存储；具体供应商 `TBD`。本地 OCR 仅是目标 PrivacySanitizer 的隐私检测依赖，不是外部 Provider。
 - Dashboard/日志/Trace：目标为 OpenTelemetry 接入批准的可观测平台；链接和查询 `TBD`。
 
 ## 2. SLO 与关键指标
@@ -17,7 +17,7 @@ SLO 必须在 staging 获得基线后由产品/技术 Owner 批准，不在零�
 | --- | --- | --- | --- |
 | API 可用性 | `TBD` | `TBD` | 无服务 |
 | 任务/会话 API 延迟 | `TBD` | `TBD` | 无基线 |
-| OCR/首个 Tutor 提示延迟 | `TBD` | `TBD` | 无 Provider |
+| 本地脱敏/云视觉解析/首个 Tutor 提示延迟 | `TBD` | `TBD` | 仅旧本地 OCR 有 synthetic 基线；新路线无 Provider |
 | 错误率 | `TBD` | `TBD` | 无基线 |
 | 离线同步冲突/失败 | 不得丢失或覆盖学习记录 | 阈值 `TBD`；任何确认的数据丢失立即升级 | 无实现 |
 | AI Schema/安全失败 | 阻断不合规响应 | 阈值 `TBD`；直接代答/敏感泄露立即升级 | 无 eval |
@@ -28,9 +28,40 @@ SLO 必须在 staging 获得基线后由产品/技术 Owner 批准，不在零�
 
 ### 当前环境
 
-- local：`infra/compose/compose.yml` 已定义 PostgreSQL、Redis 与 MinIO；2026-07-13 已在 Docker Desktop 29.2.1 上启动 PostgreSQL 16.10 与 MinIO，用于 synthetic migration/integration 测试。MinIO 私有 Bucket、预签名上传、服务端对象确认和过期清理已通过 synthetic 验证；Redis 未启动；API 尚未定义为 Compose 服务。
+- local：`infra/compose/compose.yml` 已编排 PostgreSQL、Redis、MinIO、API、家长 Web、一次性 Alembic migration 和默认启动的 ImageAnalysis worker；Compose 配置已通过静态展开检查，`linux/arm64` API 调试镜像已在 Apple Silicon 上构建成功，完整 Compose 启动烟测仍未执行。NewAPI 默认关闭；此时 worker 保持空闲。当前认证仍为 HMAC Bearer；ADR-0017 的账号密码、首次改密和可撤销会话尚未实现。题目人工确认接口、真实视觉检测器、临时脱敏副本清理、备份恢复和生产监控未实现，当前只能按自用全栈部署文档使用。
 - staging：未建立。
 - production：未建立且未获部署授权。
+
+### 账号密码认证切换计划（ADR-0017；尚不可执行）
+
+PLAN-0007 完成后，自用首次启动和迁移必须按以下顺序执行；当前仓库还没有对应 migration、API、页面或恢复命令，因此本节不能作为现有操作手册直接运行：
+
+1. 先让 Web/API 只监听 loopback，应用 Account/AuthSession 前滚迁移；仅当账号表为空时创建一次性 `admin/admin123456`，确认数据库只含 Argon2id 哈希且 `must_change_password=true`。
+2. 从服务器本机登录，验证除当前账号、改密和退出外的家庭数据接口均返回 `password_change_required`；立即修改管理员密码。
+3. 确认所有引导会话已撤销，新会话可读取同一 Household 数据后，才允许把 Web 暴露到家庭局域网；禁止让默认密码在非 loopback 环境继续有效。
+4. 在 Web 创建孩子账号并绑定 ChildProfile；验证孩子只能访问自己的任务/会话，不能访问家长管理接口或兄弟孩子数据。
+5. 验证登出、改密、停用、重置和 30 天到期均能撤销会话；Web Cookie/CSRF 与 Flutter Keychain/Android Keystore 路径通过后，再关闭 `legacy_bearer`。
+6. 唯一管理员忘记密码时只允许在服务器本机执行未来提供的受审计恢复命令；不提供短信、邮箱或 MFA 恢复。
+
+回滚时可在短期迁移窗口重新开启显式 `legacy_bearer` 并回退应用，但不得删除 Account/AuthSession 表或恢复已撤销会话；优先前滚修复。具体命令、迁移版本和校验脚本须在 TASK-0007 实现并实测后替换本段的计划描述。
+
+### 自用 NewAPI 启用流程
+
+以下是 PLAN-0007 完成前仍可运行的 HMAC 过渡流程，不是最终认证操作方式；账号密码切换完成后应删除 `STUDY_AUTH_SECRET` 和签发 Token 步骤。默认 `STUDY_NEWAPI_ENABLED=false`，此时图片分析只记录 `provider_not_enabled` 的 blocked 回执，默认 worker 保持空闲，不读图片、不出网。自用部署者在本机 NewAPI 已可达并确认模型支持视觉后，注入以下环境变量，再重启 API 和 worker：
+
+```bash
+export STUDY_AUTH_MODE=bearer
+export STUDY_AUTH_SECRET="$(openssl rand -base64 36)"
+export STUDY_NEWAPI_ENABLED=true
+export STUDY_NEWAPI_BASE_URL=http://127.0.0.1:3000
+export STUDY_NEWAPI_API_KEY="<local-newapi-key>"
+export STUDY_NEWAPI_VISION_MODEL="<vision-model>"
+cd services/api
+uv run python scripts/issue_auth_token.py --household-id <household-uuid> --role parent
+uv run python scripts/run_image_analysis_worker.py --watch
+```
+
+启用前先用 synthetic 图片验证 NewAPI 返回 `question-extraction.v1` JSON；worker 的失败只写稳定错误码，原始 Provider 请求/响应不写日志。发现外发范围、模型行为或成本异常时，立即将 `STUDY_NEWAPI_ENABLED=false` 并停止 worker；已入队任务不会在关闭开关后继续被新 worker 领取。
 
 ### 生产前置检查
 
@@ -38,21 +69,46 @@ SLO 必须在 staging 获得基线后由产品/技术 Owner 批准，不在零�
 - [ ] 版本化产物、配置清单、迁移、容量、功能开关、模型/Prompt/Policy 版本已审查。
 - [ ] 备份、恢复演练、数据导出/删除、成本和安全告警就绪。
 - [ ] 适用法域、儿童隐私、保留期限、Owner/值班和安全联系渠道已批准。
+- [ ] ADR-0017 已实现并验证：默认管理员仅本机首次登录、首次改密完成、无有效默认凭据、会话可撤销、Web Cookie/CSRF 和孩子账号反向授权通过；当前 HMAC 默认认证已关闭。
+- [ ] 自用 NewAPI 的 URL、API key、视觉模型、响应 Schema、停用开关和本地 synthetic 联调已验证；PrivacySanitizer/用户确认/临时副本删除 eval 已通过。
 - [ ] 发布、停止、回滚和前滚负责人明确，真实数据不来自开发环境。
 
-### 本地依赖流程
+### 本地/自用 Compose 流程
 
 ```bash
-docker compose -f infra/compose/compose.yml up -d
+cp infra/compose/.env.example infra/compose/.env
+openssl rand -hex 32
+docker compose -f infra/compose/compose.yml config
+docker compose -f infra/compose/compose.yml up -d --build
 docker compose -f infra/compose/compose.yml ps
+curl http://127.0.0.1:${WEB_PORT:-3000}/healthz
 ```
 
-P0 Compose 已具备基础健康检查；Learning schema 已通过 local PostgreSQL 的 downgrade/upgrade 演练。日志/遥测、密钥和生产安全默认值仍需随对应实现补齐，并在 `TESTING.md` 验证命令。
+ImageAnalysis worker 是默认服务；NewAPI 关闭时它安全空闲，启用后执行 `up -d --build api image-analysis-worker` 使配置生效。Apple Silicon 默认构建原生 Linux ARM 调试镜像；它不包含只提供 macOS ARM64/Linux x86_64 wheel 的 PaddlePaddle 3.3.1，因此不能用于验证旧本地 Paddle OCR。需要完整 Paddle 路线时，在 macOS 原生进程运行 API/OCR worker，或显式使用 `linux/amd64` 模拟镜像。完整变量说明、NewAPI 容器外部接入、迁移、停止、升级和回滚见 `infra/compose/README.md`。Compose 使用持久卷；未完成备份前不得使用 `down -v`。日志/遥测、自动备份、保留清理器和生产安全默认值仍需补齐。
+
+以下命令只运行 ADR-0012 下已经实现的本地完整 OCR synthetic 路线，用于兼容/回滚验证；它不实现 ADR-0015，也不会向云端发送图片。API 与旧 OCR Worker 要共享 Job 状态时，必须显式启用 PostgreSQL Learning/Capture、Job 和结果仓储；Worker 需要五个带构建期 SHA-256 标记的模型目录、PostgreSQL、MinIO 配置：
+
+```bash
+cd services/api
+STUDY_API_LEARNING_REPOSITORY=postgres \
+STUDY_API_OCR_QUEUE=postgres \
+STUDY_API_OCR_RESULTS=postgres \
+uv run uvicorn study_api.main:app --host 0.0.0.0 --port 8000
+
+# One job:
+STUDY_API_OCR_QUEUE=postgres uv run python scripts/run_ocr_worker.py
+
+# Continuous local polling:
+STUDY_API_OCR_QUEUE=postgres OCR_WORKER_POLL_INTERVAL_SECONDS=2 \
+uv run python scripts/run_ocr_worker.py --watch
+```
+
+一次性命令只处理一个任务；`idle` 和 `succeeded` 返回 0，OCR 失败返回 1，启动配置错误返回 2。队列请求默认使用普通 text OCR；只有显式提交 `{"mode":"formula"}` 才调用本地公式模型。`--watch` 会持续轮询 PostgreSQL 队列，Ctrl-C 后关闭资源并返回最近状态；当前未定义进程管理、Redis Worker 或生产告警。
 
 ### staging/production 部署
 
 ```text
-TBD：平台、CI/CD、镜像/产物、部署命令、迁移顺序和审批流程尚未决定。
+TBD：当前只提供单家庭自托管 Compose；公网暴露、CI/CD、自动备份、监控和多环境发布流程尚未决定。
 ```
 
 未获用户明确授权不得部署、修改云资源、迁移生产数据或发送外部通知。
@@ -60,9 +116,9 @@ TBD：平台、CI/CD、镜像/产物、部署命令、迁移顺序和审批流�
 ## 4. 部署后验证（目标）
 
 1. 验证版本、配置、迁移状态和依赖健康，不打印密钥。
-2. 使用合成监控家庭验证家长登录、孩子档案、任务同步和会话开始。
+2. 使用合成监控家庭验证家长登录/改密/退出、孩子账号创建/停用/重置、孩子登录、会话撤销、孩子档案、任务同步和会话开始；确认默认引导凭据和改密前会话不能读取家庭数据。
 3. 验证一次离线作答重连、幂等重复提交和同步冲突路径。
-4. 使用无敏感测试题验证签名上传、OCR 校正、Tutor Schema/Policy 和成本记录。
+4. 使用 synthetic 图片验证签名上传、本地脱敏/手动涂抹/用户确认、单 Provider 云视觉结构化、题目校正、临时副本删除、Tutor Schema/Policy 和成本记录；确认 Provider 请求不含原图、MinIO URL、对象键或敏感 OCR 文本。
 5. 验证错题/周报追溯、应用内提醒降级和导出/删除测试流程。
 6. 检查授权异常、错误率、延迟、队列、AI 安全/成本、对象删除和备份指标。
 
@@ -71,7 +127,7 @@ TBD：平台、CI/CD、镜像/产物、部署命令、迁移顺序和审批流�
 ## 5. 回滚与前滚
 
 - 触发条件：跨家庭越权、学习记录丢失/覆盖、迁移破坏、AI 安全阻断失败、Restricted 数据泄漏、删除错误、错误率/成本超过批准阈值。
-- 功能降级顺序：关闭受影响模型/Provider或新 Policy → 关闭拍题/Tutor/通知/周报等独立开关 → 回退应用版本 → 隔离写入。
+- 功能降级顺序：关闭云视觉图片外发 → 降级为重新裁剪/手工录入或显式本地 OCR 回滚 Provider → 关闭受影响 Tutor 模型/Policy → 关闭拍题/Tutor/通知/周报等独立开关 → 回退应用版本 → 隔离写入。任何降级都不得发送原图或自动广播给其他 Provider。
 - 应用回滚：部署平台与命令 `TBD`。必须回退到已验证版本，并保持客户端/契约兼容。
 - 数据策略：优先向前修复；只有已验证无数据损失且符合迁移契约时才回滚。Attempt/AuditEvent 不做破坏性覆盖。
 - 离线兼容：回滚版本仍须接受或明确拒绝已发放客户端的版本化事件，不能让队列永久卡死。
@@ -99,6 +155,13 @@ TBD：平台、CI/CD、镜像/产物、部署命令、迁移顺序和审批流�
 - 首先检查：Provider/model、Prompt/Policy/Schema 版本、路由、延迟/token/成本和最近开关。
 - 临时缓解：切回已验证版本/低风险模型，收紧提示或暂停 AI；保留任务与手工学习路径。
 - 升级：敏感泄漏、对儿童有害输出或预算失控立即升级产品/安全/技术 Owner。
+
+### 图片脱敏或外发门禁异常
+
+- 含义：原图/未确认副本可能外发、敏感信息漏检、遮挡可逆、同一图片跨 Provider 发送或临时副本未按期删除。
+- 首先检查：Capture/脱敏副本不可逆标识、sanitizer/rule/schema 版本、用户确认哈希、Provider 路由、请求摘要和删除状态；不得查看或复制无关原图/敏感 OCR 文本。
+- 临时缓解：立即关闭云视觉外发开关，撤销 Provider 凭据，阻止待发队列并保留最小审计证据；学习流程降级为手工录入。
+- 升级：任一确认的原图/身份外发、跨 Provider 广播或删除失败按 Restricted 数据事件升级安全/法务/产品/技术 Owner。
 
 ### 导出/删除/备份失败
 

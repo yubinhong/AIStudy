@@ -685,6 +685,349 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /households/{household_id}/captures/{capture_id}/ocr-jobs:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: capture_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: enqueueOcrJob
+      summary: Enqueue local OCR for a server-confirmed Capture
+      description: The endpoint only records a bounded job request. OCR runs in a separate local Worker and returns manually confirmable candidates; it never accepts image bytes, object keys, or external Provider selection.
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+          DemoChild: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnqueueOcrJobRequest'
+      responses:
+        '202':
+          description: OCR job accepted by the local/CI queue.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OcrJobReceipt'
+        '200':
+          description: Idempotent OCR job enqueue replay.
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                const: 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OcrJobReceipt'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Capture is not ready for OCR or the idempotency key conflicts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /households/{household_id}/captures/{capture_id}/ocr-jobs/{job_id}:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: capture_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getOcrJob
+      summary: Read bounded local OCR job status
+      description: The response contains stable lifecycle fields only; Provider errors, image bytes, object keys, and OCR text are not returned by this endpoint.
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+          DemoChild: []
+      responses:
+        '200':
+          description: OCR job status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OcrJobReceipt'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /households/{household_id}/captures/{capture_id}/image-analysis-jobs:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: capture_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: startImageAnalysis
+      summary: Record a user-confirmed sanitization receipt for one Capture
+      description: The service queues a job only when NewAPI is explicitly enabled and the user-confirmed sanitization hash matches the Capture; otherwise it records a blocked job. Only the confirmed derivative may reach the self-hosted Provider.
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+          DemoChild: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartImageAnalysisRequest'
+      responses:
+        '202':
+          description: Receipt accepted; status is queued when the self-hosted Provider is enabled, otherwise blocked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageAnalysisJobReceipt'
+        '200':
+          description: Idempotent replay of the same receipt.
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                const: 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageAnalysisJobReceipt'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Capture version, upload state, or idempotency conflict.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /households/{household_id}/captures/{capture_id}/image-analysis-jobs/{job_id}:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: capture_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getImageAnalysisJob
+      summary: Read provider-neutral ImageAnalysis job state
+      description: The response contains only lifecycle, receipt hash, and stable error fields; no image, URL, object key, OCR text, or Provider response is returned.
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+          DemoChild: []
+      responses:
+        '200':
+          description: ImageAnalysis job state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageAnalysisJobReceipt'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /households/{household_id}/captures/{capture_id}/image-analysis-jobs/{job_id}/extraction:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: capture_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getQuestionExtraction
+      summary: Read an unverified question extraction for manual review
+      description: Returns only schema-validated extraction fields. The result is not a verified question and must not be used as a Tutor fact before human confirmation.
+      security:
+        - BearerHouseholdToken: []
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+          DemoChild: []
+      responses:
+        '200':
+          description: Unverified question extraction.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuestionExtractionRecord'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Extraction has not completed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /households/{household_id}/tutor/hints:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+    post:
+      operationId: createTutorHint
+      summary: Return a provider-free graduated hint for a verified question
+      description: The current implementation is a deterministic zero-cost local fallback. It requires a child-bound corrected Capture and never returns a direct answer or calls a Provider.
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+          DemoChild: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartTutorHintRequest'
+      responses:
+        '200':
+          description: Bounded offline hint; direct_answer is always null.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TutorHintResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Capture has not been manually confirmed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /households/{household_id}/captures/{capture_id}/ocr-results/{result_id}:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: capture_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: result_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getOcrResult
+      summary: Get unverified OCR candidates for the bound child
+      description: The child-only response is rechecked against Household, Child, and Capture ownership. Candidates remain unverified and must be manually confirmed before entering the learning workflow.
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+          DemoChild: []
+      responses:
+        '200':
+          description: OCR result and candidates awaiting manual confirmation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OcrResultWithCandidates'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: confirmOcrCandidate
+      summary: Confirm one OCR candidate as a manual Capture correction
+      description: The server resolves the candidate by ID under the bound Household, Child, result, and Capture, then appends its text to CaptureCorrection. The OCR result remains an unverified model output.
+      security:
+        - DemoHouseholdPrincipal: []
+          DemoRole: []
+          DemoChild: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmOcrCandidateRequest'
+      responses:
+        '201':
+          description: Candidate text appended as a manual Capture correction.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureCorrection'
+        '200':
+          description: Idempotent confirmation replay.
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                const: 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureCorrection'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Capture version, state, or idempotency conflict.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
   parameters:
     HouseholdId:
@@ -717,6 +1060,11 @@ components:
         type: string
         format: uuid
   securitySchemes:
+    BearerHouseholdToken:
+      type: http
+      scheme: bearer
+      bearerFormat: st1 HMAC household token
+      description: Self-hosted single-household bearer token issued by the local API script; no third-party IdP is required.
     DemoHouseholdPrincipal:
       type: apiKey
       in: header
@@ -989,6 +1337,351 @@ components:
         expected_capture_version:
           type: integer
           minimum: 1
+    PrivacySanitization:
+      type: object
+      additionalProperties: false
+      required: [schema_version, sanitizer_version, safe_to_upload, requires_confirmation, sensitive_types, region_count, face_detected, qr_detected, barcode_detected, blocked_reasons, sanitized_derivative_sha256]
+      properties:
+        schema_version:
+          type: string
+          const: privacy-sanitization.v1
+        sanitizer_version:
+          type: string
+          minLength: 1
+          maxLength: 64
+        safe_to_upload:
+          type: boolean
+        requires_confirmation:
+          type: boolean
+          const: true
+        sensitive_types:
+          type: array
+          uniqueItems: true
+          maxItems: 32
+          items:
+            type: string
+            enum: [name, school, class, grade, student_id, exam_id, seat_number, phone, address, signature, face, qr_code, barcode]
+        region_count:
+          type: integer
+          minimum: 0
+          maximum: 256
+        face_detected:
+          type: boolean
+        qr_detected:
+          type: boolean
+        barcode_detected:
+          type: boolean
+        blocked_reasons:
+          type: array
+          maxItems: 16
+          items:
+            type: string
+            minLength: 1
+            maxLength: 64
+        sanitized_derivative_sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+    StartImageAnalysisRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_capture_version, sanitization, user_confirmed]
+      properties:
+        expected_capture_version:
+          type: integer
+          minimum: 1
+        sanitization:
+          $ref: '#/components/schemas/PrivacySanitization'
+        user_confirmed:
+          type: boolean
+          const: true
+    ImageAnalysisJobReceipt:
+      type: object
+      additionalProperties: false
+      required: [id, capture_id, household_id, child_id, status, attempt, sanitization_schema_version, sanitized_derivative_sha256, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        capture_id:
+          type: string
+          format: uuid
+        household_id:
+          type: string
+          format: uuid
+        child_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed, blocked]
+        attempt:
+          type: integer
+          minimum: 0
+        sanitization_schema_version:
+          type: string
+          const: privacy-sanitization.v1
+        sanitized_derivative_sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        extraction_id:
+          type: string
+          format: uuid
+          nullable: true
+        error_code:
+          type: string
+          minLength: 1
+          maxLength: 64
+          nullable: true
+    QuestionExtractionRecord:
+      type: object
+      additionalProperties: false
+      required: [id, capture_id, household_id, child_id, extraction, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        capture_id:
+          type: string
+          format: uuid
+        household_id:
+          type: string
+          format: uuid
+        child_id:
+          type: string
+          format: uuid
+        extraction:
+          $ref: '#/components/schemas/QuestionExtraction'
+        created_at:
+          type: string
+          format: date-time
+    VerifiedQuestion:
+      type: object
+      additionalProperties: false
+      required: [id, capture_id, extraction_id, version, subject, question_text, options, formulas, has_diagram, has_handwriting, verified_by, verified_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        capture_id:
+          type: string
+          format: uuid
+        extraction_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+        subject:
+          type: string
+          const: math
+        question_text:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        options:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+        formulas:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+        has_diagram:
+          type: boolean
+        has_handwriting:
+          type: boolean
+        answer_text:
+          type: string
+          maxLength: 1000
+          nullable: true
+        verified_by:
+          type: string
+          enum: [child, parent]
+        verified_at:
+          type: string
+          format: date-time
+    StartTutorHintRequest:
+      type: object
+      additionalProperties: false
+      required: [verified_question, level, child_id]
+      properties:
+        verified_question:
+          $ref: '#/components/schemas/VerifiedQuestion'
+        level:
+          type: integer
+          minimum: 1
+          maximum: 3
+        child_id:
+          type: string
+          format: uuid
+    TutorHintResponse:
+      type: object
+      additionalProperties: false
+      required: [schema_version, policy_version, provider, model, level, prompt, next_step, requires_child_response, direct_answer, cost_cents]
+      properties:
+        schema_version:
+          type: string
+          const: tutor-hint.v1
+        policy_version:
+          type: string
+          const: offline-tutor-policy.v1
+        provider:
+          type: string
+          const: local-policy
+        model:
+          type: string
+          const: rules-v1
+        level:
+          type: integer
+          minimum: 1
+          maximum: 3
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 500
+        next_step:
+          type: string
+          minLength: 1
+          maxLength: 500
+        requires_child_response:
+          type: boolean
+          const: true
+        direct_answer:
+          type: 'null'
+        cost_cents:
+          type: integer
+          const: 0
+    OcrJobReceipt:
+      type: object
+      additionalProperties: false
+      required: [id, capture_id, mode, status, attempt, enqueued_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        capture_id:
+          type: string
+          format: uuid
+        mode:
+          type: string
+          enum: [text, formula]
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed]
+        attempt:
+          type: integer
+          minimum: 0
+        enqueued_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        result_id:
+          type: string
+          format: uuid
+          nullable: true
+    EnqueueOcrJobRequest:
+      type: object
+      additionalProperties: false
+      required: []
+      properties:
+        mode:
+          type: string
+          enum: [text, formula]
+          default: text
+    OcrResult:
+      type: object
+      additionalProperties: false
+      required: [id, capture_id, household_id, child_id, provider, model, model_version, schema_version, confidence, status, requires_manual_confirmation, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        capture_id:
+          type: string
+          format: uuid
+        household_id:
+          type: string
+          format: uuid
+        child_id:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          minLength: 1
+          maxLength: 80
+        model:
+          type: string
+          minLength: 1
+          maxLength: 120
+        model_version:
+          type: string
+          minLength: 1
+          maxLength: 80
+        schema_version:
+          type: string
+          minLength: 1
+          maxLength: 32
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        status:
+          type: string
+          enum: [candidate, empty]
+        requires_manual_confirmation:
+          type: boolean
+          const: true
+        created_at:
+          type: string
+          format: date-time
+    OcrCandidate:
+      type: object
+      additionalProperties: false
+      required: [id, result_id, sequence, text, confidence]
+      properties:
+        id:
+          type: string
+          format: uuid
+        result_id:
+          type: string
+          format: uuid
+        sequence:
+          type: integer
+          minimum: 1
+        text:
+          type: string
+          minLength: 1
+          maxLength: 1000
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+    OcrResultWithCandidates:
+      type: object
+      additionalProperties: false
+      required: [result, candidates]
+      properties:
+        result:
+          $ref: '#/components/schemas/OcrResult'
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/OcrCandidate'
     CorrectCaptureRequest:
       type: object
       additionalProperties: false
@@ -1001,6 +1694,17 @@ components:
           type: string
           minLength: 1
           maxLength: 1000
+    ConfirmOcrCandidateRequest:
+      type: object
+      additionalProperties: false
+      required: [expected_capture_version, candidate_id]
+      properties:
+        expected_capture_version:
+          type: integer
+          minimum: 1
+        candidate_id:
+          type: string
+          format: uuid
     CaptureCorrection:
       type: object
       additionalProperties: false

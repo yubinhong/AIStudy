@@ -1,10 +1,12 @@
-"""Local-only synthetic principal and Household boundary checks."""
+"""Household boundary checks with a self-hosted bearer mode."""
 
+import os
 from dataclasses import dataclass
 from uuid import UUID
 
 from fastapi import Header, HTTPException, status
 
+from study_api.auth_tokens import AuthTokenError, parse_token
 from study_api.domain.models import DemoRole
 
 
@@ -18,11 +20,30 @@ class DemoPrincipal:
 
 
 def get_demo_principal(
+    authorization: str | None = Header(default=None, alias="Authorization"),
     household_header: str | None = Header(default=None, alias="X-Demo-Household-Id"),
     role_header: str | None = Header(default=None, alias="X-Demo-Role"),
     child_header: str | None = Header(default=None, alias="X-Demo-Child-Id"),
 ) -> DemoPrincipal:
-    """Read a synthetic local/CI principal; never use this as production auth."""
+    """Read self-hosted bearer auth, or local demo headers in compatibility mode."""
+
+    if authorization is not None:
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() != "bearer" or not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid principal"
+            )
+        secret = os.environ.get("STUDY_AUTH_SECRET", "")
+        try:
+            claims = parse_token(secret, token)
+        except AuthTokenError as error:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid principal"
+            ) from error
+        return DemoPrincipal(claims.household_id, claims.role, claims.child_id)
+
+    if os.environ.get("STUDY_AUTH_MODE", "demo").lower() == "bearer":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="principal required")
 
     if household_header is None or role_header is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="principal required")

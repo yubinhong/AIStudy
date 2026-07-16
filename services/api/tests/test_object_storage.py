@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from hashlib import sha256
 from io import BytesIO
 
 import pytest
@@ -73,10 +74,18 @@ def test_validate_uploaded_object_requires_matching_private_metadata() -> None:
         client=FakeS3Client(),  # type: ignore[arg-type]
     )
 
-    storage.validate_uploaded_object("captures/synthetic/source", "image/jpeg", 1024)
+    expected_sha256 = sha256(b"x" * 1024).hexdigest()
+    storage.validate_uploaded_object(
+        "captures/synthetic/source", "image/jpeg", 1024, expected_sha256
+    )
 
     with pytest.raises(ObjectStorageError):
-        storage.validate_uploaded_object("captures/synthetic/source", "image/png", 1024)
+        storage.validate_uploaded_object(
+            "captures/synthetic/source", "image/png", 1024, expected_sha256
+        )
+
+    with pytest.raises(ObjectStorageError, match="hash"):
+        storage.validate_uploaded_object("captures/synthetic/source", "image/jpeg", 1024, "0" * 64)
 
 
 def test_read_object_is_bounded_and_closes_the_response_body() -> None:

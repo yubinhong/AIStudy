@@ -1,0 +1,53 @@
+{
+  "suite_id": "privacy-sanitizer-synthetic-v1",
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "phone_and_school_regions",
+      "regions": [
+        {"kind": "phone", "x": 2, "y": 3, "width": 5, "height": 4, "confidence": 0.99, "source": "rule"},
+        {"kind": "school", "x": 9, "y": 1, "width": 4, "height": 3, "confidence": 0.95, "source": "ocr"}
+      ],
+      "expected_safe_to_upload": true,
+      "expected_region_count": 2
+    },
+    {
+      "id": "ordinary_math_numbers_are_not_masked",
+      "regions": [],
+      "expected_safe_to_upload": true,
+      "expected_region_count": 0
+    },
+    {
+      "id": "ambiguous_large_face_blocks",
+      "regions": [],
+      "face_detected": true,
+      "face_area_ratio": 0.30,
+      "face_ambiguous": true,
+      "expected_safe_to_upload": false,
+      "expected_region_count": 0
+    },
+    {
+      "id": "qr_without_safe_region_blocks",
+      "regions": [],
+      "qr_detected": true,
+      "expected_safe_to_upload": false,
+      "expected_region_count": 0
+    },
+    {
+      "id": "low_confidence_region_blocks",
+      "regions": [
+        {"kind": "name", "x": 4, "y": 4, "width": 4, "height": 3, "confidence": 0.55, "source": "ocr"}
+      ],
+      "low_confidence": true,
+      "expected_safe_to_upload": false,
+      "expected_region_count": 1
+    },
+    {
+      "id": "incomplete_crop_blocks",
+      "regions": [],
+      "crop_incomplete": true,
+      "expected_safe_to_upload": false,
+      "expected_region_count": 0
+    }
+  ]
+}

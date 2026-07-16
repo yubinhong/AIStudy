@@ -8,8 +8,10 @@ environment:
   flutter: ">=3.44.0"
 
 dependencies:
+  crypto: 3.0.7
   flutter:
     sdk: flutter
+  image_picker: 1.2.3
 
 dev_dependencies:
   flutter_test:
@@ -18,3 +20,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/ui/child_avatar.png
+    - assets/ui/fraction_addition.png
+    - assets/ui/synthetic_math_photo.png

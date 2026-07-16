@@ -9,9 +9,25 @@ from fastapi.responses import JSONResponse
 from study_api import __version__
 from study_api.domain.capture_repository import CaptureRepository, InMemoryCaptureRepository
 from study_api.domain.learning_repository import InMemoryLearningRepository
+from study_api.domain.ocr_result_repository import (
+    InMemoryOcrResultRepository,
+    OcrResultRepository,
+    PostgresOcrResultRepository,
+)
+from study_api.domain.question_extraction_repository import (
+    InMemoryQuestionExtractionRepository,
+    PostgresQuestionExtractionRepository,
+    QuestionExtractionRepository,
+)
 from study_api.domain.repository import InMemoryProfileRepository
 from study_api.domain.sql_capture_repository import PostgresCaptureRepository
 from study_api.domain.sql_learning_repository import LearningRepository, PostgresLearningRepository
+from study_api.image_analysis_jobs import (
+    ImageAnalysisJobRepository,
+    InMemoryImageAnalysisJobRepository,
+    PostgresImageAnalysisJobRepository,
+)
+from study_api.newapi_provider import NewApiConfig
 from study_api.object_storage import (
     CaptureObjectStorage,
     ObjectStorageConfig,
@@ -19,9 +35,12 @@ from study_api.object_storage import (
     S3ObjectStorage,
     UnavailableObjectStorage,
 )
+from study_api.ocr_jobs import InMemoryOcrJobQueue, OcrJobQueue, PostgresOcrJobQueue
 from study_api.routes.captures import router as capture_router
+from study_api.routes.image_analysis import router as image_analysis_router
 from study_api.routes.learning import router as learning_router
 from study_api.routes.profiles import router as profile_router
+from study_api.routes.tutor import router as tutor_router
 
 
 def create_app(
@@ -29,6 +48,10 @@ def create_app(
     learning_repository: LearningRepository | None = None,
     capture_repository: CaptureRepository | None = None,
     object_storage: CaptureObjectStorage | None = None,
+    ocr_job_queue: OcrJobQueue | None = None,
+    ocr_result_repository: OcrResultRepository | None = None,
+    image_analysis_repository: ImageAnalysisJobRepository | None = None,
+    question_extraction_repository: QuestionExtractionRepository | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="家庭 AI 学习助手 API",
@@ -43,9 +66,20 @@ def create_app(
         app.state.learning_repository
     )
     app.state.object_storage = object_storage or _default_object_storage()
+    app.state.ocr_job_queue = ocr_job_queue or _default_ocr_job_queue()
+    app.state.ocr_result_repository = ocr_result_repository or _default_ocr_result_repository()
+    app.state.image_analysis_repository = (
+        image_analysis_repository or _default_image_analysis_repository()
+    )
+    app.state.question_extraction_repository = (
+        question_extraction_repository or _default_question_extraction_repository()
+    )
+    app.state.newapi_config = NewApiConfig.from_environment()
     app.include_router(profile_router)
     app.include_router(learning_router)
     app.include_router(capture_router)
+    app.include_router(image_analysis_router)
+    app.include_router(tutor_router)
 
     @app.exception_handler(HTTPException)
     async def http_error_handler(_: Request, exception: HTTPException) -> JSONResponse:
@@ -90,6 +124,30 @@ def _default_object_storage() -> CaptureObjectStorage:
         return S3ObjectStorage(ObjectStorageConfig.from_environment())
     except ObjectStorageError:
         return UnavailableObjectStorage()
+
+
+def _default_ocr_job_queue() -> OcrJobQueue:
+    if os.environ.get("STUDY_API_OCR_QUEUE") == "postgres":
+        return PostgresOcrJobQueue()
+    return InMemoryOcrJobQueue()
+
+
+def _default_ocr_result_repository() -> OcrResultRepository:
+    if os.environ.get("STUDY_API_OCR_RESULTS") == "postgres":
+        return PostgresOcrResultRepository()
+    return InMemoryOcrResultRepository()
+
+
+def _default_image_analysis_repository() -> ImageAnalysisJobRepository:
+    if os.environ.get("STUDY_API_IMAGE_ANALYSIS_REPOSITORY") == "postgres":
+        return PostgresImageAnalysisJobRepository()
+    return InMemoryImageAnalysisJobRepository()
+
+
+def _default_question_extraction_repository() -> QuestionExtractionRepository:
+    if os.environ.get("STUDY_API_IMAGE_ANALYSIS_REPOSITORY") == "postgres":
+        return PostgresQuestionExtractionRepository()
+    return InMemoryQuestionExtractionRepository()
 
 
 app = create_app()

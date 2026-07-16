@@ -279,7 +279,7 @@ git diff --check
 
 ## 目标与边界
 
-建立 Capture 的服务端安全数据流：受限媒体声明 → 必须人工校正 → 追加校正事件；随后按 ADR-0010～0012 接入本地 MinIO 与本地 PaddleOCR。真实儿童图片、生产保留/备份、商业 Provider 仍不在范围内。
+建立 Capture 的服务端安全数据流：受限媒体声明 → 必须人工校正 → 追加校正事件；已按 ADR-0010～0012 完成本地 MinIO 与本地 PaddleOCR 的 synthetic 安全基础。`2026-07-15` 起目标由 ADR-0015 调整为“本地 PrivacySanitizer → 用户确认脱敏副本 → 单一获批云视觉解析 → 题目人工确认”；现有本地完整 OCR 保留为迁移事实/关闭的回滚能力。真实儿童图片、生产保留/备份和具体云 Provider 仍不在范围内。
 
 ## 阶段
 
@@ -287,8 +287,13 @@ git diff --check
 - [x] 2. 在 `packages/contracts` 增加向后兼容 Capture/Correction `0.4.0` 合同和结构检查。
 - [x] 3. 在 API 建立 Capture 领域模型、child-only 授权路由、内存参考仓储与 PostgreSQL 事务仓储，禁止原始媒体/文本进入审计。
 - [x] 4. 新增版本化迁移与 local PostgreSQL 集成测试，覆盖家庭隔离、幂等、校正追加和 downgrade/upgrade；真实多请求并发仍待下一里程碑。
-- [ ] 5. 已锁定并安装 `boto3==1.43.46`、Pillow `12.3.0`、PaddleOCR `3.7.0`、PaddlePaddle CPU `3.3.1` 与模型清单；私有 MinIO 预签名 Adapter、`0.5.0` 上传签发/服务端确认端点、`0003`/`0004` 对象键/生命周期迁移、过期清理器、按 Household/Child 的 Capture 对象级联删除编排、local/CI 家长删除顺序与幂等入口、家长保存/立即删除图片、synthetic PostgreSQL/MinIO 测试、预置模型目录的 OCR Adapter、对象有界读取、图片容器头部校验、完整像素解码/无 EXIF 规范化重编码、PaddleOCR 文本结果纯解析、临时文件执行边界、`0005` OCR 候选结果事务持久化、固定 `ocr-synthetic-v1` 评测和 linux/amd64 synthetic 真实模型烟测已完成。继续实现 Ubuntu 原生基准/真实题型评测与生产 Profile/派生对象/备份级联。
-- [ ] 6. 执行相关质量门槛、安全审查和文档同步；记录真实设备、备份/法域和商业 Provider 的未完成项。
+- [x] 5. 已锁定并安装 `boto3==1.43.46`、Pillow `12.3.0`、PaddleOCR `3.7.0`、PaddlePaddle CPU `3.3.1` 与模型清单；私有 MinIO 预签名 Adapter、`0.5.0` 上传签发/服务端确认端点、`0003`～`0006` 对象键/生命周期/OCR Job Ledger 迁移、过期清理器、按 Household/Child 的 Capture 对象级联删除编排、local/CI 家长删除顺序与幂等入口、家长保存/立即删除图片、synthetic PostgreSQL/MinIO 测试、预置模型目录的 OCR Adapter、对象有界读取、图片容器头部校验、完整像素解码/无 EXIF 规范化重编码、PaddleOCR 文本结果纯解析、临时文件执行边界、`0005` OCR 候选结果事务持久化、幂等 OCR 入队/PostgreSQL 行锁队列、固定 `ocr-synthetic-v1` 评测和 linux/amd64 synthetic 真实模型烟测已完成。Redis/外部 Worker 适配、Ubuntu 原生基准/真实题型评测与生产 Profile/派生对象/备份级联仍在后续范围。
+- [x] 6. 已执行相关质量门槛、安全审查和文档同步；真实设备、备份/法域和商业 Provider 的未完成项已记录。
+- [x] 7. 读取项目 Owner 提供的架构讨论，建立并接受 ADR-0015；同步产品、架构、安全、决策、任务、测试和运维边界，明确旧代码与新目标冲突，本轮不修改代码/合同/迁移。
+- [x] 8. 兼容实现里程碑已建立：Provider-neutral 脱敏/图片分析 Schema、PrivacySanitizer synthetic eval、本地检测信号、Flutter 脱敏预览/手动涂抹、旧 Capture 对象 SHA-256 核验、ImageAnalysis ledger/API、无 Provider offline Tutor Policy、Tutor hints API 和固定 Tutor synthetic eval 已完成。
+- [x] 9. 自用部署边界已实现：ADR-0016 HMAC Bearer 令牌、Web/Flutter token 注入、OpenAI-compatible NewAPI Adapter、显式 enabled gate、0009 QuestionExtraction 持久化、ImageAnalysis queued worker、stale lease/稳定失败状态和提取读取合同已完成；NewAPI 仍默认关闭。
+- [x] 10. 自用 Compose 交付边界已补齐：API/迁移镜像包含 Alembic 与 worker 入口，Compose 编排 PostgreSQL/Redis/MinIO/API/迁移、家长 Web 和默认 ImageAnalysis worker，配置样例与启动/升级/回滚文档已建立；完整启动、真实 NewAPI 联调、备份恢复和生产监控仍未验证。
+- [x] 11. 优化本地开发体验：Flutter 首帧后提供有限时长启动过渡并与档案加载并行；ImageAnalysis worker 进入 Compose 默认 profile 且 Provider 关闭时安全空闲；API 镜像移除固定 amd64，验证 Linux/arm64 原生调试构建，同时保留 amd64 Paddle OCR 发布能力。
 
 ## Progress
 
@@ -298,17 +303,104 @@ git diff --check
 - `2026-07-13` — `[done]` 增加 Pillow `12.3.0` 显式锁定依赖；OCR 前对 JPEG/PNG 执行完整像素解码、EXIF 方向归一化和无元数据重编码，截断/无法解码的像素不会进入 PaddleOCR。linux/amd64 最终镜像无网络 synthetic PNG 烟测通过。
 - `2026-07-13` — `[done]` 增加 `0005_ocr_result_persistence`、Provider-neutral 候选草稿和 PostgreSQL 事务仓储；保存候选文本及 Provider/模型/Schema 版本，空结果也保存，强制人工确认，支持幂等重放和 Household/Child 读取隔离，审计不保存候选原文。
 - `2026-07-14` — `[done]` 增加 `evals/ocr_synthetic_v1.json` 与无 Provider/无网络的固定 OCR 合同评测 runner；6 个 cases 覆盖正常候选、低置信度、空结果、空行和拒绝路径，结果仅输出聚合摘要。
-- `2026-07-14` — `[done]` 增加 `LocalOcrJob` Worker：已确认 Capture 才能进入有界对象读取、图片规范化、本地 OCR 和候选结果持久化；未确认上传、非法图片或 Provider 失败均不落库，真实调度器仍保留在后续范围。
+- `2026-07-14` — `[done]` 增加 `LocalOcrJob` Worker：已确认 Capture 才能进入有界对象读取、图片规范化、本地 OCR 和候选结果持久化；未确认上传、非法图片或 Provider 失败均不落库，Redis/外部 Worker 仍保留在后续范围。
+- `2026-07-14` — `[done]` 增加 child-only 幂等 OCR 入队端点、`InMemoryOcrJobQueue`、PostgreSQL Job Ledger 和单次 `LocalOcrDispatcher`；成功只关联结果 ID，失败只记录稳定错误码，新的幂等键可重试，stale lease 可恢复。
 - `2026-07-14` — `[done]` 将 OCR 失败接入 ADR-0011 生命周期：从失败发生时设置 `ocr_failure` 七天期限，重复失败不延长，到期清理继续复用现有行锁和可重试删除流程。
+- `2026-07-14` — `[done]` 新增 `0006_ocr_job_ledger` 并完成 PostgreSQL 迁移/队列集成回归；完整 API 门槛为 64 项单元、15 项 PostgreSQL/MinIO 集成。
+- `2026-07-14` — `[done]` 增加独立一次性 `run_ocr_worker.py` 入口；组装 PostgreSQL Queue、MinIO、预置 PaddleOCR 模型和 `LocalOcrJob`，启动/运行错误只输出稳定状态码。
+- `2026-07-14` — `[done]` 增加 child-only OCR 结果读取路由与 `OcrResultWithCandidates` 合同；重新校验 Household/Child/Capture 绑定，候选结果只能进入人工确认流程；定向路由测试覆盖兄弟孩子、家长、跨家庭和 Capture 不匹配。
+- `2026-07-14` — `[done]` 增加 child-only OCR 候选确认路由；只提交候选 ID 与 Capture 版本，复用 CaptureCorrection 追加写、版本冲突和幂等事务，OCR 结果保持不可变；PostgreSQL 组合回归覆盖候选确认。
 - `2026-07-13` — `[done]` 增加按 Household/Child 边界原子认领 Capture 对象的级联删除编排；对象逐项删除，成功标记 `deleted`，失败标记 `failed` 并可重试，内存单元与 PostgreSQL 集成回归覆盖成功、失败重试、重复运行和错误 Household。
+- `2026-07-14` — `[done]` 按客户端原型顺序实现 Flutter 第 1/2/3 张横屏 UI：学习桌、拍题输入页、OCR 题目确认页与分数思考提示页；加入 `image_picker 1.2.3` 相机/相册入口、iOS 权限声明、合成图片、候选文本编辑/确认、两级提示和思考状态交互，6 项 Widget 测试与静态分析通过。含原生插件的无签名 iOS `Runner.app` 已构建并重新安装到实体 iPad，用户已实机确认拍照、权限和“已选择题目照片”页通过。Flutter 不支持实体设备截图，目标 landscape QA 仍待 Xcode 设备查看器或手动截图。
+- `2026-07-14` — `[done]` 增加 Flutter `CaptureApiClient`：使用 `crypto 3.0.7` 计算 SHA-256，按服务端合同完成预签名 PUT、确认和 OCR 幂等入队；本地 HTTP 合同测试覆盖请求顺序、图片头、上传字节和稳定幂等边界，Flutter 总测试数增至 8。真实设备接线仍等待有效 StudySession 和 iPad 可达的 MinIO 预签名地址。
+- `2026-07-14` — `[done]` 将 `CaptureApiClient` 接入显式 `STUDY_CAPTURE_SESSION_ID` 调试开关；真实上传后页面只显示私有上传完成和 OCR 排队状态，不把合成候选当作真实结果。使用合成 StudySession 和 iPad 可达 MinIO 完成实体 smoke test，API 日志确认上传/确认/入队为 201/201/202。
+- `2026-07-14` — `[done]` 增加 child-only OCR Job 状态读取路由和 OpenAPI 路径；Flutter 客户端可解析稳定 Job 状态和 `result_id`，跨孩子边界回归通过。
+- `2026-07-14` — `[done]` Flutter 确认页接入有界 OCR Job 轮询、`result_id` 候选读取、人工确认和手工纠正；候选返回前保持等待，候选返回后不自动代答。客户端 HTTP 合同测试增至 3 项，Flutter 总测试数增至 9。
+- `2026-07-14` — `[done]` 增加显式 local durable mode：API 的 Learning/Capture、OCR Job 和结果仓储可统一使用 PostgreSQL；Worker 增加可选 `--watch` 轮询模式，默认一次性命令保持不变。Ruff、Mypy、74 项 API 非集成测试和 `git diff --check` 通过。
+- `2026-07-14` — `[done]` 完成 PostgreSQL/MinIO synthetic API + Worker 闭环回归：真实走签名对象上传、Job Ledger 领取/完成、`LocalOcrJob` 安全读取/规范化、候选结果持久化和 child-only 读取；Provider 使用 synthetic adapter，完整集成回归 17 项通过并清理对象。
+- `2026-07-14` — `[done]` 增加 Ubuntu 24.04 CPU 真实模型评测预检；只检查 Linux/Ubuntu 24.04、x86_64、Python 3.12、Paddle 锁定版本和五个 SHA-256 模型目录，不读取图片、不下载模型。macOS 预检按预期阻塞。
+- `2026-07-14` — `[done]` 增加 `ocr-model-synthetic-v1` 锁定模型 smoke runner；只在预检通过后生成内存 synthetic 数学题图、调用 PP-OCRv6 medium CPU Adapter，并输出 case 状态/延迟聚合，不接受图片路径或输出 OCR 原文。当前 macOS 预检阻塞，真实推理仍待 Ubuntu 环境。
+- `2026-07-14` — `[done]` 优化 `LocalPaddleOcrAdapter` 的实例级引擎缓存：文本/公式引擎按需只初始化一次，重复使用前仍执行模型目录和 SHA-256 标记校验；新增复用回归测试，避免持久化 Worker 按图片重复加载模型。
+- `2026-07-15` — `[done]` 补齐 `PP-FormulaNet_plus-M` 按需执行和 `rec_formula` 解析，公式无 Provider 置信度时固定走低置信度人工确认；锁定模型 smoke fixture 增加公式 case，真实推理继续受 Ubuntu 24.04 CPU 预检门禁保护。
+- `2026-07-15` — `[done]` 将 OCR mode 以向后兼容的 `text` 默认值贯穿 OpenAPI、Flutter Capture 客户端、内存/PostgreSQL Job Ledger 和 Worker；新增 `0007_ocr_job_mode`、模式幂等冲突保护及普通/公式分流回归，旧客户端不发送请求体时行为不变。
+- `2026-07-15` — `[done]` 完成 `0007_ocr_job_mode` 的本地 synthetic PostgreSQL downgrade/upgrade 往返验证；固定 `ocr-synthetic-v1` 评测 6/6 通过，当前 macOS 的真实模型 smoke 按预检稳定阻塞，未执行真实推理。
+- `2026-07-15` — `[done]` 项目 Owner 将 OCR 定位改为本地脱敏、云端多模态解析；新增 ADR-0015 并将 ADR-0012 标记为被替代。为避免静默改写已实现行为，旧 OpenAPI/迁移/Worker/Flutter OCR 路线保持兼容。
+- `2026-07-15` — `[done]` 新增 Provider-neutral PrivacySanitization/ImageAnalysisJob/QuestionExtraction/VerifiedQuestion Schema；实现本地 PrivacySanitizer 元数据清除、检测区域实色覆盖、不可逆重编码和不安全信号阻断，接入 OCR/规则敏感区域信号，6-case synthetic eval 通过。
+- `2026-07-15` — `[done]` Flutter 拍题路径新增本地脱敏预览、手动涂抹、确认后不可逆 PNG 与 SHA-256；上传客户端只接收确认后的脱敏字节。Widget/analyze 通过，真实 iPad 渲染和手动涂抹仍需人工回归。
+- `2026-07-15` — `[done]` Capture 上传确认新增私有对象实际 SHA-256 核验；对象存储、上传路由和 MinIO/PostgreSQL 集成回归通过，错误哈希会阻断状态推进。
+- `2026-07-15` — `[done]` 新增 0008 receipt-only ImageAnalysis ledger/API；服务端绑定 Capture 版本和脱敏副本哈希，Provider 未启用时返回 `blocked/provider_not_enabled`，Flutter 新上传路径不再误启动旧 OCR。
+- `2026-07-15` — `[done]` 完成 0008 receipt/API 到 queued/blocked 双态迁移，并新增 0009 QuestionExtraction 记录、PostgreSQL claim/complete/fail worker、失败稳定错误码和手工 review 读取路径；未确认提取不进入 Tutor。
+- `2026-07-15` — `[done]` 新增无 Provider 的 `offline-tutor-policy.v1` 和 `tutor-hint.v1` Schema；固定输出 1～3 级提示、要求孩子回应、`direct_answer: null` 和 0 元成本，3-case synthetic eval 通过；Flutter 思考页同步支持第 3 级提示。
+- `2026-07-15` — `[done]` 补齐自用 Compose 全栈部署：新增 `migrate`、API、家长 Web 和默认 ImageAnalysis worker，API 镜像复制迁移/脚本入口并保留构建期模型 SHA-256 门禁；新增 Web standalone Dockerfile、健康端点、`.env.example`、自动读取的 `.env` 与部署/升级/回滚说明。Compose 默认服务展开、Web 镜像构建和 Web 质量门槛通过，完整容器启动仍待本机执行。
+- `2026-07-15` — `[done]` 按项目 Owner 的本机调试需求增加 Flutter 1.2 秒启动过渡（首页并行加载、减少动态效果时跳过）、将 ImageAnalysis worker 移入默认 Compose profile 并在 Provider 关闭时安全空闲；API 镜像改为宿主架构原生构建。Linux/arm64 无本地 Paddle OCR/模型/专用系统库的调试镜像已构建，amd64 继续保留锁定模型与旧 OCR 回滚能力。
+- `2026-07-15` — `[in_progress]` 下一步完成人工确认接口、临时脱敏副本删除演练、synthetic NewAPI 联调和 iPad 真实脱敏预览回归；真实数据可在自托管内网使用，但不得跳过确认/哈希门禁，备份级联和生产监控仍在后续范围。
 
 ## 不变量
 
 - Capture 属于 Household、孩子和 StudySession；跨 Household 或未绑定孩子统一返回 404。
-- 新 Capture 在无获准 OCR Provider 时必须为 `needs_correction`；不得伪造可信 OCR 结果。
+- 新 Capture 在 PrivacySanitizer/云视觉 Provider 未获准或不可用时必须保留重新裁剪、手工涂抹/录入和 `needs_correction` 路径；不得伪造可信解析结果或发送原图。
 - 原始媒体、对象键、签名 URL、完整题目和校正文本不得进入审计、错误响应、日志或测试输出。
+- 原图、对象键、签名 URL 和敏感 OCR 文本不得发送给云端；未通过安全门禁/用户确认的脱敏副本不得外发，同一图片不得自动广播给多个 Provider。
 - Correction 追加写；同键同载荷重放原结果，同键异载荷冲突；派生版本由服务端控制。
 
 ## 回滚
 
-保持 OpenAPI 兼容增量。发生安全问题时关闭 Capture 路由或前向修复；不删除校正/审计记录，不把错误恢复建立在清空数据上。
+保持 OpenAPI 兼容增量。发生安全问题时关闭云视觉/图片外发开关并降级为重新裁剪或手工录入；可显式启用已验证本地 OCR 作为不外发回滚 Provider，但不得重解释历史记录、发送原图、恢复已删除副本或删除校正/审计记录。
+
+---
+
+# PLANS.md — PLAN-0007 自用账号密码与孩子账号管理
+
+## 计划元数据
+
+- 计划 ID：`PLAN-0007`
+- 关联任务：`TODO-012` / `ADR-0017`；进入执行时建立 `TASK-0007`
+- 状态：`PLANNED`
+- 优先级：`P0（下一优先级）`
+- Owner：Codex（待执行）；项目 Owner（用户，方案批准）
+- 创建/更新：`2026-07-15`
+
+## 目标与边界
+
+用 PostgreSQL 本地账号密码和可撤销不透明会话替换当前自用 HMAC 家庭 Token。家长 Web 提供登录、首次强制改密和孩子账号管理；Flutter 孩子端使用孩子账号登录并把会话保存在系统安全存储。保持单 Household 自用，不接入短信、邮箱、社交登录、OIDC 或 MFA。
+
+本计划涉及 `services/api`、`packages/contracts`、`apps/web`、`apps/child_flutter`、数据库迁移和 `infra/compose`，必须分里程碑验收。当前 `TASK-0006` 仍是唯一活动任务；除非项目 Owner 明确暂停/结束 TASK-0006，否则本计划不标记 `IN_PROGRESS`，也不提前修改认证代码。
+
+## 产品与安全不变量
+
+- `admin/admin123456` 只在账号表为空时创建，是公开的一次性引导凭据，不是长期默认密码。
+- 默认凭据有效时只允许本机引导；登录后只能改密/退出，所有家庭数据和管理 API 均返回 `password_change_required`。
+- 密码只存 Argon2id 哈希；原始会话只交付客户端一次，服务端只存摘要。密码、哈希、会话、Cookie 不进入日志、错误、审计正文、测试夹具或客户端构建产物。
+- Household 和角色授权仍在每个资源上服务端执行；孩子账号只能绑定同 Household 的一个 ChildProfile，跨 Household 继续统一 404。
+- Web 使用 HttpOnly Cookie + CSRF；Flutter 使用 Keychain/Android Keystore。不得继续用 `STUDY_API_TOKEN` 或 `--dart-define` 注入长期凭据。
+- 禁用账号、改密、管理员重置和退出必须撤销相应会话；恢复命令只能从服务器本机执行并审计。
+
+## 实施阶段
+
+- [ ] 1. 契约与依赖评审：在 OpenAPI 增加 login/logout/me/change-password、账号列表/创建/禁用/启用/重置合同和稳定错误；评审并锁定 Argon2id Python 依赖与 Flutter 安全存储依赖，记录许可证、维护、供应链、体积和替代方案。
+- [ ] 2. 数据库与领域：新增前滚迁移（目标名 `0010_account_password_session`），建立 Account/Session/认证审计所需索引、唯一约束、并发空表初始化和旧数据兼容；downgrade 不删除学习/审计记录，生产回滚优先前向修复。
+- [ ] 3. API 认证核心：实现 Argon2id、统一登录错误、5 次失败/15 分钟锁定、256 bit 会话、摘要存储、30 天到期、退出/撤销、改密/禁用/重置联动和最近 10 分钟高风险再验证；补齐家庭/角色反向授权。
+- [ ] 4. 安全初始化：空账号表事务创建 `admin/admin123456`，设置 `must_change_password`；默认回环绑定、改密前数据阻断、并发启动只创建一次、改密后撤销引导会话。非引导环境存在默认凭据时拒绝开放数据接口。
+- [ ] 5. 家长 Web：增加 `/login`、首次改密、退出、账号设置和孩子账号管理页面；采用 HttpOnly/SameSite Cookie、CSRF、服务端路由保护和安全错误状态，不把会话注入 HTML/客户端 JS。
+- [ ] 6. 孩子 Flutter：增加用户名/密码登录、退出、会话过期恢复；通过经评审的安全存储保存会话，删除 `STUDY_API_TOKEN` 构建注入和 demo 登录旁路，验证 iOS/Android 生命周期与设备重启。
+- [ ] 7. Compose 与迁移切换：加入引导/会话配置，先部署账号表和兼容认证，再切 Web、Flutter，最后删除 HMAC 签发脚本和静态 Token 环境变量；demo headers 仅保留 local/CI。
+- [ ] 8. 完整质量门槛：运行格式/Lint/类型、OpenAPI 差异、迁移往返、API/Web/Flutter 单元与集成、浏览器登录 E2E、真实设备登录/退出、反向越权、CSRF/Cookie/限速/会话撤销和敏感信息扫描；同步 TASK、AI_CONTEXT、TESTING、RUNBOOK、CHANGELOG。
+
+## 验收标准
+
+- [ ] 全新 Compose 在账号表为空时只创建一个 `admin`；使用临时密码登录后，在改密前无法读取任何 Household/孩子/学习/图片数据。
+- [ ] 改密后临时密码和所有引导会话失效；数据库、日志和浏览器/客户端产物中没有明文密码或原始会话。
+- [ ] 家长可以创建、查看状态、禁用/启用和重置同家庭孩子账号；不能查看既有密码，不能绑定其他家庭 ChildProfile。
+- [ ] 孩子可以登录自己的 Flutter 学习桌，只能访问绑定孩子；兄弟孩子、家长 API、跨家庭和枚举 ID 均被拒绝。
+- [ ] Web Cookie、CSRF、会话到期/撤销、失败锁定、退出、改密、账号禁用和管理员恢复均有正反向测试。
+- [ ] `STUDY_API_TOKEN`、HMAC 自用签发脚本和 Flutter 长期 Token 注入完成迁移并删除；旧客户端兼容窗口和回滚方式有记录。
+
+## 发布与回滚
+
+发布分三步：先扩展数据库/合同并保留 legacy 兼容；再切换 Web 与 Flutter；最后关闭并删除旧 HMAC。每步都必须能独立验收。出现登录或授权问题时回滚应用版本并短期开启显式 legacy 模式，账号/会话表和审计保持不删；不得退回公开 demo headers、清空家庭数据或重写学习记录。
+
+## 剩余风险
+
+- 公开默认密码存在抢先登录风险，必须依赖回环引导和改密前数据阻断；如果未来要求开箱即用的局域网首次登录，应改为随机一次性密码/安装码并另行批准。
+- 无邮箱/短信/MFA 时，家长忘记密码只能使用本机恢复命令；服务器主机权限等同于家庭管理员权限。
+- 单家庭方案不解决公网多租户注册、账号恢复和身份合规；范围扩展必须新建 ADR。

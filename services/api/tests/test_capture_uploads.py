@@ -18,7 +18,7 @@ class FakeObjectStorage:
 
     def __init__(self) -> None:
         self.last_object_key: str | None = None
-        self._objects: dict[str, tuple[str, int]] = {}
+        self._objects: dict[str, tuple[str, int, str]] = {}
 
     def ensure_bucket(self) -> None:
         return None
@@ -30,12 +30,20 @@ class FakeObjectStorage:
             expires_at=datetime.now(UTC) + timedelta(minutes=5),
         )
 
-    def upload_declared_object(self, content_type: str, byte_size: int) -> None:
+    def upload_declared_object(
+        self, content_type: str, byte_size: int, content_sha256: str | None = None
+    ) -> None:
         assert self.last_object_key is not None
-        self._objects[self.last_object_key] = (content_type, byte_size)
+        self._objects[self.last_object_key] = (
+            content_type,
+            byte_size,
+            content_sha256 or sha256(b"synthetic-upload-metadata").hexdigest(),
+        )
 
-    def validate_uploaded_object(self, object_key: str, content_type: str, byte_size: int) -> None:
-        if self._objects.get(object_key) != (content_type, byte_size):
+    def validate_uploaded_object(
+        self, object_key: str, content_type: str, byte_size: int, content_sha256: str
+    ) -> None:
+        if self._objects.get(object_key) != (content_type, byte_size, content_sha256):
             raise ObjectStorageError("synthetic object metadata mismatch")
 
 
@@ -158,3 +166,82 @@ def test_capture_upload_child_and_household_boundaries_are_not_enumerable() -> N
 
     assert sibling.status_code == 404
     assert other_household.status_code == 404
+
+
+def test_ocr_job_requires_confirmed_upload_and_is_idempotent() -> None:
+    storage = FakeObjectStorage()
+    client = TestClient(create_app(object_storage=storage))
+    upload = _begin_upload(client, str(_session(client)["id"]), "ocr-upload-001")
+    capture = upload["capture"]
+
+    pending = client.post(
+        f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/ocr-jobs",
+        headers={
+            **_principal(role="child", child_id=CHILD_A),
+            "Idempotency-Key": "ocr-job-pending",
+        },
+    )
+    assert pending.status_code == 409
+
+    storage.upload_declared_object("image/jpeg", 1024)
+    confirmed = client.post(
+        f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/upload-confirmations",
+        headers={
+            **_principal(role="child", child_id=CHILD_A),
+            "Idempotency-Key": "ocr-confirm-001",
+        },
+        json={"expected_capture_version": capture["version"]},
+    )
+    assert confirmed.status_code == 201
+
+    headers = {
+        **_principal(role="child", child_id=CHILD_A),
+        "Idempotency-Key": "ocr-job-001",
+    }
+    first = client.post(
+        f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/ocr-jobs", headers=headers
+    )
+    replay = client.post(
+        f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/ocr-jobs", headers=headers
+    )
+
+    assert first.status_code == 202
+    assert first.json()["status"] == "queued"
+    assert replay.status_code == 200
+    assert replay.headers["Idempotency-Replayed"] == "true"
+    assert replay.json() == first.json()
+
+    job_id = first.json()["id"]
+    status_response = client.get(
+        f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/ocr-jobs/{job_id}",
+        headers=_principal(role="child", child_id=CHILD_A),
+    )
+    assert status_response.status_code == 200
+    assert status_response.json() == first.json()
+
+    formula = client.post(
+        f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/ocr-jobs",
+        headers={
+            **_principal(role="child", child_id=CHILD_A),
+            "Idempotency-Key": "ocr-job-formula",
+        },
+        json={"mode": "formula"},
+    )
+    assert formula.status_code == 202
+    assert formula.json()["mode"] == "formula"
+
+    conflicting_mode = client.post(
+        f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/ocr-jobs",
+        headers={
+            **_principal(role="child", child_id=CHILD_A),
+            "Idempotency-Key": "ocr-job-formula",
+        },
+        json={"mode": "text"},
+    )
+    assert conflicting_mode.status_code == 409
+
+    sibling_status = client.get(
+        f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/ocr-jobs/{job_id}",
+        headers=_principal(role="child", child_id=CHILD_B),
+    )
+    assert sibling_status.status_code == 404

@@ -130,6 +130,62 @@ def parse_paddle_text_results(
     )
 
 
+def parse_paddle_formula_result(
+    result: object,
+    *,
+    confidence_threshold: float = 0.8,
+) -> OcrParseResult:
+    """Normalize one FormulaRecognition result without trusting its formula."""
+
+    if not 0.0 <= confidence_threshold <= 1.0:
+        raise OcrResultError("OCR confidence threshold is not allowed")
+    payload = _result_mapping(result)
+    nested = payload.get("res")
+    if isinstance(nested, Mapping):
+        payload = nested
+    raw_formula = payload.get("rec_formula", "")
+    if not isinstance(raw_formula, str):
+        raise OcrResultError("OCR formula field must be a string")
+    formula = raw_formula.strip()
+    if len(formula) > 4_000 or any(ord(character) < 0x20 for character in formula):
+        raise OcrResultError("OCR formula is not allowed")
+    candidates = (OcrCandidate(text=formula, confidence=0.0),) if formula else ()
+    return OcrParseResult(
+        candidates=candidates,
+        confidence=0.0,
+        confidence_threshold=confidence_threshold,
+        status="candidate" if candidates else "empty",
+        requires_manual_confirmation=True,
+    )
+
+
+def parse_paddle_formula_results(
+    results: object,
+    *,
+    confidence_threshold: float = 0.8,
+) -> OcrParseResult:
+    """Combine formula results while keeping the mandatory manual gate."""
+
+    if isinstance(results, (Mapping, str, bytes)) or hasattr(results, "json"):
+        items: Iterable[object] = (results,)
+    elif isinstance(results, Iterable):
+        items = results
+    else:
+        items = (results,)
+    parsed = [
+        parse_paddle_formula_result(item, confidence_threshold=confidence_threshold)
+        for item in items
+    ]
+    candidates = tuple(candidate for page in parsed for candidate in page.candidates)
+    return OcrParseResult(
+        candidates=candidates,
+        confidence=0.0,
+        confidence_threshold=confidence_threshold,
+        status="candidate" if candidates else "empty",
+        requires_manual_confirmation=True,
+    )
+
+
 @dataclass(frozen=True)
 class PaddleModelPaths:
     root: Path
@@ -228,34 +284,40 @@ class LocalPaddleOcrAdapter:
         self._models = models
         self._ocr_factory = ocr_factory
         self._formula_factory = formula_factory
+        self._text_engine: object | None = None
+        self._formula_engine: object | None = None
 
     def build_text_engine(self) -> object:
         self._models.validate()
-        return self._ocr_factory(
-            text_detection_model_name="PP-OCRv6_medium_det",
-            text_detection_model_dir=str(self._models.text_detection),
-            text_recognition_model_name="PP-OCRv6_medium_rec",
-            text_recognition_model_dir=str(self._models.text_recognition),
-            doc_orientation_classify_model_name="PP-LCNet_x1_0_doc_ori",
-            doc_orientation_classify_model_dir=str(self._models.document_orientation),
-            textline_orientation_model_name="PP-LCNet_x1_0_textline_ori",
-            textline_orientation_model_dir=str(self._models.textline_orientation),
-            use_doc_orientation_classify=True,
-            use_doc_unwarping=False,
-            use_textline_orientation=True,
-            device="cpu",
-            engine="paddle_static",
-            enable_mkldnn=False,
-        )
+        if self._text_engine is None:
+            self._text_engine = self._ocr_factory(
+                text_detection_model_name="PP-OCRv6_medium_det",
+                text_detection_model_dir=str(self._models.text_detection),
+                text_recognition_model_name="PP-OCRv6_medium_rec",
+                text_recognition_model_dir=str(self._models.text_recognition),
+                doc_orientation_classify_model_name="PP-LCNet_x1_0_doc_ori",
+                doc_orientation_classify_model_dir=str(self._models.document_orientation),
+                textline_orientation_model_name="PP-LCNet_x1_0_textline_ori",
+                textline_orientation_model_dir=str(self._models.textline_orientation),
+                use_doc_orientation_classify=True,
+                use_doc_unwarping=False,
+                use_textline_orientation=True,
+                device="cpu",
+                engine="paddle_static",
+                enable_mkldnn=False,
+            )
+        return self._text_engine
 
     def build_formula_engine(self) -> object:
         self._models.validate()
-        return self._formula_factory(
-            model_name="PP-FormulaNet_plus-M",
-            model_dir=str(self._models.formula_recognition),
-            device="cpu",
-            engine="paddle_static",
-        )
+        if self._formula_engine is None:
+            self._formula_engine = self._formula_factory(
+                model_name="PP-FormulaNet_plus-M",
+                model_dir=str(self._models.formula_recognition),
+                device="cpu",
+                engine="paddle_static",
+            )
+        return self._formula_engine
 
     def run_text_ocr(
         self,
@@ -280,6 +342,33 @@ class LocalPaddleOcrAdapter:
         except Exception as error:  # noqa: BLE001 -- provider details must not escape.
             raise OcrExecutionError("local OCR inference failed") from error
         return parse_paddle_text_results(
+            raw_results,
+            confidence_threshold=confidence_threshold,
+        )
+
+    def run_formula_ocr(
+        self,
+        capture: SafeCaptureInput,
+        *,
+        confidence_threshold: float = 0.8,
+    ) -> OcrParseResult:
+        """Run the opt-in local formula model on an ephemeral capture file."""
+
+        engine = self.build_formula_engine()
+        predict = getattr(engine, "predict", None)
+        if not callable(predict):
+            raise OcrExecutionError("local formula OCR engine does not expose prediction")
+        suffix = ".jpg" if capture.metadata.format == "jpeg" else ".png"
+        try:
+            with tempfile.NamedTemporaryFile(suffix=suffix) as image_file:
+                image_file.write(capture.data)
+                image_file.flush()
+                raw_results = predict(image_file.name)
+        except OcrExecutionError:
+            raise
+        except Exception as error:  # noqa: BLE001 -- provider details must not escape.
+            raise OcrExecutionError("local formula OCR inference failed") from error
+        return parse_paddle_formula_results(
             raw_results,
             confidence_threshold=confidence_threshold,
         )

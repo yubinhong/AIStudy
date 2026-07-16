@@ -50,6 +50,18 @@ class OcrResultStatus(StrEnum):
     EMPTY = "empty"
 
 
+class OcrJobStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class OcrMode(StrEnum):
+    TEXT = "text"
+    FORMULA = "formula"
+
+
 class SyncEventKind(StrEnum):
     RECORD_ATTEMPT = "record_attempt"
 
@@ -180,6 +192,15 @@ class CorrectCaptureRequest(BaseModel):
     corrected_text: str = Field(min_length=1, max_length=1000)
 
 
+class ConfirmOcrCandidateRequest(BaseModel):
+    expected_capture_version: int = Field(ge=1)
+    candidate_id: UUID
+
+
+class EnqueueOcrJobRequest(BaseModel):
+    mode: OcrMode = OcrMode.TEXT
+
+
 class OcrResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -205,6 +226,27 @@ class OcrCandidate(BaseModel):
     sequence: int = Field(ge=1)
     text: str = Field(min_length=1, max_length=1000)
     confidence: float = Field(ge=0.0, le=1.0)
+
+
+class OcrResultWithCandidates(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    result: OcrResult
+    candidates: list[OcrCandidate]
+
+
+class OcrJobReceipt(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: UUID
+    capture_id: UUID
+    mode: OcrMode
+    status: OcrJobStatus
+    attempt: int = Field(ge=0)
+    enqueued_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    result_id: UUID | None = None
 
 
 class Attempt(BaseModel):

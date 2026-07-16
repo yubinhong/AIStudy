@@ -7,9 +7,14 @@ import pytest
 from PIL import Image
 
 from study_api.domain.capture_repository import CaptureStateError, PendingCaptureUpload
-from study_api.domain.models import Capture, CaptureStatus, OcrResult, OcrResultStatus
+from study_api.domain.models import Capture, CaptureStatus, OcrMode, OcrResult, OcrResultStatus
 from study_api.domain.ocr_result_repository import OcrResultDraft
-from study_api.ocr_provider import OcrExecutionError, OcrParseResult, parse_paddle_text_result
+from study_api.ocr_provider import (
+    OcrExecutionError,
+    OcrParseResult,
+    parse_paddle_formula_result,
+    parse_paddle_text_result,
+)
 from study_api.ocr_service import LocalOcrJob, OcrJobError
 
 HOUSEHOLD_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -54,9 +59,19 @@ class FakeAdapter:
     def __init__(self, result: OcrParseResult | Exception) -> None:
         self.result = result
         self.received: list[object] = []
+        self.formula_received: list[object] = []
 
     def run_text_ocr(self, capture: object, *, confidence_threshold: float = 0.8) -> OcrParseResult:
         self.received.append(capture)
+        if isinstance(self.result, Exception):
+            raise self.result
+        assert confidence_threshold == 0.8
+        return self.result
+
+    def run_formula_ocr(
+        self, capture: object, *, confidence_threshold: float = 0.8
+    ) -> OcrParseResult:
+        self.formula_received.append(capture)
         if isinstance(self.result, Exception):
             raise self.result
         assert confidence_threshold == 0.8
@@ -145,6 +160,29 @@ def test_local_ocr_job_rejects_pending_upload_before_reading_storage() -> None:
     assert adapter.received == []
     assert results.calls == []
     assert captures.ocr_failures == []
+
+
+def test_local_ocr_job_dispatches_formula_mode_to_formula_adapter() -> None:
+    data = _png()
+    captures = FakeCaptureRepository(_capture(data))
+    storage = FakeStorage(data)
+    adapter = FakeAdapter(parse_paddle_formula_result({"res": {"rec_formula": "x+y"}}))
+    results = FakeResultRepository()
+
+    result, replayed = LocalOcrJob(captures, storage, adapter, results).run(
+        HOUSEHOLD_ID,
+        captures.pending.capture.id,
+        CHILD_ID,
+        "ocr-job-formula",
+        mode=OcrMode.FORMULA,
+    )
+
+    assert replayed is False
+    assert result.status is OcrResultStatus.CANDIDATE
+    assert result.confidence == 0.0
+    assert adapter.received == []
+    assert len(adapter.formula_received) == 1
+    assert results.calls[0][3].candidates[0].text == "x+y"
 
 
 def test_local_ocr_job_does_not_persist_invalid_image_or_provider_failure() -> None:

@@ -53,6 +53,8 @@ class CaptureRepository(Protocol):
         self, household_id: UUID, capture_id: UUID, child_id: UUID
     ) -> "PendingCaptureUpload": ...
 
+    def get_capture(self, household_id: UUID, capture_id: UUID, child_id: UUID) -> Capture: ...
+
     def confirm_capture_upload(
         self,
         household_id: UUID,
@@ -69,6 +71,8 @@ class CaptureRepository(Protocol):
         child_id: UUID,
         request: CorrectCaptureRequest,
         idempotency_key: str,
+        *,
+        operation_prefix: str = "correct_capture",
     ) -> tuple[CaptureCorrection, bool]: ...
 
     def save_capture(self, household_id: UUID, capture_id: UUID, idempotency_key: str) -> bool: ...
@@ -234,6 +238,9 @@ class InMemoryCaptureRepository:
             raise CaptureStateError
         return PendingCaptureUpload(capture, object_key)
 
+    def get_capture(self, household_id: UUID, capture_id: UUID, child_id: UUID) -> Capture:
+        return self._capture_for_child(household_id, capture_id, child_id)
+
     def confirm_capture_upload(
         self,
         household_id: UUID,
@@ -373,10 +380,12 @@ class InMemoryCaptureRepository:
         child_id: UUID,
         request: CorrectCaptureRequest,
         idempotency_key: str,
+        *,
+        operation_prefix: str = "correct_capture",
     ) -> tuple[CaptureCorrection, bool]:
         capture = self._capture_for_child(household_id, capture_id, child_id)
         payload = request.model_dump_json()
-        key = (household_id, f"correct_capture:{capture_id}", idempotency_key)
+        key = (household_id, f"{operation_prefix}:{capture_id}", idempotency_key)
         existing = self._idempotency.get(key)
         if existing is not None:
             if existing.fingerprint != self._fingerprint(payload):

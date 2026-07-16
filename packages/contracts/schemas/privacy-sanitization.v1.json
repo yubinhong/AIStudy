@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://study.local/contracts/privacy-sanitization.v1.json",
+  "title": "PrivacySanitization",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "sanitizer_version",
+    "safe_to_upload",
+    "requires_confirmation",
+    "sensitive_types",
+    "region_count",
+    "face_detected",
+    "qr_detected",
+    "barcode_detected",
+    "blocked_reasons",
+    "sanitized_derivative_sha256"
+  ],
+  "properties": {
+    "schema_version": {"const": "privacy-sanitization.v1"},
+    "sanitizer_version": {"type": "string", "minLength": 1, "maxLength": 64},
+    "safe_to_upload": {"type": "boolean"},
+    "requires_confirmation": {"const": true},
+    "sensitive_types": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "name", "school", "class", "grade", "student_id", "exam_id",
+          "seat_number", "phone", "address", "signature", "face", "qr_code",
+          "barcode"
+        ]
+      }
+    },
+    "region_count": {"type": "integer", "minimum": 0, "maximum": 256},
+    "face_detected": {"type": "boolean"},
+    "qr_detected": {"type": "boolean"},
+    "barcode_detected": {"type": "boolean"},
+    "blocked_reasons": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {"type": "string", "minLength": 1, "maxLength": 64}
+    },
+    "sanitized_derivative_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

@@ -5,7 +5,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "家庭 AI 学习助手",
-  description: "P0 Web 骨架",
+  description: "简洁明亮的家庭学习进度工作台",
 };
 
 export default function RootLayout({

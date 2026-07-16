@@ -1,12 +1,13 @@
 # ADR-0012：本地 PaddleOCR Provider、人工确认与零外部成本
 
-- 状态：`Accepted`
+- 状态：`Superseded`
 - 日期：`2026-07-13`
 - Owner：`项目 Owner（用户）`
 - 决策者：`项目 Owner（用户；2026-07-13 对话确认）`
 - 关联：`TASK-0006`、`TODO-008`、`TODO-009`、`ADR-0004`
-- 替代/被替代：细化 `ADR-0004` 的 OCR Provider 默认路由
+- 替代/被替代：原细化 `ADR-0004` 的 OCR Provider 默认路由；已被 `ADR-0015` 替代
 - 批准记录：项目 Owner 选择本地 PaddleOCR 为默认 OCR，外部商业 Provider 仅作为将来可选插件；默认外部费用上限为 0 元，图片不得默认发送到外部服务。
+- 替代记录：`2026-07-15`，项目 Owner 明确将 PaddleOCR 调整为本地隐私脱敏检测器，由获批云端多模态模型解析脱敏照片。本文继续记录已经实现的本地完整 OCR 路线与供应链约束，不再代表目标默认路由。
 
 ## Context
 
@@ -26,11 +27,14 @@ OCR 是 Capture 闭环的一部分，但商业 Provider 会引入儿童图片外
 
 - 本地算力、模型下载、镜像/包许可证、模型版本、延迟和设备资源成为实施时需要验证的成本。
 - PaddleOCR 与公式模型版本按本 ADR 锁定。依赖只增加 API/Worker 服务端体积、模型文件和 CPU 资源消耗，不进入 Flutter/Web 客户端；替代方案是商业 Provider 插件或其他本地 OCR 引擎，但它们默认关闭且须独立评审。锁文件更新后仍须复核许可证、维护状态、传递依赖、模型来源/校验和、CPU 延迟和内存上限，并建立固定 synthetic eval。
+- 平台实现边界（2026-07-15）：PaddlePaddle 3.3.1 提供 macOS ARM64 与 Linux x86_64 wheel，但没有 Linux aarch64 wheel。仓库依赖 marker 因此在 macOS ARM64/Linux x86_64 保留 Paddle，在 Linux ARM64 调试镜像排除 Paddle 与模型；后者只验证 API/迁移/NewAPI 路线，不能作为本 ADR 的本地 OCR 或完整隐私检测运行时。
 - `0 元` 仅约束默认外部 Provider 调用成本，不代表本地硬件、电力或维护成本为零。
 
 ## Compatibility and Migration
 
+- 本 ADR 下已经实现的 `0.5.0` OCR Job、结果、公式模式、迁移和已确认校正记录保持原义；不得静默改写为云端视觉结果。新路线的兼容迁移、回滚和删除门禁见 ADR-0015。
 - Capture `0.5.0` 已有私有上传签发/确认和人工校正；未来 OCR 结果以向后兼容的候选结果、置信度、模型/Provider 版本和确认状态增量引入。
+- `2026-07-15` 实现的 OCR Job 请求默认 `mode=text`；只有显式 `mode=formula` 才持久化并调用 `PP-FormulaNet_plus-M`，旧客户端不发送请求体时行为不变。Job Ledger 通过 `0007_ocr_job_mode` 为历史任务回填 `text`，同一幂等键切换模式会拒绝并返回冲突。
 - Provider 路由变化必须保留可回滚版本，不能改变已确认校正记录的含义。
 - 回滚时关闭 OCR Adapter，Capture 继续进入人工校正路径；不得降级为外部默认传图。
 

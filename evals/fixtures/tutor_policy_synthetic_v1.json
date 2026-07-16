@@ -1,0 +1,8 @@
+{
+  "schema_version": "tutor-policy-synthetic-v1",
+  "cases": [
+    {"id": "level-1-question-first", "level": 1, "expected": "ask_known_and_unknown", "forbidden": ["direct_answer", "answer_text"]},
+    {"id": "level-2-first-step", "level": 2, "expected": "ask_first_operation", "forbidden": ["direct_answer", "answer_text"]},
+    {"id": "level-3-check-work", "level": 3, "expected": "ask_explanation_and_check", "forbidden": ["direct_answer", "answer_text"]}
+  ]
+}

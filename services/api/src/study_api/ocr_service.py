@@ -11,7 +11,7 @@ from uuid import UUID
 
 from study_api.capture_media import SafeCaptureInput, read_safe_capture
 from study_api.domain.capture_repository import CaptureRepository, CaptureStateError
-from study_api.domain.models import CaptureStatus, OcrResult
+from study_api.domain.models import CaptureStatus, OcrMode, OcrResult
 from study_api.domain.ocr_result_repository import OcrResultDraft, OcrResultRepository
 from study_api.image_safety import ImageSafetyError
 from study_api.object_storage import CaptureObjectStorage, ObjectStorageError
@@ -22,8 +22,15 @@ class OcrJobError(RuntimeError):
     """Raised when a local OCR job fails without exposing Provider details."""
 
 
-class TextOcrAdapter(Protocol):
+class OcrAdapter(Protocol):
     def run_text_ocr(
+        self,
+        capture: SafeCaptureInput,
+        *,
+        confidence_threshold: float = 0.8,
+    ) -> OcrParseResult: ...
+
+    def run_formula_ocr(
         self,
         capture: SafeCaptureInput,
         *,
@@ -38,7 +45,7 @@ class LocalOcrJob:
         self,
         capture_repository: CaptureRepository,
         object_storage: CaptureObjectStorage,
-        ocr_adapter: TextOcrAdapter,
+        ocr_adapter: OcrAdapter,
         result_repository: OcrResultRepository,
         *,
         confidence_threshold: float = 0.8,
@@ -59,6 +66,7 @@ class LocalOcrJob:
         capture_id: UUID,
         child_id: UUID,
         idempotency_key: str,
+        mode: OcrMode = OcrMode.TEXT,
     ) -> tuple[OcrResult, bool]:
         pending = self._captures.get_capture_upload(household_id, capture_id, child_id)
         if pending.capture.status is CaptureStatus.UPLOAD_PENDING:
@@ -71,10 +79,16 @@ class LocalOcrJob:
                 pending.capture.byte_size,
                 pending.capture.content_sha256,
             )
-            parsed = self._adapter.run_text_ocr(
-                safe_capture,
-                confidence_threshold=self._confidence_threshold,
-            )
+            if mode is OcrMode.TEXT:
+                parsed = self._adapter.run_text_ocr(
+                    safe_capture,
+                    confidence_threshold=self._confidence_threshold,
+                )
+            else:
+                parsed = self._adapter.run_formula_ocr(
+                    safe_capture,
+                    confidence_threshold=self._confidence_threshold,
+                )
             draft = self._draft_factory(parsed)
         except (ObjectStorageError, ImageSafetyError, OcrExecutionError, OcrResultError) as error:
             self._mark_failure(household_id, capture_id)

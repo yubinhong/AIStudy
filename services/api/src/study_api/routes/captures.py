@@ -21,12 +21,19 @@ from study_api.domain.models import (
     CaptureStatus,
     CaptureUpload,
     ConfirmCaptureUploadRequest,
+    ConfirmOcrCandidateRequest,
     CorrectCaptureRequest,
     CreateCaptureRequest,
+    EnqueueOcrJobRequest,
+    OcrJobReceipt,
+    OcrMode,
+    OcrResultWithCandidates,
 )
+from study_api.domain.ocr_result_repository import OcrResultRepository
 from study_api.domain.repository import IdempotencyConflictError
 from study_api.media_lifecycle import SingleCaptureObjectDeletion
 from study_api.object_storage import CaptureObjectStorage, ObjectStorageError
+from study_api.ocr_jobs import OcrJobIdempotencyConflictError, OcrJobQueue
 
 router = APIRouter(prefix="/households/{household_id}", tags=["captures"])
 Principal = Annotated[DemoPrincipal, Depends(get_demo_principal)]
@@ -45,6 +52,20 @@ def get_object_storage(request: Request) -> CaptureObjectStorage:
 
 
 ObjectStorage = Annotated[CaptureObjectStorage, Depends(get_object_storage)]
+
+
+def get_ocr_job_queue(request: Request) -> OcrJobQueue:
+    return request.app.state.ocr_job_queue
+
+
+OcrQueue = Annotated[OcrJobQueue, Depends(get_ocr_job_queue)]
+
+
+def get_ocr_result_repository(request: Request) -> OcrResultRepository:
+    return request.app.state.ocr_result_repository
+
+
+OcrResults = Annotated[OcrResultRepository, Depends(get_ocr_result_repository)]
 
 
 def _not_found() -> HTTPException:
@@ -170,7 +191,10 @@ def confirm_capture_upload(
         pending = repository.get_capture_upload(household_id, capture_id, child_id)
         if pending.capture.status is CaptureStatus.UPLOAD_PENDING:
             object_storage.validate_uploaded_object(
-                pending.object_key, pending.capture.media_type, pending.capture.byte_size
+                pending.object_key,
+                pending.capture.media_type,
+                pending.capture.byte_size,
+                pending.capture.content_sha256,
             )
         capture, replayed = repository.confirm_capture_upload(
             household_id, capture_id, child_id, request, idempotency_key
@@ -198,6 +222,171 @@ def confirm_capture_upload(
     return JSONResponse(
         status_code=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
         content=capture.model_dump(mode="json"),
+        headers={"Idempotency-Replayed": "true"} if replayed else {},
+    )
+
+
+@router.post(
+    "/captures/{capture_id}/ocr-jobs",
+    response_model=OcrJobReceipt,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def enqueue_ocr_job(
+    household_id: UUID,
+    capture_id: UUID,
+    idempotency_key: IdempotencyKey,
+    principal: Principal,
+    repository: Repository,
+    queue: OcrQueue,
+    request: EnqueueOcrJobRequest | None = None,
+) -> JSONResponse:
+    """Enqueue local OCR after the Capture has passed server-side upload checks."""
+
+    require_household(principal, household_id)
+    child_id = require_bound_child(principal)
+    try:
+        pending = repository.get_capture_upload(household_id, capture_id, child_id)
+        if pending.capture.status is CaptureStatus.UPLOAD_PENDING:
+            raise CaptureStateError
+        job, replayed = queue.enqueue(
+            household_id,
+            capture_id,
+            child_id,
+            idempotency_key,
+            mode=request.mode if request is not None else OcrMode.TEXT,
+        )
+    except (LookupError, ChildAssignmentError) as error:
+        raise _not_found() from error
+    except CaptureStateError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="capture upload is not ready for OCR",
+        ) from error
+    except OcrJobIdempotencyConflictError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="idempotency key reused with a different OCR mode",
+        ) from error
+    return JSONResponse(
+        status_code=status.HTTP_200_OK if replayed else status.HTTP_202_ACCEPTED,
+        content=job.receipt().model_dump(mode="json"),
+        headers={"Idempotency-Replayed": "true"} if replayed else {},
+    )
+
+
+@router.get(
+    "/captures/{capture_id}/ocr-jobs/{job_id}",
+    response_model=OcrJobReceipt,
+)
+def get_ocr_job(
+    household_id: UUID,
+    capture_id: UUID,
+    job_id: UUID,
+    principal: Principal,
+    repository: Repository,
+    queue: OcrQueue,
+) -> OcrJobReceipt:
+    """Return bounded OCR job status for the bound child without error details."""
+
+    require_household(principal, household_id)
+    child_id = require_bound_child(principal)
+    try:
+        pending = repository.get_capture_upload(household_id, capture_id, child_id)
+        job = queue.get(job_id)
+    except (LookupError, ChildAssignmentError) as error:
+        raise _not_found() from error
+    if (
+        job.household_id != household_id
+        or job.capture_id != pending.capture.id
+        or job.child_id != child_id
+    ):
+        raise _not_found()
+    return job.receipt()
+
+
+@router.get(
+    "/captures/{capture_id}/ocr-results/{result_id}",
+    response_model=OcrResultWithCandidates,
+)
+def get_ocr_result(
+    household_id: UUID,
+    capture_id: UUID,
+    result_id: UUID,
+    principal: Principal,
+    results: OcrResults,
+) -> OcrResultWithCandidates:
+    """Return unverified OCR candidates for the bound child to confirm."""
+
+    require_household(principal, household_id)
+    child_id = require_bound_child(principal)
+    try:
+        result, candidates = results.get_result(household_id, result_id, child_id)
+    except (LookupError, ChildAssignmentError) as error:
+        raise _not_found() from error
+    if result.capture_id != capture_id:
+        raise _not_found()
+    return OcrResultWithCandidates(result=result, candidates=candidates)
+
+
+@router.post(
+    "/captures/{capture_id}/ocr-results/{result_id}/confirmations",
+    response_model=CaptureCorrection,
+    status_code=status.HTTP_201_CREATED,
+)
+def confirm_ocr_candidate(
+    household_id: UUID,
+    capture_id: UUID,
+    result_id: UUID,
+    request: ConfirmOcrCandidateRequest,
+    idempotency_key: IdempotencyKey,
+    principal: Principal,
+    repository: Repository,
+    results: OcrResults,
+) -> JSONResponse:
+    """Append a selected OCR candidate as a manually confirmed Capture correction."""
+
+    require_household(principal, household_id)
+    child_id = require_bound_child(principal)
+    try:
+        result, candidates = results.get_result(household_id, result_id, child_id)
+        if result.capture_id != capture_id:
+            raise LookupError
+        candidate = next(
+            (candidate for candidate in candidates if candidate.id == request.candidate_id),
+            None,
+        )
+        if candidate is None or candidate.result_id != result_id:
+            raise LookupError
+        correction_request = CorrectCaptureRequest(
+            expected_capture_version=request.expected_capture_version,
+            corrected_text=candidate.text,
+        )
+        correction, replayed = repository.correct_capture(
+            household_id,
+            capture_id,
+            child_id,
+            correction_request,
+            idempotency_key,
+            operation_prefix=f"confirm_ocr_candidate:{result_id}",
+        )
+    except (LookupError, ChildAssignmentError) as error:
+        raise _not_found() from error
+    except ResourceVersionConflictError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="capture version conflict"
+        ) from error
+    except CaptureStateError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="capture is not ready for correction"
+        ) from error
+    except IdempotencyConflictError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="idempotency key reused with a different payload",
+        ) from error
+    return JSONResponse(
+        status_code=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
+        content=correction.model_dump(mode="json"),
         headers={"Idempotency-Replayed": "true"} if replayed else {},
     )
 

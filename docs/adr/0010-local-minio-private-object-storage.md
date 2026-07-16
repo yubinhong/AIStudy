@@ -5,7 +5,7 @@
 - Owner：`项目 Owner（用户）`
 - 决策者：`项目 Owner（用户；2026-07-13 对话确认）`
 - 关联：`TASK-0006`、`TODO-008`、`ADR-0006`
-- 替代/被替代：`无`
+- 替代/被替代：`无`；ADR-0015 进一步限制原图与脱敏副本的外发边界
 - 批准记录：项目 Owner 明确选择本地 MinIO、S3 兼容 Adapter、私有 Bucket 与短期预签名上传；客户端不得持有存储密钥。
 
 ## Context
@@ -28,7 +28,7 @@ Capture 的真实图片需要脱离 API 进程保存，同时必须避免客户�
 
 选择选项 3。local 环境使用 MinIO；对象存储通过内部 S3 兼容 Adapter 访问。Bucket 默认私有，对象键为不含儿童身份的随机值并按 Household/Capture 授权校验。
 
-客户端 App 不保存、读取或传递 MinIO/S3 长期密钥。服务端仅从本地安全配置或后续 Secret Manager 读取其最小权限存储凭据，用于生成有界、短期、单对象的预签名上传 URL；local 实现固定为 300 秒、JPEG/PNG、1–8 MB、`captures/` 前缀，CORS 的生产取值仍待 staging 前复核。
+客户端 App 不保存、读取或传递 MinIO/S3 长期密钥。服务端仅从本地安全配置或后续 Secret Manager 读取其最小权限存储凭据，用于生成有界、短期、单对象的预签名上传 URL；local 实现固定为 300 秒、JPEG/PNG、1–8 MB、`captures/` 前缀，CORS 的生产取值仍待 staging 前复核。按 ADR-0015，原图和任何 MinIO URL 均不得发送给云端视觉 Provider；Provider 只接收经本地脱敏并由用户确认的临时副本字节。
 
 服务端 S3 对象存储客户端最终锁定为 `boto3==1.43.46`，通过标准 S3 兼容接口连接本地 MinIO；项目不使用 MinIO 专属 SDK。它运行在 API 服务端，客户端不携带该依赖。其传递依赖会增加服务端镜像/锁文件体积和供应链面，必须在 `uv.lock`、SBOM/漏洞扫描与 CI 中审查；许可证和维护状态随锁定依赖清单复核。
 
@@ -36,7 +36,7 @@ Capture 的真实图片需要脱离 API 进程保存，同时必须避免客户�
 
 ### Positive
 
-- 本地图片默认不离开家庭开发环境；未来可迁移至兼容 S3 的私有存储。
+- 原始图片不离开家庭控制的存储边界；只有经本地不可逆脱敏并由用户确认的临时副本可按 ADR-0015 发送给获批 Provider。
 - 客户端不持有长期存储凭据，API 也不承载大文件字节流。
 
 ### Negative / Trade-offs

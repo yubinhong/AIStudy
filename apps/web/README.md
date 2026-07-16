@@ -1,14 +1,19 @@
 # Web
 
-Next.js App Router shell for the Windows/PWA parent and content-maintenance
-experience. The current vertical slice references the shared contract at
-`packages/contracts/openapi.yaml`; it does not define duplicate ChildProfile or
-Device types. Authentication is not implemented in this shell yet.
+Next.js App Router parent workspace for the Windows/PWA experience. The first
+vertical slice renders a bright, low-distraction learning overview from the
+shared API contract: children, today's tasks, connected devices, and the local
+privacy boundary. It does not define duplicate domain models, and the demo
+principal is intentionally not authentication.
+
+For self-hosted bearer mode, set `STUDY_API_TOKEN` on the server-rendered Web
+process. If it is absent, the local synthetic demo headers are used.
 
 Available synthetic API routes are documented in the contract:
 `GET/POST /households/{household_id}/children`,
 `DELETE /households/{household_id}/children/{child_id}` and
-`GET/POST /households/{household_id}/devices`.
+`GET/POST /households/{household_id}/devices`, plus
+`GET /households/{household_id}/tasks` for the dashboard.
 
 ```bash
 pnpm install --frozen-lockfile

@@ -1,0 +1,38 @@
+{
+  "suite_id": "ocr-model-synthetic-v1",
+  "schema_version": 1,
+  "source": {
+    "kind": "repository_generated",
+    "authorization": "synthetic_only",
+    "provider_calls": true
+  },
+  "model": "PP-OCRv6_medium_det+rec+PP-FormulaNet_plus-M",
+  "device": "cpu",
+  "cases": [
+    {
+      "id": "addition_01",
+      "text": "12 + 3 = 15",
+      "expected_terms": ["12", "3", "15"],
+      "topic": "arithmetic"
+    },
+    {
+      "id": "addition_02",
+      "text": "24 + 18 = 42",
+      "expected_terms": ["24", "18", "42"],
+      "topic": "arithmetic"
+    },
+    {
+      "id": "fraction_01",
+      "text": "1 / 2 + 1 / 4",
+      "expected_terms": ["1", "2", "4"],
+      "topic": "fraction"
+    },
+    {
+      "id": "formula_01",
+      "kind": "formula",
+      "text": "1 / 2",
+      "expected_terms": ["1", "2"],
+      "topic": "fraction"
+    }
+  ]
+}

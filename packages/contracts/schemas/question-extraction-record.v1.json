@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://study.local/schemas/question-extraction-record.v1.json",
+  "title": "QuestionExtractionRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "capture_id", "household_id", "child_id", "extraction", "created_at"],
+  "properties": {
+    "id": {"type": "string", "format": "uuid"},
+    "capture_id": {"type": "string", "format": "uuid"},
+    "household_id": {"type": "string", "format": "uuid"},
+    "child_id": {"type": "string", "format": "uuid"},
+    "extraction": {"$ref": "question-extraction.v1.json"},
+    "created_at": {"type": "string", "format": "date-time"}
+  }
+}

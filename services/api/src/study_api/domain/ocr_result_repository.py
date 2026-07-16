@@ -105,6 +105,73 @@ class OcrResultRepository(Protocol):
     ) -> tuple[OcrResult, list[OcrCandidate]]: ...
 
 
+class InMemoryOcrResultRepository:
+    """Local/CI result store used to exercise the same read contract."""
+
+    def __init__(self) -> None:
+        self._results: dict[UUID, OcrResult] = {}
+        self._candidates: dict[UUID, list[OcrCandidate]] = {}
+        self._idempotency: dict[tuple[UUID, UUID, str], tuple[str, UUID]] = {}
+
+    def create_result(
+        self,
+        household_id: UUID,
+        capture_id: UUID,
+        child_id: UUID,
+        draft: OcrResultDraft,
+        idempotency_key: str,
+    ) -> tuple[OcrResult, bool]:
+        payload = draft.model_dump_json()
+        key = (household_id, capture_id, idempotency_key)
+        existing = self._idempotency.get(key)
+        if existing is not None:
+            if existing[0] != self._fingerprint(payload):
+                raise IdempotencyConflictError
+            return self._results[existing[1]], True
+        result = OcrResult(
+            id=uuid4(),
+            capture_id=capture_id,
+            household_id=household_id,
+            child_id=child_id,
+            provider=draft.provider,
+            model=draft.model,
+            model_version=draft.model_version,
+            schema_version=draft.schema_version,
+            confidence=draft.confidence,
+            status=draft.status,
+            requires_manual_confirmation=True,
+            created_at=datetime.now(UTC),
+        )
+        candidates = [
+            OcrCandidate(
+                id=uuid4(),
+                result_id=result.id,
+                sequence=sequence,
+                text=candidate.text,
+                confidence=candidate.confidence,
+            )
+            for sequence, candidate in enumerate(draft.candidates, start=1)
+        ]
+        self._results[result.id] = result
+        self._candidates[result.id] = candidates
+        self._idempotency[key] = (self._fingerprint(payload), result.id)
+        return result, False
+
+    def get_result(
+        self, household_id: UUID, result_id: UUID, child_id: UUID
+    ) -> tuple[OcrResult, list[OcrCandidate]]:
+        result = self._results.get(result_id)
+        if result is None or result.household_id != household_id:
+            raise LookupError
+        if result.child_id != child_id:
+            raise ChildAssignmentError
+        return result, list(self._candidates[result_id])
+
+    @staticmethod
+    def _fingerprint(value: str) -> str:
+        return sha256(value.encode("utf-8")).hexdigest()
+
+
 class PostgresOcrResultRepository:
     """PostgreSQL source of truth for normalized OCR result candidates."""
 

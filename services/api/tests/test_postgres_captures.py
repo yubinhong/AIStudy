@@ -1,3 +1,4 @@
+import base64
 from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
 from urllib.request import Request, urlopen
@@ -7,10 +8,16 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from study_api.domain.models import Capture, CaptureStatus
+from study_api.domain.models import Capture, CaptureStatus, OcrMode, OcrResultStatus
+from study_api.domain.ocr_result_repository import (
+    OcrCandidateDraft,
+    OcrResultDraft,
+    PostgresOcrResultRepository,
+)
 from study_api.domain.repository import InMemoryProfileRepository
 from study_api.domain.sql_capture_repository import PostgresCaptureRepository
 from study_api.domain.sql_learning_repository import PostgresLearningRepository
+from study_api.image_analysis_jobs import PostgresImageAnalysisJobRepository
 from study_api.main import create_app
 from study_api.media_lifecycle import (
     CaptureMediaCleanup,
@@ -25,6 +32,14 @@ from study_api.object_storage import (
     PresignedUpload,
     S3ObjectStorage,
 )
+from study_api.ocr_jobs import (
+    LocalOcrDispatcher,
+    OcrJobIdempotencyConflictError,
+    OcrJobStatus,
+    PostgresOcrJobQueue,
+)
+from study_api.ocr_provider import OcrParseResult, parse_paddle_text_result
+from study_api.ocr_service import LocalOcrJob
 
 HOUSEHOLD_A = "00000000-0000-0000-0000-000000000001"
 CHILD_A = "00000000-0000-0000-0000-000000000101"
@@ -36,6 +51,7 @@ class FakeObjectStorage:
     def __init__(self) -> None:
         self.object_key: str | None = None
         self.uploaded: tuple[str, int] | None = None
+        self.data: bytes | None = None
         self.deleted: list[str] = []
 
     def ensure_bucket(self) -> None:
@@ -45,10 +61,19 @@ class FakeObjectStorage:
         self.object_key = object_key
         return PresignedUpload(url="https://synthetic.invalid/upload", expires_at=datetime.now(UTC))
 
-    def upload(self, content_type: str, byte_size: int) -> None:
+    def upload(self, content_type: str, byte_size: int, data: bytes | None = None) -> None:
         self.uploaded = (content_type, byte_size)
+        self.data = data
 
-    def validate_uploaded_object(self, object_key: str, content_type: str, byte_size: int) -> None:
+    def read_object(self, object_key: str, max_bytes: int) -> bytes:
+        assert object_key == self.object_key
+        assert self.data is not None
+        assert len(self.data) <= max_bytes
+        return self.data
+
+    def validate_uploaded_object(
+        self, object_key: str, content_type: str, byte_size: int, content_sha256: str
+    ) -> None:
         if object_key != self.object_key or self.uploaded != (content_type, byte_size):
             raise ObjectStorageError("synthetic object is unavailable")
 
@@ -65,11 +90,37 @@ def _headers(role: str = "parent", child_id: str | None = None) -> dict[str, str
 
 def _client(
     object_storage: CaptureObjectStorage | None = None,
+    ocr_job_queue: PostgresOcrJobQueue | None = None,
+    ocr_result_repository: PostgresOcrResultRepository | None = None,
+    image_analysis_repository: PostgresImageAnalysisJobRepository | None = None,
 ) -> tuple[TestClient, PostgresLearningRepository, PostgresCaptureRepository]:
     profiles = InMemoryProfileRepository()
     learning = PostgresLearningRepository(profiles)
     captures = PostgresCaptureRepository()
-    return TestClient(create_app(profiles, learning, captures, object_storage)), learning, captures
+    return (
+        TestClient(
+            create_app(
+                profiles,
+                learning,
+                captures,
+                object_storage,
+                ocr_job_queue,
+                ocr_result_repository,
+                image_analysis_repository,
+            )
+        ),
+        learning,
+        captures,
+    )
+
+
+class SyntheticOcrAdapter:
+    def run_text_ocr(self, capture: object, *, confidence_threshold: float = 0.8) -> OcrParseResult:
+        assert confidence_threshold == 0.8
+        return parse_paddle_text_result(
+            {"rec_texts": ["synthetic 3 + 4"], "rec_scores": [0.93]},
+            confidence_threshold=confidence_threshold,
+        )
 
 
 def _session(client: TestClient) -> str:
@@ -158,6 +209,93 @@ def test_postgresql_capture_correction_is_transactional_and_idempotent() -> None
         repository.close()
 
 
+def test_postgresql_ocr_candidate_confirmation_reuses_capture_correction_transaction() -> None:
+    profiles = InMemoryProfileRepository()
+    learning = PostgresLearningRepository(profiles)
+    repository = PostgresCaptureRepository()
+    ocr_results = PostgresOcrResultRepository()
+    client = TestClient(
+        create_app(
+            profiles,
+            learning,
+            repository,
+            ocr_result_repository=ocr_results,
+        )
+    )
+    try:
+        session_id = _session(client)
+        capture_response = client.post(
+            f"/households/{HOUSEHOLD_A}/sessions/{session_id}/captures",
+            headers={
+                **_headers("child", CHILD_A),
+                "Idempotency-Key": f"pg-ocr-confirm-create-{uuid4()}",
+            },
+            json={
+                "media_type": "image/png",
+                "byte_size": 2048,
+                "content_sha256": sha256(b"synthetic-ocr-confirmation").hexdigest(),
+            },
+        )
+        assert capture_response.status_code == 201
+        capture = capture_response.json()
+        result, _ = ocr_results.create_result(
+            UUID(HOUSEHOLD_A),
+            UUID(capture["id"]),
+            UUID(CHILD_A),
+            OcrResultDraft(
+                provider="local_paddleocr",
+                model="PP-OCRv6_medium",
+                model_version="synthetic",
+                schema_version="ocr-result.v1",
+                confidence=0.93,
+                status=OcrResultStatus.CANDIDATE,
+                candidates=(OcrCandidateDraft(text="synthetic 9 + 6", confidence=0.93),),
+            ),
+            f"pg-ocr-result-{uuid4()}",
+        )
+        _, candidates = ocr_results.get_result(UUID(HOUSEHOLD_A), result.id, UUID(CHILD_A))
+        path = (
+            f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/ocr-results/"
+            f"{result.id}/confirmations"
+        )
+        headers = {
+            **_headers("child", CHILD_A),
+            "Idempotency-Key": f"pg-ocr-confirm-{uuid4()}",
+        }
+        payload = {
+            "expected_capture_version": capture["version"],
+            "candidate_id": str(candidates[0].id),
+        }
+
+        first = client.post(path, headers=headers, json=payload)
+        replay = client.post(path, headers=headers, json=payload)
+
+        assert first.status_code == 201
+        assert first.json()["corrected_text"] == "synthetic 9 + 6"
+        assert replay.status_code == 200
+        with repository.engine.connect() as connection:
+            correction_rows = (
+                connection.execute(
+                    select(repository._corrections).where(
+                        repository._corrections.c.capture_id == UUID(capture["id"])
+                    )
+                )
+                .mappings()
+                .all()
+            )
+        assert len(correction_rows) == 1
+        assert correction_rows[0]["corrected_text"] == "synthetic 9 + 6"
+        confirmed_result, confirmed_candidates = ocr_results.get_result(
+            UUID(HOUSEHOLD_A), result.id, UUID(CHILD_A)
+        )
+        assert confirmed_result.requires_manual_confirmation is True
+        assert confirmed_candidates[0].text == "synthetic 9 + 6"
+    finally:
+        ocr_results.close()
+        learning.close()
+        repository.close()
+
+
 def test_postgresql_capture_upload_keeps_object_key_internal_and_confirms_once() -> None:
     storage = FakeObjectStorage()
     client, learning, repository = _client(storage)
@@ -221,6 +359,86 @@ def test_postgresql_capture_upload_keeps_object_key_internal_and_confirms_once()
         repository.close()
 
 
+def test_postgresql_image_analysis_receipt_is_household_scoped_and_idempotent() -> None:
+    storage = FakeObjectStorage()
+    image_analysis = PostgresImageAnalysisJobRepository()
+    client, learning, repository = _client(storage, image_analysis_repository=image_analysis)
+    try:
+        session_id = _session(client)
+        content_hash = sha256(b"synthetic-sanitized-derivative").hexdigest()
+        upload_response = client.post(
+            f"/households/{HOUSEHOLD_A}/sessions/{session_id}/capture-uploads",
+            headers={
+                **_headers("child", CHILD_A),
+                "Idempotency-Key": f"pg-image-analysis-upload-{uuid4()}",
+            },
+            json={
+                "media_type": "image/png",
+                "byte_size": 2048,
+                "content_sha256": content_hash,
+            },
+        )
+        assert upload_response.status_code == 201
+        capture = upload_response.json()["capture"]
+        storage.upload("image/png", 2048)
+        confirmation = client.post(
+            f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/upload-confirmations",
+            headers={
+                **_headers("child", CHILD_A),
+                "Idempotency-Key": f"pg-image-analysis-confirm-{uuid4()}",
+            },
+            json={"expected_capture_version": capture["version"]},
+        )
+        assert confirmation.status_code == 201
+        confirmed = confirmation.json()
+        request_body = {
+            "expected_capture_version": confirmed["version"],
+            "sanitization": {
+                "schema_version": "privacy-sanitization.v1",
+                "sanitizer_version": "synthetic-test",
+                "safe_to_upload": True,
+                "requires_confirmation": True,
+                "sensitive_types": [],
+                "region_count": 0,
+                "face_detected": False,
+                "qr_detected": False,
+                "barcode_detected": False,
+                "blocked_reasons": [],
+                "sanitized_derivative_sha256": content_hash,
+            },
+            "user_confirmed": True,
+        }
+        headers = {
+            **_headers("child", CHILD_A),
+            "Idempotency-Key": "pg-image-analysis-start",
+        }
+        first = client.post(
+            f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/image-analysis-jobs",
+            headers=headers,
+            json=request_body,
+        )
+        replay = client.post(
+            f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/image-analysis-jobs",
+            headers=headers,
+            json=request_body,
+        )
+        assert first.status_code == 202
+        assert first.json()["error_code"] == "provider_not_enabled"
+        assert replay.status_code == 200
+        assert replay.headers["Idempotency-Replayed"] == "true"
+
+        read = client.get(
+            f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/image-analysis-jobs/{first.json()['id']}",
+            headers=_headers("child", CHILD_A),
+        )
+        assert read.status_code == 200
+        assert read.json()["sanitized_derivative_sha256"] == content_hash
+    finally:
+        image_analysis.close()
+        learning.close()
+        repository.close()
+
+
 def test_postgresql_minio_capture_upload_confirmation_is_end_to_end_synthetic() -> None:
     storage = S3ObjectStorage(
         ObjectStorageConfig(
@@ -280,6 +498,102 @@ def test_postgresql_minio_capture_upload_confirmation_is_end_to_end_synthetic() 
     finally:
         if object_key is not None:
             storage.delete_object(object_key)
+        learning.close()
+        repository.close()
+
+
+def test_postgresql_minio_ocr_worker_pipeline_is_visible_to_child_routes() -> None:
+    storage = S3ObjectStorage(
+        ObjectStorageConfig(
+            endpoint_url="http://127.0.0.1:9000",
+            bucket="study-captures-local",
+            access_key_id="minio_local",
+            secret_access_key="minio_local_only",
+        )
+    )
+    storage.ensure_bucket()
+    queue = PostgresOcrJobQueue()
+    ocr_results = PostgresOcrResultRepository()
+    client, learning, repository = _client(storage, queue, ocr_results)
+    object_key: str | None = None
+    content = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    )
+    try:
+        session_id = _session(client)
+        upload_response = client.post(
+            f"/households/{HOUSEHOLD_A}/sessions/{session_id}/capture-uploads",
+            headers={
+                **_headers("child", CHILD_A),
+                "Idempotency-Key": f"pg-minio-ocr-upload-{uuid4()}",
+            },
+            json={
+                "media_type": "image/png",
+                "byte_size": len(content),
+                "content_sha256": sha256(content).hexdigest(),
+            },
+        )
+        assert upload_response.status_code == 201
+        upload = upload_response.json()
+        request = Request(
+            upload["upload_url"],
+            data=content,
+            method="PUT",
+            headers={"Content-Type": "image/png"},
+        )
+        with urlopen(request, timeout=10) as response:  # noqa: S310 -- URL is server-generated.
+            assert response.status in {200, 204}
+
+        capture_id = UUID(upload["capture"]["id"])
+        with repository.engine.connect() as connection:
+            object_key = connection.execute(
+                select(repository._captures.c.object_key).where(
+                    repository._captures.c.id == capture_id
+                )
+            ).scalar_one()
+        confirmation = client.post(
+            f"/households/{HOUSEHOLD_A}/captures/{capture_id}/upload-confirmations",
+            headers={
+                **_headers("child", CHILD_A),
+                "Idempotency-Key": f"pg-minio-ocr-confirm-{uuid4()}",
+            },
+            json={"expected_capture_version": upload["capture"]["version"]},
+        )
+        assert confirmation.status_code == 201
+
+        enqueue = client.post(
+            f"/households/{HOUSEHOLD_A}/captures/{capture_id}/ocr-jobs",
+            headers={
+                **_headers("child", CHILD_A),
+                "Idempotency-Key": f"pg-minio-ocr-job-{uuid4()}",
+            },
+        )
+        assert enqueue.status_code == 202
+        job = enqueue.json()
+        job_path = f"/households/{HOUSEHOLD_A}/captures/{capture_id}/ocr-jobs/{job['id']}"
+        assert client.get(job_path, headers=_headers("child", CHILD_A)).json()["status"] == "queued"
+
+        runner = LocalOcrJob(repository, storage, SyntheticOcrAdapter(), ocr_results)
+        outcome = LocalOcrDispatcher(queue, runner).run_once()
+
+        assert outcome is not None
+        assert outcome.status is OcrJobStatus.SUCCEEDED
+        assert outcome.result_id is not None
+        completed = client.get(job_path, headers=_headers("child", CHILD_A)).json()
+        assert completed["status"] == "succeeded"
+        assert completed["result_id"] == str(outcome.result_id)
+        result = client.get(
+            f"/households/{HOUSEHOLD_A}/captures/{capture_id}/ocr-results/{outcome.result_id}",
+            headers=_headers("child", CHILD_A),
+        )
+        assert result.status_code == 200
+        assert result.json()["candidates"][0]["text"] == "synthetic 3 + 4"
+        assert result.json()["result"]["requires_manual_confirmation"] is True
+    finally:
+        if object_key is not None:
+            storage.delete_object(object_key)
+        ocr_results.close()
+        queue.close()
         learning.close()
         repository.close()
 
@@ -396,6 +710,103 @@ def test_postgresql_ocr_failure_uses_seven_day_retention_without_raw_error() -> 
         assert [audit["event_name"] for audit in audits].count("capture_ocr_failed") == 1
         assert all("synthetic-ocr-failure" not in str(audit) for audit in audits)
     finally:
+        learning.close()
+        repository.close()
+
+
+def test_postgresql_ocr_queue_is_idempotent_and_recovers_stale_lease() -> None:
+    storage = FakeObjectStorage()
+    client, learning, repository = _client(storage)
+    queue = PostgresOcrJobQueue(lease_seconds=1)
+    try:
+        session_id = _session(client)
+        upload_response = client.post(
+            f"/households/{HOUSEHOLD_A}/sessions/{session_id}/capture-uploads",
+            headers={
+                **_headers("child", CHILD_A),
+                "Idempotency-Key": f"pg-ocr-queue-upload-{uuid4()}",
+            },
+            json={
+                "media_type": "image/png",
+                "byte_size": 1024,
+                "content_sha256": sha256(b"synthetic-ocr-queue").hexdigest(),
+            },
+        )
+        assert upload_response.status_code == 201
+        capture = upload_response.json()["capture"]
+        storage.upload("image/png", 1024)
+        confirmation = client.post(
+            f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/upload-confirmations",
+            headers={
+                **_headers("child", CHILD_A),
+                "Idempotency-Key": f"pg-ocr-queue-confirm-{uuid4()}",
+            },
+            json={"expected_capture_version": capture["version"]},
+        )
+        assert confirmation.status_code == 201
+        capture_id = UUID(capture["id"])
+
+        first, replayed = queue.enqueue(
+            UUID(HOUSEHOLD_A), capture_id, UUID(CHILD_A), "pg-ocr-queue-001"
+        )
+        same, replayed_again = queue.enqueue(
+            UUID(HOUSEHOLD_A), capture_id, UUID(CHILD_A), "pg-ocr-queue-001"
+        )
+        assert replayed is False
+        assert replayed_again is True
+        assert same == first
+
+        claimed = queue.claim_next()
+        assert claimed is not None
+        assert claimed.id == first.id
+        assert claimed.status is OcrJobStatus.RUNNING
+        assert claimed.attempt == 1
+        assert queue.claim_next() is None
+        queue.fail(claimed.id)
+        assert queue.get(claimed.id).error_code == "ocr_job_failed"
+
+        retry, retry_replayed = queue.enqueue(
+            UUID(HOUSEHOLD_A), capture_id, UUID(CHILD_A), "pg-ocr-queue-002"
+        )
+        assert retry_replayed is False
+        running_retry = queue.claim_next()
+        assert running_retry is not None
+        assert running_retry.id == retry.id
+        with queue.engine.begin() as connection:
+            connection.execute(
+                queue._jobs.update()
+                .where(queue._jobs.c.id == retry.id)
+                .values(started_at=datetime.now(UTC) - timedelta(seconds=10))
+            )
+        reclaimed = queue.claim_next()
+        assert reclaimed is not None
+        assert reclaimed.id == retry.id
+        assert reclaimed.attempt == 2
+        queue.fail(retry.id)
+
+        formula, formula_replayed = queue.enqueue(
+            UUID(HOUSEHOLD_A),
+            capture_id,
+            UUID(CHILD_A),
+            "pg-ocr-queue-formula",
+            mode=OcrMode.FORMULA,
+        )
+        assert formula_replayed is False
+        assert formula.mode is OcrMode.FORMULA
+        with pytest.raises(OcrJobIdempotencyConflictError):
+            queue.enqueue(
+                UUID(HOUSEHOLD_A),
+                capture_id,
+                UUID(CHILD_A),
+                "pg-ocr-queue-formula",
+                mode=OcrMode.TEXT,
+            )
+        formula_claimed = queue.claim_next()
+        assert formula_claimed is not None
+        assert formula_claimed.mode is OcrMode.FORMULA
+        queue.fail(formula.id)
+    finally:
+        queue.close()
         learning.close()
         repository.close()
 

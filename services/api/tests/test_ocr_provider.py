@@ -11,6 +11,8 @@ from study_api.ocr_provider import (
     OcrExecutionError,
     OcrResultError,
     PaddleModelPaths,
+    parse_paddle_formula_result,
+    parse_paddle_formula_results,
     parse_paddle_text_result,
     parse_paddle_text_results,
 )
@@ -68,6 +70,38 @@ def test_local_adapter_passes_locked_cpu_models_to_lazy_factories(tmp_path: Path
     }
 
 
+def test_local_adapter_reuses_engines_after_model_validation(tmp_path: Path) -> None:
+    models = _models(tmp_path)
+    text_calls = 0
+    formula_calls = 0
+
+    def make_text_engine(**kwargs: object) -> object:
+        nonlocal text_calls
+        text_calls += 1
+        return object()
+
+    def make_formula_engine(**kwargs: object) -> object:
+        nonlocal formula_calls
+        formula_calls += 1
+        return object()
+
+    adapter = LocalPaddleOcrAdapter(
+        models,
+        ocr_factory=make_text_engine,
+        formula_factory=make_formula_engine,
+    )
+
+    first_text_engine = adapter.build_text_engine()
+    second_text_engine = adapter.build_text_engine()
+    first_formula_engine = adapter.build_formula_engine()
+    second_formula_engine = adapter.build_formula_engine()
+
+    assert first_text_engine is second_text_engine
+    assert first_formula_engine is second_formula_engine
+    assert text_calls == 1
+    assert formula_calls == 1
+
+
 def test_parse_paddle_text_result_normalizes_candidates_and_requires_confirmation() -> None:
     result = parse_paddle_text_result(
         {"rec_texts": ["  12 + 3  ", "答案"], "rec_scores": [0.98, 0.72]}
@@ -121,6 +155,27 @@ def test_parse_paddle_text_results_combines_multiple_pages_conservatively() -> N
     assert result.low_confidence is True
 
 
+def test_parse_paddle_formula_result_requires_manual_confirmation_without_score() -> None:
+    result = parse_paddle_formula_result({"res": {"rec_formula": r"\frac{1}{2}"}})
+
+    assert result.status == "candidate"
+    assert result.candidates[0].text == r"\frac{1}{2}"
+    assert result.confidence == 0.0
+    assert result.low_confidence is True
+    assert result.requires_manual_confirmation is True
+
+
+def test_parse_paddle_formula_results_accepts_provider_json_and_rejects_controls() -> None:
+    class SyntheticResult:
+        json = '{"res": {"rec_formula": "x+y"}}'
+
+    result = parse_paddle_formula_results([SyntheticResult()])
+    assert result.candidates[0].text == "x+y"
+
+    with pytest.raises(OcrResultError):
+        parse_paddle_formula_result({"res": {"rec_formula": "x\x00+y"}})
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -163,6 +218,38 @@ def test_local_adapter_runs_engine_with_ephemeral_safe_capture_bytes(tmp_path: P
     assert observed["data"] == JPEG_1X1
     assert not Path(observed["path"]).exists()
     assert result.candidates[0].text == "12 + 3"
+    assert result.requires_manual_confirmation is True
+
+
+def test_local_adapter_runs_formula_engine_with_ephemeral_safe_capture_bytes(
+    tmp_path: Path,
+) -> None:
+    models = _models(tmp_path)
+    observed: dict[str, object] = {}
+
+    class SyntheticFormulaEngine:
+        def predict(self, path: str) -> list[dict[str, object]]:
+            observed["path_exists"] = Path(path).is_file()
+            observed["path"] = path
+            observed["data"] = Path(path).read_bytes()
+            return [{"res": {"rec_formula": r"\frac{1}{2}"}}]
+
+    adapter = LocalPaddleOcrAdapter(
+        models,
+        formula_factory=lambda **kwargs: SyntheticFormulaEngine(),
+    )
+    capture = SafeCaptureInput(
+        data=JPEG_1X1,
+        metadata=ImageMetadata("jpeg", 1, 1, False),
+    )
+
+    result = adapter.run_formula_ocr(capture)
+
+    assert observed["path_exists"] is True
+    assert observed["data"] == JPEG_1X1
+    assert not Path(observed["path"]).exists()
+    assert result.candidates[0].text == r"\frac{1}{2}"
+    assert result.low_confidence is True
     assert result.requires_manual_confirmation is True
 
 

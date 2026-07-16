@@ -7,6 +7,7 @@ object keys, or presigned URLs, and it does not make buckets public.
 import os
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from typing import Protocol
 
 import boto3  # type: ignore[import-untyped]
@@ -32,7 +33,7 @@ class CaptureObjectStorage(Protocol):
     ) -> "PresignedUpload": ...
 
     def validate_uploaded_object(
-        self, object_key: str, content_type: str, byte_size: int
+        self, object_key: str, content_type: str, byte_size: int, content_sha256: str
     ) -> None: ...
 
     def read_object(self, object_key: str, max_bytes: int) -> bytes: ...
@@ -51,7 +52,9 @@ class UnavailableObjectStorage:
     ) -> "PresignedUpload":
         raise ObjectStorageError("object storage is not configured")
 
-    def validate_uploaded_object(self, object_key: str, content_type: str, byte_size: int) -> None:
+    def validate_uploaded_object(
+        self, object_key: str, content_type: str, byte_size: int, content_sha256: str
+    ) -> None:
         raise ObjectStorageError("object storage is not configured")
 
     def read_object(self, object_key: str, max_bytes: int) -> bytes:
@@ -148,7 +151,9 @@ class S3ObjectStorage:
         )
         return PresignedUpload(url=url, expires_at=expires_at)
 
-    def validate_uploaded_object(self, object_key: str, content_type: str, byte_size: int) -> None:
+    def validate_uploaded_object(
+        self, object_key: str, content_type: str, byte_size: int, content_sha256: str
+    ) -> None:
         """Confirm private object metadata before advancing Capture state."""
 
         try:
@@ -159,6 +164,9 @@ class S3ObjectStorage:
         actual_size = response.get("ContentLength")
         if actual_type != content_type or actual_size != byte_size:
             raise ObjectStorageError("uploaded capture object metadata does not match declaration")
+        actual_sha256 = sha256(self.read_object(object_key, max_bytes=byte_size)).hexdigest()
+        if actual_sha256 != content_sha256:
+            raise ObjectStorageError("uploaded capture object hash does not match declaration")
 
     def read_object(self, object_key: str, max_bytes: int) -> bytes:
         """Read one bounded private object into memory for the OCR boundary."""

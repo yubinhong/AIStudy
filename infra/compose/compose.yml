@@ -4,11 +4,13 @@ services:
   postgres:
     image: postgres:16.10
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-study}
-      POSTGRES_USER: ${POSTGRES_USER:-study}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-study_local_only}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in infra/compose/.env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in infra/compose/.env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in infra/compose/.env}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -19,6 +21,8 @@ services:
     image: redis:7.4.5-alpine
     ports:
       - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -29,13 +33,104 @@ services:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_local}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_local_only}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in infra/compose/.env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in infra/compose/.env}
     ports:
       - "${MINIO_API_PORT:-9000}:9000"
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 5s
       timeout: 5s
       retries: 10
+
+  migrate:
+    build:
+      context: ../../services/api
+      dockerfile: Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in infra/compose/.env}
+      PYTHONPATH: /app/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: ../../services/api
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      OBJECT_STORAGE_ENDPOINT_URL: http://minio:9000
+      STUDY_API_LEARNING_REPOSITORY: postgres
+      STUDY_API_OCR_QUEUE: postgres
+      STUDY_API_OCR_RESULTS: postgres
+      STUDY_API_IMAGE_ANALYSIS_REPOSITORY: postgres
+      STUDY_AUTH_MODE: bearer
+      PADDLE_MODEL_ROOT: /opt/study/models
+    ports:
+      - "${API_PORT:-8000}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../../apps/web
+      dockerfile: Dockerfile
+    environment:
+      STUDY_API_URL: http://api:8000
+      STUDY_API_TOKEN: ${STUDY_API_TOKEN:-}
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  image-analysis-worker:
+    build:
+      context: ../../services/api
+      dockerfile: Dockerfile
+    command: ["python", "scripts/run_image_analysis_worker.py", "--watch"]
+    env_file:
+      - .env
+    environment:
+      OBJECT_STORAGE_ENDPOINT_URL: http://minio:9000
+      IMAGE_ANALYSIS_WORKER_POLL_INTERVAL_SECONDS: ${IMAGE_ANALYSIS_WORKER_POLL_INTERVAL_SECONDS:-2}
+      PADDLE_MODEL_ROOT: /opt/study/models
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

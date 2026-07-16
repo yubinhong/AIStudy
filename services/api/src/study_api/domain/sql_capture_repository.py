@@ -176,6 +176,10 @@ class PostgresCaptureRepository:
             )
             return pending
 
+    def get_capture(self, household_id: UUID, capture_id: UUID, child_id: UUID) -> Capture:
+        with self._engine.connect() as connection:
+            return self._capture_for_child(connection, household_id, capture_id, child_id)
+
     def confirm_capture_upload(
         self,
         household_id: UUID,
@@ -313,9 +317,11 @@ class PostgresCaptureRepository:
         child_id: UUID,
         request: CorrectCaptureRequest,
         idempotency_key: str,
+        *,
+        operation_prefix: str = "correct_capture",
     ) -> tuple[CaptureCorrection, bool]:
         payload = request.model_dump_json()
-        operation = f"correct_capture:{capture_id}"
+        operation = f"{operation_prefix}:{capture_id}"
         with self._engine.begin() as connection:
             existing = self._idempotency_result(
                 connection, household_id, operation, idempotency_key

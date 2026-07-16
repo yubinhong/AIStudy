@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://study.local/contracts/question-extraction.v1.json",
+  "title": "QuestionExtraction",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "subject", "question_text", "options", "formulas",
+    "has_diagram", "has_handwriting", "question_region_count", "confidence",
+    "needs_confirmation"
+  ],
+  "properties": {
+    "schema_version": {"const": "question-extraction.v1"},
+    "subject": {"const": "math"},
+    "question_text": {"type": "string", "minLength": 1, "maxLength": 4000},
+    "options": {"type": "array", "maxItems": 20, "items": {"type": "string"}},
+    "formulas": {"type": "array", "maxItems": 50, "items": {"type": "string"}},
+    "has_diagram": {"type": "boolean"},
+    "has_handwriting": {"type": "boolean"},
+    "detected_answer": {"type": ["string", "null"], "maxLength": 1000},
+    "question_region_count": {"type": "integer", "minimum": 0, "maximum": 256},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "needs_confirmation": {"const": true}
+  }
+}
