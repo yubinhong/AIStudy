@@ -7,6 +7,7 @@ content is never logged or persisted by this module.
 """
 
 import base64
+import io
 import json
 import os
 import urllib.error
@@ -14,6 +15,8 @@ import urllib.request
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
+
+from PIL import Image, UnidentifiedImageError
 
 from study_api.privacy_models import QuestionExtraction
 
@@ -50,6 +53,7 @@ class NewApiConfig:
     timeout_seconds: float
     max_response_bytes: int
     user_agent: str = "study-api/0.5"
+    max_image_bytes: int = 600_000
 
     @classmethod
     def from_environment(cls) -> "NewApiConfig":
@@ -62,6 +66,7 @@ class NewApiConfig:
             timeout_seconds=float(os.environ.get("STUDY_NEWAPI_TIMEOUT_SECONDS", "30")),
             max_response_bytes=int(os.environ.get("STUDY_NEWAPI_MAX_RESPONSE_BYTES", "262144")),
             user_agent=os.environ.get("STUDY_NEWAPI_USER_AGENT", "study-api/0.5"),
+            max_image_bytes=int(os.environ.get("STUDY_NEWAPI_MAX_IMAGE_BYTES", "600000")),
         )
         if config.enabled:
             config.validate()
@@ -88,6 +93,10 @@ class NewApiConfig:
             raise NewApiConfigurationError(
                 "STUDY_NEWAPI_USER_AGENT must be printable ASCII without control characters"
             )
+        if not 100_000 <= self.max_image_bytes <= 3_000_000:
+            raise NewApiConfigurationError(
+                "STUDY_NEWAPI_MAX_IMAGE_BYTES must be between 100000 and 3000000"
+            )
 
 
 class NewApiVisionProvider:
@@ -104,6 +113,11 @@ class NewApiVisionProvider:
             raise NewApiProviderError("unsupported sanitized image type")
         if not 1 <= len(image_bytes) <= 8_000_000:
             raise NewApiProviderError("sanitized image size is outside the allowed range")
+        image_bytes, media_type = _prepare_provider_image(
+            image_bytes,
+            media_type,
+            max_bytes=self._config.max_image_bytes,
+        )
         payload = {
             "model": self._config.vision_model,
             "temperature": 0,
@@ -229,3 +243,60 @@ def _strip_code_fence(content: str) -> str:
         if stripped.startswith("json"):
             stripped = stripped[4:].lstrip()
     return stripped
+
+
+def _prepare_provider_image(
+    image_bytes: bytes,
+    media_type: str,
+    *,
+    max_bytes: int,
+) -> tuple[bytes, str]:
+    """Bound the base64 request while preserving the confirmed sanitized pixels.
+
+    Small derivatives pass through unchanged. Larger derivatives are decoded,
+    stripped of metadata, downscaled and JPEG-encoded entirely in memory. This
+    cannot restore masked pixels and no additional image is persisted.
+    """
+
+    if len(image_bytes) <= max_bytes:
+        return image_bytes, media_type
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as source:
+            source.load()
+            if source.mode in {"RGBA", "LA"} or "transparency" in source.info:
+                rgba = source.convert("RGBA")
+                image = Image.new("RGB", rgba.size, "white")
+                image.paste(rgba, mask=rgba.getchannel("A"))
+            else:
+                image = source.convert("RGB")
+    except (OSError, UnidentifiedImageError, ValueError) as error:
+        raise NewApiProviderError(
+            "sanitized image could not be prepared",
+            code="provider_image_invalid",
+        ) from error
+
+    try:
+        for max_dimension in (1800, 1600, 1400, 1200, 1024, 896):
+            resized = image.copy()
+            resized.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+            try:
+                for quality in (86, 80, 74, 68, 62):
+                    output = io.BytesIO()
+                    resized.save(
+                        output,
+                        format="JPEG",
+                        quality=quality,
+                        optimize=True,
+                        progressive=True,
+                    )
+                    candidate = output.getvalue()
+                    if len(candidate) <= max_bytes:
+                        return candidate, "image/jpeg"
+            finally:
+                resized.close()
+    finally:
+        image.close()
+    raise NewApiProviderError(
+        "sanitized image remains too large after bounded compression",
+        code="provider_image_too_large",
+    )

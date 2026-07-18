@@ -4,22 +4,26 @@
 
 - 状态：`DRAFT（v1.0 目标架构；P0 家庭/孩子/设备合成切片已实现）`
 - Owner：`TBD（技术负责人确认）`
-- 最后更新：`2026-07-15`
+- 最后更新：`2026-07-18`
 - 设计基线：`家庭AI学习助手_架构设计_v1.0.docx`
-- 相关决策：`DECISIONS.md`（ADR-0001～0011、0013～0017 已 Accepted；ADR-0012 已被 ADR-0015 替代。ADR-0017 已替代 ADR-0005 的孩子 PIN/设备凭证默认方案和 ADR-0016 的 HMAC 认证部分；NewAPI 决策继续有效）
+- 相关决策：`DECISIONS.md`（ADR-0001～0011、0013～0018、0020 已 Accepted，ADR-0019 Proposed；ADR-0012 已被 ADR-0015 替代。ADR-0017 已替代 ADR-0005 的孩子 PIN/设备凭证默认方案和 ADR-0016 的 HMAC 认证部分；NewAPI 决策继续有效）
 
 ## 1. 架构目标
 
-- 业务能力：支撑家庭/孩子、每日任务、数学单题捕获、AI 分步辅导、错题与复习、家长周报和多端离线同步。
+- 业务能力：以数学为首科，支撑家庭/孩子、教材与知识范围、错题捕获/详细讲解、错题本/到期复习、可解释今日任务、家长周报和多端同步。
 - 质量属性优先级：儿童安全与隐私 > 数据正确性/可靠性 > 可审计与可替换性 > 可用性 > 性能 > 成本。
 - 规模假设：P0/P1 先服务单一或少量家庭；用户数、峰值 RPS、图片量、AI 调用量和数据保留规模均为 `TBD`，应在原型测量后写入容量模型。
 - 主要约束：复用四类现有设备；华为端不依赖 GMS；模块化单体起步；OpenAPI/Schema 契约优先；离线队列保留学习记录，但图片解析依赖网络；模型可替换；原图不外发；儿童数据最小化；未授权教材/题库不入库。
 
 历史实现基线（已由下方 2026-07-16 修订覆盖）：P0 健康端点、Household-scoped ChildProfile/Device 与 P1 Task/StudySession/Attempt/SyncBatch/Capture API、local/CI 家长删除孩子档案 API、OpenAPI `0.5.0` 增量、Flutter 待同步队列边界、八份早期本地 PostgreSQL migration、Learning/Capture/OCR/ImageAnalysis 事务仓储、私有 MinIO 上传签发/服务端确认（含对象实际 SHA-256）和过期对象清理器、按 Household/Child 原子认领的 Capture 对象级联删除编排、PaddleOCR 模型构建期 SHA-256 供应链和 Provider-neutral PrivacySanitizer 核心已实现；该历史快照不再描述当前认证和 VerifiedQuestion 状态。
 
-现状修订（2026-07-16）：上面的实现清单是历史快照，当前还包括 `0010_verified_question`、`0011_account_password_session`、NewAPI Adapter、ImageAnalysis queued/blocked worker、VerifiedQuestion 人工确认读取和账号密码/会话认证。worker 已覆盖成功/失败派生对象清理；真实视觉检测器、实际 NewAPI 联调、Profile/Device 生产持久化和备份删除仍待环境验收。
+现状修订（2026-07-17）：当前迁移已到 `0015_child_data_export`，包含 PostgreSQL Profile/Learning/Capture/Identity/VerifiedQuestion/TutorTurn/Report/Export；Flutter 使用 SQLite 持久化待同步 Attempt。Ubuntu Compose 运行 API/Web/ImageAnalysis/DataLifecycle worker，并完成 NewAPI synthetic 大图与 PostgreSQL/MinIO 恢复验收；真实视觉检测器和最终设备回归仍未完成。
 
 认证实现修订（2026-07-16）：ADR-0017 已进入实现验收。API 以 PostgreSQL `Account`/`AuthSession`、Argon2id 密码哈希和可撤销不透明会话作为唯一认证机制；HMAC、Demo Header、静态 Web Token 和 Web 免登录开关已删除。Web 使用 Cookie/CSRF；Flutter 在登录前验证并持久化服务端地址，地址变更先清理旧会话，新会话使用平台安全存储。认证审计仅写稳定事件名、家庭/资源 UUID 和时间。
+
+Web 孩子管理修订（2026-07-18）：PLAN-0013 的孩子管理聚合已实现 API/Web 首版并部署 Ubuntu：家长通过一个幂等命令创建 ChildProfile 与唯一 child Account，列表返回联合视图，删除档案同时清理 child Account；首页支持 query 选择当前孩子并按孩子过滤任务/周报。认证与档案仍保持物理分表；浏览器 E2E、旧数据审计和双孩子实体验收仍待完成。
+
+产品主线修订（2026-07-18）：ADR-0020/PLAN-0014 已将教材驱动的数学错题闭环提升为主线；当前已实现 `MistakeRecord`/`ReviewSchedule`、`0017` 迁移、到期查询、确定性复习和 Web/Flutter 调用。仍没有材料导入/发布、CurriculumSnapshot、作答四态/错因讲解、TaskRecommendation 或 Flutter 三入口，不得将最小复习 API 描述成完整产品主线。
 
 ## 2. 系统上下文
 
@@ -55,19 +59,20 @@ flowchart LR
 
 | 组件 | 目标路径/服务 | 责任 | 数据所有权 | 上游/下游 | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| 孩子端 | `apps/child_flutter` | 今日任务、学习会话、拍题/相册选择、分步提示 UI、SQLite、离线队列 | 端侧缓存和待同步操作；服务端数据不是本地主真相 | `image_picker`、Capture API、API | 横屏学习桌、拍题输入、OCR 确认与分数思考提示第 1/2/3 张 UI 原型、账号密码登录和安全存储会话已实现；离线 SQLite 和真实设备生命周期待后续 |
-| Web/PWA | `apps/web` | 家长登录、孩子账号管理、内容维护、Windows 首版体验 | 仅 UI 状态；业务事实来自 API | OpenAPI SDK、API | 简洁明亮的学习概览、登录/首次改密/退出和孩子账号创建/停用/重置已实现；真实浏览器 E2E 待执行 |
-| API/BFF | `services/api` | 鉴权、家庭边界、业务编排、契约实现 | PostgreSQL 中 Learning/Identity 业务事实 | 客户端、数据层、Worker、AI | Learning/Capture/ImageAnalysis/Account/AuthSession 可切换 PostgreSQL 仓储；Compose 默认使用 password 会话认证 |
-| Identity/Profile | `services/api` 内模块 | Household、Account、AuthSession、ChildProfile、Device 和权限 | 身份、家庭归属、密码哈希、可撤销会话 | API、所有领域模块 | Account/AuthSession、Argon2id、首次改密、失败锁定、会话撤销和 Household/ChildProfile 反向授权已实现；Profile/Device 仍为合成仓储 |
-| Plan/Task/Session | `services/api` 内模块 | 计划、任务、会话、Attempt 和同步合并 | 学习任务与过程记录 | 客户端、Report、Mistake | PostgreSQL 事务仓储、Alembic schema、反向授权/幂等/并发测试已实现；SQLite 未实现 |
-| Capture / PrivacySanitizer | `services/api` 内模块 | 受限媒体声明、签名上传、单题裁剪、本地元数据清除、OCR/规则敏感标签定位、实色遮挡；客户端脱敏预览/手动涂抹/哈希生成；ImageAnalysis queued/blocked job；NewAPI 结构化解析和人工确认 | Capture/脱敏/解析状态与追加校正；原图/脱敏副本在私有 MinIO；未确认题目结构与 VerifiedQuestion 在 PostgreSQL | 对象存储、NewAPI Provider、Tutor | 旧本地 OCR 回滚路线、安全读取/实际 SHA-256、PrivacySanitizer 核心/规则信号、0009 提取、0010 VerifiedQuestion、worker 成功/失败清理已实现；真实视觉检测器、实际 NewAPI 联调和备份演练仍未执行 |
-| Tutor | `services/api` 内模块 | 只消费人工确认的 `VerifiedQuestion`，执行 Provider 路由、Tutor Policy、提示层级、Schema 校验和成本控制 | TutorTurn、模型/Prompt/Policy 版本和审计 | Capture、AI Provider、Mistake | 已创建无 Provider 的 `offline-tutor-policy.v1` 纯规则降级，1～3 级提示/0 元/不回显答案；NewAPI 图片 Adapter 不等于 Tutor Provider，持久化 TutorTurn/人工确认接口/生产审计未实现 |
-| Mistake/Mastery/Report | `services/api` 内模块 | 错因、知识点、复习调度、掌握度快照、周报 | MistakeRecord、ReviewSchedule、MasterySnapshot、WeeklyReport | Session/Tutor、家长端 | 未创建 |
+| 孩子端 | `apps/child_flutter` | 学科/数学三入口、错题讲解、到期复习、今日任务、拍题、SQLite/待同步 | 端侧缓存和待同步操作；服务端数据不是本地主真相 | `image_picker`、Capture/Learning API | 真实任务/活动会话、拍题/人工确认/可信 Tutor、账号密码和 SQLite Attempt 队列已实现；当前仍是今日任务 + 拍题首页，三入口/正式错题复习尚未实现 |
+| Web/PWA | `apps/web` | 家长登录、统一孩子管理、多孩子选择、教材审核/发布、任务建议、周报和导出 | 仅选择/草稿编辑状态；业务事实来自 API | OpenAPI SDK、API | 登录/首次改密、孩子聚合 CRUD、当天任务、周报、导出和首页选择已实现；教材工作台、建议审批与浏览器 E2E 尚未实现 |
+| API/BFF | `services/api` | 鉴权、家庭边界、业务编排、契约实现 | PostgreSQL 中 Profile/Learning/Identity 业务事实 | 客户端、数据层、Worker、AI | Compose 默认使用 PostgreSQL 事务仓储和 password 会话认证 |
+| Identity/Profile | `services/api` 内模块 | Household、Account、AuthSession、ChildProfile、Device、孩子管理聚合和权限 | 身份、家庭归属、密码哈希、可撤销会话 | API、所有领域模块 | `0011`/`0012`/`0016`、Argon2id、首次改密、失败锁定、会话撤销、Profile/Device 事务仓储、原子聚合创建和一对一唯一约束已实现；浏览器/双孩子 E2E 待完成 |
+| Curriculum/Content | `services/api` 内模块（目标） | CurriculumAssignment、材料导入、解析草稿、章节/知识点来源和家长发布 | 教材元数据、版本化已发布知识快照 | Web、Tutor、Task、Mistake | 未实现；当前只有 ChildProfile `curriculum_version` 字符串 |
+| Plan/Task/Session | `services/api` 内模块 | 计划、任务/推荐、会话、Attempt 和同步合并 | 学习任务与过程记录 | 客户端、Curriculum、Report、Mistake | PostgreSQL Task/Session/Attempt、反向授权/幂等/并发与会话完成已实现；TaskRecommendation、任务来源/审批和结构化作答状态/AttemptEvidence 尚未实现 |
+| Capture / PrivacySanitizer | `services/api` 内模块 | 受限媒体、API 有界流式上传、本地脱敏/手动涂抹；ImageAnalysis、NewAPI 结构化和人工确认 | Capture/脱敏/解析状态；图片在私有 MinIO；Extraction/VerifiedQuestion 在 PostgreSQL | 对象存储、NewAPI Provider、Tutor | 已实现 Session 鉴权流式上传、安全读取/实际 SHA-256、提取/确认和生命周期，并部署 Ubuntu；当前 Provider HTTP `402` 阻断真实 Extraction，自动视觉检测器尚未完成 |
+| Tutor | `services/api` 内模块 | 只消费 VerifiedQuestion；按练习/复习/错题讲解模式执行 Policy、教材 grounding、Schema、确定性校验和成本控制 | 追加写 TutorTurn、Policy/Prompt/模型和来源版本 | Capture、Curriculum、AI Provider、Mistake | 按 VerifiedQuestion ID 的 1～3 级零成本提示与幂等 TutorTurn 已实现；完整错题讲解、教材依据和校验尚未实现 |
+| Mistake/Review/Report | `services/api` 内模块 | 错题证据、错因、讲解引用、确定性复习调度、周报聚合 | MistakeRecord、ReviewSchedule、复习 Attempt 和报告 | Session/Tutor/Curriculum、家长端 | `0017`、错题创建/到期查询/复习和基础 Web/Flutter 调用已实现；Verified AttemptEvidence、完整 UI 和教材依据尚未实现 |
 | Notification | `services/api` 内模块 | 应用内提醒和可替换推送适配器 | 通知状态 | Report/Task、HMS | 未创建 |
-| 跨端契约 | `packages/contracts` | OpenAPI、AI JSON Schema、生成 SDK | 接口/Schema 的唯一事实来源 | API、Flutter、Web、evals | 健康 + Profile/Device + Learning/Capture/OCR/Account Session `0.6.0` 合同已实现；ADR-0015 Schema 已写，SDK 生成器未实现 |
-| AI 评测 | `evals` | 固定样本与质量/安全/延迟/成本回归 | 合成或脱敏评测数据 | Tutor、CI | 旧本地 OCR、PrivacySanitizer 与 offline Tutor Policy synthetic eval 已实现；云视觉和云 Tutor eval 未实现 |
-| 本地基础设施 | `infra/compose` | PostgreSQL、Redis、MinIO、API/Worker 本地编排 | 本地合成数据 | 开发/集成测试 | PostgreSQL 16.10 与 MinIO 已启动用于 migration/integration；Redis 未启动 |
-| ADR | `docs/adr` | 不可逆或跨模块决策记录 | 架构决策历史 | `DECISIONS.md` | ADR-0001～0011、0013～0017 Accepted；ADR-0012 Superseded；ADR-0017 认证目标待实现 |
+| 跨端契约 | `packages/contracts` | OpenAPI、AI JSON Schema、生成 SDK | 接口/Schema 的唯一事实来源 | API、Flutter、Web、evals | `0.8.0` 覆盖 Profile/Learning/Capture/OCR/Account/Tutor/Report/Export；SDK 生成器未实现 |
+| AI 评测 | `evals` | 固定样本与质量/安全/延迟/成本回归 | 合成或脱敏评测数据 | Tutor、CI | OCR、PrivacySanitizer、Tutor Policy 和真实 NewAPI synthetic 大图已实现；自动视觉检测器 eval 待其实现后补充 |
+| 本地基础设施 | `infra/compose` | PostgreSQL、Redis、MinIO、API/Web/Worker 编排 | 单家庭自用数据 | 开发/自托管 | Ubuntu 完整栈、迁移、生命周期 worker、备份和隔离恢复已验证 |
+| ADR | `docs/adr` | 不可逆或跨模块决策记录 | 架构决策历史 | `DECISIONS.md` | ADR-0001～0011、0013～0018、0020 Accepted；ADR-0019 Proposed；替代关系见决策索引 |
 
 模块间禁止直接绕过业务接口修改其他模块表。模块化单体内部边界和依赖方向需在 P0 代码结构中验证。
 
@@ -76,7 +81,7 @@ flowchart LR
 ### 4.0 账号初始化、登录与孩子账号管理（ADR-0017 实现状态）
 
 1. 仅在空账号库的本机首次启动中创建 `admin/admin123456`，密码只以 Argon2id 哈希落库并标记 `must_change_password=true`；该引导账号不得重复创建。
-2. 引导凭据只允许从 loopback 登录。首次改密前，服务端仅开放当前账号、改密和退出接口，其他家庭数据接口统一返回稳定的 `password_change_required`。
+2. 项目 Owner 已授权引导凭据从受信家庭局域网首次登录。首次改密前，服务端仅开放当前账号、改密和退出接口，其他家庭数据接口统一返回稳定的 `password_change_required`；默认凭据不得暴露到公网。
 3. 家长改密成功后撤销所有引导会话并签发新的可撤销会话；Web 使用 `HttpOnly`、`SameSite=Lax` Cookie 和 CSRF 防护，不把长期令牌写入前端环境。
 4. `parent_admin` 在 Web 内创建、停用、启用或重置同一 Household 的孩子账号，每个 `child` 账号必须绑定一个 `ChildProfile`；高风险管理操作要求 10 分钟内重新验证家长密码。
 5. 孩子在 Flutter 使用账号密码登录；客户端只在 Keychain/Android Keystore 保存不透明会话值。服务端每次按会话、角色、Household 和 ChildProfile 绑定授权。
@@ -84,13 +89,24 @@ flowchart LR
 
 Compose 只启用账号密码/会话认证，不存在 legacy 认证开关。PostgreSQL/浏览器 E2E/真实设备和恢复验收以 PLAN-0008 为准。
 
+PLAN-0013 的目标聚合不改变上述认证边界：家长通过一个带幂等键的命令同时提交档案字段、用户名和初始密码；API 在一个数据库事务中创建 `ChildProfile` 与 `Account`，任何冲突或校验失败整体回滚。管理读模型将姓名、年级、用户名和账号状态组合返回，但永不返回密码、哈希或会话值。现有 `accounts(child_id, household_id)` 复合外键继续保护 Household，数据审计清理重复绑定后再增加一个档案最多一个 child Account 的唯一约束。
+
+### 4.0.1 家长多孩子工作台（PLAN-0013 目标）
+
+1. Web 从 URL 中的显式 `child_id`、已保存且仍获授权的最近选择、稳定排序后的首个孩子依次确定当前孩子；孩子被删除/失权时清除旧选择，零孩子时展示创建入口。
+2. Web/API 使用同一个当前 `child_id` 并行加载孩子档案、当日任务和周报；任务必须在服务端按孩子过滤，不能读取全家庭学习明细后只做前端隐藏。
+3. 家庭孩子总数是 Household 级指标；设备在尚无孩子绑定关系时也是 Household 级指标。两者不得因选择器变化或被标成当前孩子专属数据。
+4. 服务端不信任查询参数/Cookie；每次仍按 Session、角色、Household 和 ChildProfile 绑定授权。家长可切换本家庭孩子，孩子账号只能访问自己的绑定档案。
+
+当前 `apps/web/src/app/page.tsx` 仍以 `children[0]` 和 `tasks[0]` 组装首页，只为第一个孩子加载周报；以上流程由 PLAN-0013 跟踪，尚未实现。
+
 ### 4.1 任务、作答与离线同步
 
-以下为当前数据流；第 3 步的 MinIO 上传签发与服务端对象确认（包括声明内容 SHA-256 与实际对象字节核验）已经实现。旧路线仍保留 ADR-0012 的本地完整 OCR 输入规范化、普通/公式执行、`LocalOcrJob`、候选结果和人工确认；新路线已完成本地 PrivacySanitizer 核心/规则信号、ImageAnalysis ledger、0009 提取持久化、0010 VerifiedQuestion、可开关 NewAPI worker、派生对象清理，以及 Flutter 侧脱敏预览、手动涂抹和确认后只上传脱敏副本的顺序；Provider 未启用时状态明确为 blocked，不读取或外发图片。真实视觉检测器和实际 NewAPI 联调仍未完成。Flutter 调试默认仍使用内存队列，需显式切换 PostgreSQL 才连接持久化 Worker。
+本地 `0.8.0` 数据流已收敛为 App 携带 Session 向 API 原始流上传，API 通过内部地址写入私有 MinIO，并在完成后做声明/实际 SHA-256 和完整图片校验；Ubuntu 运行栈仍是旧预签名直传，必须成对部署后才可关闭旧入口。旧路线代码仅作为隐藏回滚兼容保留，正式 OpenAPI 不再暴露。其余路线仍保留 ADR-0012 的本地完整 OCR 输入规范化、普通/公式执行和 `LocalOcrJob`；默认视觉路线已完成 PrivacySanitizer 规则信号、ImageAnalysis/Extraction/VerifiedQuestion、单一 NewAPI synthetic live、派生对象清理、可信 TutorTurn，以及 Flutter 脱敏预览/手动涂抹/确认后上传。Provider 未启用时状态明确为 blocked，不读取或外发图片。Flutter 生产路径使用 PostgreSQL 服务端事实和 SQLite 端侧待同步队列；真实自动视觉检测器仍未完成。
 
 1. 家长通过 Web/手机创建任务，API 校验 Household 权限后写入 PostgreSQL。
 2. 孩子端同步今日任务到 SQLite，开始 StudySession；断网时将 Attempt、状态变化和上传意图写入追加队列。
-3. Capture 上传由 API 在授权后创建 `upload_pending` 元数据并签发私有 MinIO 的短期预签名 URL；客户端不持有存储密钥，API 读取对象 MIME/大小确认后才转入 `needs_correction`。
+3. Capture 目标上传由 App 携带 Session 和幂等键调用单一 API；API 在读取字节前验证 Household/角色/孩子/StudySession，随后分块限制大小、增量哈希、校验 MIME/文件头/尺寸/像素/完整解码，并通过内部 S3 Adapter 写入 staging 对象；全部成功后返回已确认 Capture，失败中止或删除 staging。当前 `0.8.0` 的预签名 URL + 确认流程是待迁移事实。
 4. 目标路线由本地 PrivacySanitizer 生成不可逆脱敏副本，用户确认后由单一获批云视觉 Provider 产生 `QuestionExtraction`；任何结果必须人工确认形成 `VerifiedQuestion`，低置信度或失败保留重新裁剪、手动涂抹或手工录入路径。
 5. 重连后客户端按顺序提交，写接口携带 `idempotency-key`；Attempt/AuditEvent 追加写，任务状态使用服务端版本号检测/合并冲突。
 6. API 返回逐项结果；失败项保留可重试和用户可理解状态，不静默丢弃或用最后写入覆盖历史。
@@ -102,7 +118,7 @@ Compose 只启用账号密码/会话认证，不存在 legacy 认证开关。Pos
 
 ### 4.2 拍题与 AI 分步辅导
 
-1. 客户端请求短期签名 URL，校验文件类型/大小后上传单题图片；原图只进入家庭控制的私有 MinIO。
+1. 客户端携带可撤销 Session 只向 API 上传单题图片；API 有界流式校验并通过内部地址写入家庭控制的私有 MinIO，客户端不接触对象存储 URL/对象键，MinIO `9000` 不向 LAN 暴露。
 2. PrivacySanitizer 有界读取原图，清除元数据；本地 OCR 只定位敏感标签/文本框，并结合规则、人脸、二维码/条形码检测，用实色块生成重新编码的脱敏副本。
 3. 客户端展示脱敏预览；用户可重新裁剪或手动涂抹。服务端把确认动作绑定到脱敏副本不可逆哈希；`safe_to_upload=false` 或未确认时禁止外发。
 4. 云视觉 Adapter 只向单一获批 Provider 发送脱敏字节和最少上下文，返回固定 `QuestionExtraction` Schema。不得发送原图、MinIO URL、对象键或敏感 OCR 文本，不得自动跨 Provider 重试。
@@ -115,44 +131,64 @@ Compose 只启用账号密码/会话认证，不存在 legacy 认证开关。Pos
 - 失败处理：脱敏失败回到裁剪/涂抹/手工录入；云视觉超时/限流只允许同一 Provider 至多一次有界重试或暂停，切换 Provider 需家长明确确认；绝不丢失已保存作答。
 - 幂等/重试：Capture、脱敏确认、ImageAnalysis 和 Tutor 请求使用业务幂等键；Provider 重试必须绑定同一脱敏哈希，避免重复外发、重复计费/重复写入。
 
-### 4.3 错题、复习与家长周报
+### 4.3 教材导入与知识发布（ADR-0020 目标，未实现）
 
-1. 完成的 Session、Attempt 和 TutorTurn 产生带证据的 MistakeRecord 与知识点关联。
-2. ReviewSchedule 根据批准的策略生成复习入口；P2 的 MasterySnapshot 是可重算派生数据。
-3. WeeklyReport 聚合时间窗口内的投入、完成率、薄弱点、复习建议和异常，并保留到源记录的引用。
-4. 家长端按 Household 权限读取；生成失败时显示数据截止时间和缺失原因，不用模型猜测填充。
+1. 家长为孩子创建 CurriculumAssignment，明确数学、学年、学期、年级和教材版本；历史 Assignment 不覆盖。
+2. API 对材料做 Household 授权、格式/大小/页数/文件头、SHA-256 和来源声明校验，再写入私有对象存储并创建 MaterialIngestionJob；重复文件/幂等键不重复处理。
+3. 解析器只产生草稿章节、KnowledgePoint 和带页码/段落的 KnowledgeEvidence。材料内容被当作不可信数据，不能改变系统 Prompt 或执行其中指令。
+4. 家长审核/编辑后发布不可变 CurriculumSnapshot；Tutor、Mistake 和 Task 只检索已发布且属于当前孩子/学科/版本的最小片段。
+5. 材料更新生成新版本；既有 Mistake/TutorTurn 保持原 Snapshot 引用。删除或撤销授权时按引用/保留策略停用新检索，不静默改写历史。
 
-- 信任边界：聚合和模型摘要必须以授权后的家庭数据为输入。
-- 一致性：报告为版本化快照，可从源记录重算；源记录删除后按保留政策处理派生数据。
-- 失败处理：部分数据缺失时标记异常，不发布无法追溯的结论。
-- 幂等/重试：周报按 Household + 时间窗口 + 版本唯一，重复生成覆盖同一草稿或创建显式新版本。
+- 信任边界：导入文件、元数据、解析文本、章节/知识点和模型建议均不可信；每一阶段按 Schema/权限/来源校验。
+- 一致性：原材料、解析草稿、已发布 Snapshot 分离；只有家长发布事实可成为知识依据。
+- 失败处理：解析失败保留可重试状态和人工录入/修正，不把部分结果发布为完整教材。
+- 幂等/重试：文件 SHA-256、版本和业务幂等键共同去重；worker 有界重试，发布操作不可重复创建不同事实。
+
+### 4.4 错题讲解、复习、任务与家长周报（ADR-0020 目标）
+
+1. 错题讲解沿用 Capture → VerifiedQuestion，但拍摄引导要求尽量同时包含题目和孩子答题区。QuestionExtraction 扩展独立作答区/步骤候选和 `answer_state=worked|blank|unclear|answer_area_missing`，用户确认/修正后才形成 AttemptEvidence。
+2. `worked` 分支优先定位第一个可验证错误步骤；`blank_confirmed` 分支记录 `no_approach` 并允许从题意/知识点开始完整讲解。`unclear` 或 `answer_area_missing` 不得自动当空白，只能重拍或手工确认后继续。
+3. Tutor 检索当前 CurriculumSnapshot，输出带知识点/来源、匹配作答状态的逐步过程和校验结果。低置信、错版、超纲、来源缺失或确定性校验失败进入家长复核。
+4. 通过门禁后原子创建 MistakeRecord 和 ReviewSchedule；当前 `needs_review` 旧会话只转换为待补全候选，不推断不存在的错误答案、空白状态或知识点。
+5. 复习默认读取到期队列，每题先作答；ReviewPolicy v1 根据追加写结果确定性晋级/重置。AI 不直接修改到期时间或永久掌握状态。
+6. TaskRecommendation 从到期错题、已发布练习和有证据的薄弱知识点生成；默认经家长批准才转换成 Task。Task 保存来源/策略/审批，周报可解释为什么安排。
+7. WeeklyReport 聚合时间窗口内的任务、错题、复习和 Tutor 事实并保留源引用；失败时显示数据截止时间和缺失原因，不用模型猜测填充。
+
+- 信任边界：错误分类、知识匹配、Tutor 输出、Review 派生状态和推荐都不可信；必须以授权后的发布知识和追加写学习事实为输入。
+- 一致性：MistakeRecord 引用确认题目/已确认 AttemptEvidence（有作答或空白）；ReviewSchedule/报告/推荐可重算，不能覆盖 Attempt/TutorTurn/审批事实。
+- 失败处理：讲解失败仍保留错题候选；复习/推荐失败不删除既有记录或制造任务；无 Provider 时允许手工讲解/复习。
+- 幂等/重试：错题创建、复习提交、建议生成/批准和报告均有业务幂等边界；同键不同载荷拒绝并审计。
 
 ## 5. 接口与事件
 
 | 接口/事件 | Producer | Consumer | 目标契约位置 | 兼容策略 | SLO |
 | --- | --- | --- | --- | --- | --- |
-| `/households/{id}/children`、`/households/{id}/devices` | API | Flutter/Web | `packages/contracts/openapi.yaml` | P0.2 增量；写请求幂等；破坏性变化显式版本化 | `TBD` |
-| `/plans`、`/tasks`、`/sessions` | API | Flutter/Web | `packages/contracts/openapi` | 写请求幂等；状态枚举只增不改 | `TBD` |
-| `/captures`、目标 `/privacy-sanitizations`、`/image-analysis-jobs` | API | Flutter/Web | OpenAPI + 图片/脱敏/提取 Schema | 现有 OCR 合同保持原义；新状态/端点只做兼容增量；签名 URL 短期有效；确认绑定脱敏哈希 | `TBD` |
-| `/tutor/hints` | API | Flutter | OpenAPI + `packages/contracts/schemas` | Prompt/Policy/Schema 独立版本；未知字段兼容 | `TBD` |
-| `/mistakes`、`/reviews`、`/reports` | API | Flutter/Web | `packages/contracts/openapi` | 报告快照版本化 | `TBD` |
+| `/households/{id}/children`、孩子管理聚合、`/households/{id}/devices` | API | Flutter/Web | `packages/contracts/openapi.yaml` | 孩子聚合创建必须单事务/幂等；现有分离写入的兼容和收缩由 PLAN-0013 在 OpenAPI 差异中确认 | `TBD` |
+| `/curriculum-assignments`、`/materials`、`/material-ingestions`、`/curriculum-snapshots` | API/worker | Web、Tutor、Task | OpenAPI + 内容解析 Schema | 原材料/草稿/发布版本分离；写请求幂等；已发布 Snapshot 不可变 | `TBD` |
+| `/task-recommendations`、`/tasks`、`/sessions` | API | Flutter/Web | `packages/contracts/openapi` | 推荐与 Task 分离；审批/写请求幂等；来源/策略版本只增不改 | `TBD` |
+| `/captures`、目标单一流式上传、`/privacy-sanitizations`、`/image-analysis-jobs` | API | Flutter/Web | OpenAPI + 图片/脱敏/提取 Schema | ADR-0018 以预发布破坏性版本删除 `upload_url`/独立确认；API/App 成对升级；上传幂等并确认绑定脱敏哈希 | `TBD` |
+| `/tutor`（guided/review/mistake_explanation） | API | Flutter | OpenAPI + `packages/contracts/schemas` | mode/Prompt/Policy/Schema/Snapshot 独立版本；完整讲解要求 VerifiedQuestion + 已确认 `worked/blank_confirmed` | `TBD` |
+| `/mistakes`、`/reviews/due`、`/reviews/{id}/attempts`、`/reports` | API | Flutter/Web | `packages/contracts/openapi` | Mistake/Attempt 追加或不可变；Review/报告按 policy 版本化 | `TBD` |
 | `/content`、`/admin` | API | Web | `packages/contracts/openapi` | 高权限接口分离并审计 | `TBD` |
 | 同步事件批次 | Flutter | API | `packages/contracts/schemas` | 每事件有 ID/版本/幂等键；追加新事件类型 | `TBD` |
 | AuditEvent | 所有服务端模块 | 审计/可观测性 | `packages/contracts/schemas` | 稳定事件名；字段按敏感级别控制 | `TBD` |
 
-契约目录和结构检查已建立；SDK 生成器和自动兼容检查命令仍未固定。认证、账号管理和 VerifiedQuestion 接口已写入 OpenAPI；`0.6.0` 删除 HMAC/Demo security scheme 是项目 Owner 批准的破坏性安全收敛，旧客户端必须升级。
+契约目录和结构检查已建立；SDK 生成器和自动兼容检查命令仍未固定。`0.6.0` 删除 HMAC/Demo security scheme，`0.7.0` 增加拍题链路，`0.8.0` 增加活动会话、可信 Tutor、完成/周报和短期导出；当前合同已把上传合并为单一流式操作并移除预签名/独立确认 Schema。ADR-0020 的 Curriculum/Material/Mistake/Review/Recommendation 合同将在后续分阶段版本加入；Ubuntu 尚未部署本次破坏性上传收敛。
 
 ## 6. 数据架构
 
 | 数据域 | 存储 | 主键/分区 | 保留策略 | 备份/恢复 | 敏感级别 |
 | --- | --- | --- | --- | --- | --- |
-| Household/Account/AuthSession/ChildProfile/Device | Account/AuthSession 为 PostgreSQL；当前 Profile/Device 仍为内存合成 | UUID；全部业务行含 Household 边界；会话只存 SHA-256 摘要 | 账号期 + 批准的删除策略；会话最长 30 天并可即时撤销；其他精确期限 `TBD` | `TBD` | Confidential/Restricted |
-| Plan/Task/Session/Attempt | PostgreSQL | UUID；Attempt 追加写 | 学习记录期限 `TBD` | `TBD` | Confidential |
+| Household/Account/AuthSession/ChildProfile/Device | PostgreSQL | UUID；全部业务行含 Household 边界；孩子账号复合外键绑定档案，PLAN-0013 目标增加每档案最多一个 child Account 的唯一约束；会话只存 SHA-256 摘要 | 账号期 + 批准的删除策略；会话最长 30 天并可即时撤销 | PostgreSQL custom dump 已完成隔离恢复演练 | Confidential/Restricted |
+| CurriculumAssignment/Material/Ingestion/Snapshot/Knowledge | PostgreSQL + 私有对象存储 | UUID + Household/Child/Subject/版本；材料随机对象键；Snapshot 发布后不可变 | 原材料/解析草稿/已发布知识精确期限 `TBD`；撤销授权后停止新检索 | 必须纳入 PostgreSQL/对象一致备份与恢复 | Internal/Confidential；教材原文受版权控制 |
+| Plan/TaskRecommendation/Task/Session/Attempt | PostgreSQL | UUID；Attempt/审批事实追加写，Task 保存来源/策略 | 学习记录期限 `TBD`；被拒建议可按短期策略清理 | `TBD` | Confidential |
+| MistakeRecord/ReviewSchedule | PostgreSQL | UUID + Household/Child；错题引用 VerifiedQuestion/Attempt/Snapshot；Review 带 policy version | 与学习记录/孩子删除一致；派生 schedule 可重算 | PostgreSQL 备份恢复 | Confidential |
 | Capture 元数据 | PostgreSQL | Capture UUID | 与图片策略联动 | `TBD` | Confidential |
 | 单题图片 | 私有 MinIO / S3 Adapter | 随机对象键，不含儿童身份 | 原图 24 小时；旧 OCR/后续脱敏处理失败最多 7 天；裁剪题目 30 天，家长可保存/删除 | 默认不做长期业务备份，备份擦除待真实数据前确定 | Restricted |
 | 临时脱敏副本 | 私有 MinIO 临时对象或受控内存 | 随机对象键 + 不可逆哈希，不含儿童身份 | 云端响应后立即删除；失败最多 24 小时；不可长期保存 | 不进入业务备份 | Restricted |
-| TutorTurn/AI 审计 | PostgreSQL | UUID + 版本字段 | 原始敏感内容最小化；期限 `TBD` | `TBD` | Confidential |
-| Mistake/Review/Mastery/Report | PostgreSQL | UUID；报告按时间窗口/版本 | 与源记录/家庭删除保持一致 | `TBD` | Confidential |
+| TutorTurn/AI 审计 | PostgreSQL | UUID + 版本字段；TutorTurn 追加写 | 原始敏感内容最小化；期限 `TBD` | PostgreSQL custom dump 已恢复验证 | Confidential |
+| Mistake/Review/Mastery/Report | PostgreSQL | UUID；报告按时间窗口聚合 | 与源记录/家庭删除保持一致 | PostgreSQL custom dump 已恢复验证 | Confidential |
+| 家庭数据导出 | PostgreSQL JSONB 快照 | UUID + Household/Child；幂等重放返回同一快照 | 24 小时后生命周期 worker 删除；孩子删除级联 | 不作为长期归档 | Restricted |
 | 缓存/队列 | Redis | 非业务主键 | 短期 TTL；可重建 | 不作为恢复源 | Internal/Confidential |
 | 知识检索向量 | PostgreSQL/pgvector | KnowledgePoint/内容版本 | 按内容授权和版本 | `TBD` | Internal；含家庭内容时为 Confidential |
 | 端侧离线数据 | SQLite | 本地 UUID/同步 ID | 完成同步后按最短必要周期清理 | 不作为服务端备份 | Restricted（设备侧） |
@@ -165,7 +201,7 @@ Compose 只启用账号密码/会话认证，不存在 legacy 认证开关。Pos
 
 - SLO/SLA：`TBD（staging 有基线后由产品/技术 Owner 批准）`。
 - 降级策略：AI 不可用时保留任务/作答和手工记录；脱敏不确定时阻断外发并支持重新裁剪/手动涂抹/手工录入；云视觉低置信度转人工校正；推送不可用转应用内提醒；报告失败显示数据截止时间。
-- 灾难恢复：RPO/RTO 当前 `TBD`，任何生产部署前必须完成备份恢复演练。
+- 灾难恢复：PostgreSQL custom dump + MinIO 快照已完成隔离恢复演练；RPO/RTO 仍需 Owner 按实际家庭可接受窗口批准。
 
 ### 性能与容量
 
@@ -216,16 +252,19 @@ flowchart TD
 - 禁止“最后写入覆盖”离线学习历史；Attempt/AuditEvent 追加写，状态冲突显式处理。
 - 禁止未经 Household 授权的数据读取、缓存键或对象路径；禁止管理员能力混入孩子账号/会话。
 - 禁止将未授权教材/题库、真实儿童数据、图片、密钥或生产转储提交到仓库/评测集。
+- 禁止让未审核材料、解析草稿、无来源知识点或文档中的指令进入 Tutor/任务 Prompt；禁止向 Provider 发送整本教材或无关章节。
+- 禁止在没有 VerifiedQuestion 和已确认作答状态时使用完整错题讲解模式；确认空白可从头讲解，但不得将 `unclear/answer_area_missing` 自动当空白。禁止用模型输出直接判定永久掌握、修改复习到期或无审核下发 AI 新编题。
 - 禁止在无真实负载证据时提前拆微服务或引入复杂基础设施。
 
 ## 10. 技术债与演进
 
 | 项目 | 当前影响 | 触发改造的阈值 | 目标方向 | 跟踪 |
 | --- | --- | --- | --- | --- |
-| 核心领域多数未实现 | 任务/会话、Capture、Tutor、离线与生产路径不可运行 | P1 实现前 | 按已起草 ADR 的审批和后续 TODO 分阶段实现 | `TODO-007`～`TODO-010` |
+| 教材驱动错题主线未实现 | 当前只有教材版本字符串、`needs_review` 标记和今日任务/拍题 UI；没有材料发布、正式错题/复习/推荐 | 数学首科进入家庭日常使用前 | 按 PLAN-0014 分阶段实现 Curriculum、错题讲解、ReviewPolicy 和 TaskRecommendation | `TODO-016`～`TODO-019`、`ADR-0020` |
 | ADR-0015/0016 新路线仍在联调阶段 | 当前代码保留本地 PaddleOCR 回滚路线；ImageAnalysis 可在 NewAPI 开启时排队、worker 可持久化未确认提取，人工确认和成功/失败派生对象清理已实现，实际 Provider 联调仍未完成 | 自用真实图片进入 NewAPI 前 | 完成真实视觉检测器、NewAPI 联调、失败重试/监控和备份演练，兼容旧 OCR Job | `TODO-008` |
 | ADR-0017 已进入实现验收 | API/Web/Flutter/Compose 已接入 Account/AuthSession、Argon2id、受限引导账号、Cookie/CSRF、孩子账号管理、Flutter 登录前服务地址配置和安全存储；PostgreSQL/浏览器/iPad/备份验收仍未执行 | 自用 Compose 或真实设备切换前 | 完成迁移往返、E2E、真实设备会话生命周期和恢复演练；旧 HMAC/Demo 客户端必须升级 | `TODO-012`、`PLAN-0008` |
-| 核心技术/安全决策已批准、部分未实现 | 实现仍须锁定 SDK/运行时、验证安全与成本 | 接入对应边界前 | ADR-0001～0011、0013～0017；实现依赖须另行审查 | `TASK-0006`、`TODO-005`、`TODO-012` |
+| Web 暴露账号/档案分离且首页固定首个孩子 | 家长需先建档案再绑定账号；两个孩子时首页任务/周报无法选择，易误解数据作用域 | 自用多孩子正式使用前 | 单事务孩子聚合、旧数据审计/唯一约束、首页当前孩子选择和端到端授权过滤 | `TODO-015`、`PLAN-0013` |
+| 核心技术/安全/产品决策已批准、部分未实现 | 实现仍须锁定 SDK/运行时、材料处理依赖并验证安全/质量/成本 | 接入对应边界前 | 按 DECISIONS.md；ADR-0018/0020 实现与 ADR-0019 确认仍待后续 | `TODO-005`、`TODO-014`～`TODO-019` |
 | SLO、容量、RPO/RTO、成本阈值未知 | 无法设置告警和发布门槛 | staging 建立并获得基线 | 用测量值批准目标 | `TODO-004` |
 | 数据保留/法域未决 | 真实儿童数据和生产部署被阻塞 | 任何真实数据进入前 | 完成安全/法务决策和删除/备份策略 | `TODO-005` |
 | DOCX 在当前渲染环境缺少中文字体 | 本地 PNG 视觉审阅缺字，但 OOXML 文本完整 | 需要发布/维护设计稿时 | 嵌入/安装适用中文字体或输出经验证 PDF | `TODO-006` |

@@ -1,9 +1,11 @@
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from auth_helpers import session_headers
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from study_api.main import create_app
+from study_api.privacy_models import VerifyQuestionRequest
 
 HOUSEHOLD_A = "00000000-0000-0000-0000-000000000001"
 CHILD_A = "00000000-0000-0000-0000-000000000101"
@@ -58,31 +60,32 @@ def _corrected_capture(client: TestClient) -> dict[str, object]:
     return correction.json()
 
 
-def _question(capture_id: str) -> dict[str, object]:
-    return {
-        "id": str(uuid4()),
-        "capture_id": capture_id,
-        "extraction_id": str(uuid4()),
-        "version": 1,
-        "subject": "math",
-        "question_text": "3/4 + 1/8 = ?",
-        "options": [],
-        "formulas": ["3/4 + 1/8"],
-        "has_diagram": False,
-        "has_handwriting": False,
-        "answer_text": "7/8",
-        "verified_by": "child",
-        "verified_at": "2026-07-15T00:00:00Z",
-    }
+def _verified_question(app: FastAPI, capture_id: str) -> str:
+    record, _ = app.state.verified_question_repository.create(
+        UUID(HOUSEHOLD_A),
+        UUID(CHILD_A),
+        UUID(capture_id),
+        uuid4(),
+        VerifyQuestionRequest(
+            expected_capture_version=2,
+            question_text="3/4 + 1/8 = ?",
+            formulas=("3/4 + 1/8",),
+            answer_text="7/8",
+        ),
+        "child",
+        f"seed-verified-{uuid4()}",
+    )
+    return str(record.id)
 
 
 def test_tutor_hint_requires_corrected_capture_and_returns_no_answer() -> None:
-    client = TestClient(create_app())
+    app = create_app()
+    client = TestClient(app)
     correction = _corrected_capture(client)
+    verified_question_id = _verified_question(app, str(correction["capture_id"]))
     payload = {
-        "verified_question": _question(correction["capture_id"]),
+        "verified_question_id": verified_question_id,
         "level": 2,
-        "child_id": CHILD_A,
     }
     response = client.post(
         f"/households/{HOUSEHOLD_A}/tutor/hints",
@@ -94,17 +97,31 @@ def test_tutor_hint_requires_corrected_capture_and_returns_no_answer() -> None:
     )
     assert response.status_code == 200
     assert response.json()["provider"] == "local-policy"
+    assert response.json()["verified_question_id"] == verified_question_id
     assert response.json()["direct_answer"] is None
     assert "7/8" not in response.text
 
+    replay = client.post(
+        f"/households/{HOUSEHOLD_A}/tutor/hints",
+        headers={
+            **_principal(client, role="child", child_id=CHILD_A),
+            "Idempotency-Key": "tutor-hint-001",
+        },
+        json=payload,
+    )
+    assert replay.status_code == 200
+    assert replay.headers["Idempotency-Replayed"] == "true"
+    assert replay.json()["id"] == response.json()["id"]
+
 
 def test_tutor_hint_rejects_parent_or_child_mismatch() -> None:
-    client = TestClient(create_app())
+    app = create_app()
+    client = TestClient(app)
     correction = _corrected_capture(client)
+    verified_question_id = _verified_question(app, str(correction["capture_id"]))
     payload = {
-        "verified_question": _question(correction["capture_id"]),
+        "verified_question_id": verified_question_id,
         "level": 1,
-        "child_id": CHILD_A,
     }
     parent = client.post(
         f"/households/{HOUSEHOLD_A}/tutor/hints",
@@ -117,7 +134,20 @@ def test_tutor_hint_rejects_parent_or_child_mismatch() -> None:
             **_principal(client, role="child", child_id=CHILD_A),
             "Idempotency-Key": "tutor-hint-mismatch",
         },
-        json={**payload, "child_id": "00000000-0000-0000-0000-000000000102"},
+        json={**payload, "verified_question_id": str(uuid4())},
     )
     assert parent.status_code == 403
     assert mismatch.status_code == 404
+
+
+def test_tutor_hint_rejects_client_supplied_verified_question_payload() -> None:
+    client = TestClient(create_app())
+    response = client.post(
+        f"/households/{HOUSEHOLD_A}/tutor/hints",
+        headers={
+            **_principal(client, role="child", child_id=CHILD_A),
+            "Idempotency-Key": "tutor-forged-question",
+        },
+        json={"verified_question": {"question_text": "forged"}, "level": 1},
+    )
+    assert response.status_code == 422

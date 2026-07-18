@@ -1,4 +1,91 @@
-# TASK.md — TASK-0007 认证面收敛与 Flutter 服务端地址配置
+# TASK.md — TASK-0009 真机拍题视觉识别闭环
+
+## 当前任务元数据
+
+- 状态：`IN_PROGRESS（PLAN-0012 已完成 Ubuntu 成对部署；最终真机验收与 Provider 额度恢复仍待完成）`
+- 类型：`FEATURE / API CONTRACT / DEVICE`
+- 优先级：`P0`
+- Owner：Codex（执行）；项目 Owner（用户，要求继续完善拍题识别）
+- 创建/更新：`2026-07-18`
+- 关联：`PLAN-0010`、`PLAN-0012`、`ADR-0003`、`ADR-0015`、`ADR-0016`、`ADR-0018`
+
+## 当前目标与验收
+
+移除 Flutter 对编译期 `STUDY_CAPTURE_SESSION_ID` 的依赖，让孩子账号在没有家长预置任务时也能原子、幂等地建立即时拍题会话；真机只上传用户确认的脱敏副本，随后轮询 ImageAnalysis、展示结构化题目并把人工修改持久化为 VerifiedQuestion。
+
+- [x] 新增孩子绑定的即时拍题会话 API，并覆盖内存/PostgreSQL 幂等、事务和反向越权。
+- [x] Flutter 自动取得会话，完成流式上传、视觉任务轮询、错误/超时兜底和人工确认；旧预签名传输仅作为历史实现事实保留。
+- [x] 按 ADR-0018 将图片传输收敛为 App 携带 Session 只上传到 API，API 有界流式校验并写入内部私有 MinIO；生产 Flutter 删除预签名 URL/确认流程。
+- [x] 本地 Compose 不再向宿主/LAN 暴露 `9000`，示例配置删除 `OBJECT_STORAGE_PUBLIC_ENDPOINT_URL`/`MINIO_API_PORT`；OpenAPI 不返回 `upload_url` 并合并为单一上传操作。
+- [x] API/OpenAPI/Flutter 单元、格式、Lint、类型和 PostgreSQL/MinIO 集成门槛通过。
+- [x] Ubuntu API/Web/worker 已部署，健康版本 `0.8.0`；Nova 9 既有登录验证保持有效。
+- [x] 使用 synthetic 大图在 Ubuntu 完成真实 NewAPI `upload → analysis → extraction → verify → tutor`，确认有界压缩、人工确认、TutorTurn 持久化和派生对象删除。
+- [x] PostgreSQL/MinIO 备份已生成并在隔离 PostgreSQL 16.10 容器恢复校验；数据生命周期 worker 已部署。
+- [ ] PLAN-0012 部署后由 Nova 9/iPad 验证 `capture-session → API streaming upload → image-analysis → extraction → verify`，不读取或记录题目原文；现有预签名直传不再作为最终发布验收。
+
+## 兼容、回滚与风险
+
+- Ubuntu API/Web/worker 已切换到 ADR-0018 的单一流式合同；已部署 Flutter 仍需在设备可用时重新验收。正式 OpenAPI 不再暴露预签名入口，旧实现仅保留为代码级受控回滚材料。
+- 回滚应用/API 不删除已创建任务、会话、Capture 或确认题目；新链路异常时只允许整体回滚匹配的 API/App，并在隔离受信 LAN 临时恢复旧 `9000`/配置，不得公开 Bucket 或下发密钥。
+- ImageAnalysis 仍依赖用户确认后的脱敏副本和单一 NewAPI Provider；超时/失败允许手工填写，不把未确认提取作为 Tutor 事实。
+
+## 本轮全仓收口记录
+
+- `0013_tutor_turn_persistence`～`0015_child_data_export` 已部署：Tutor 只读取服务端 VerifiedQuestion，TutorTurn 追加写；会话完成/复习和周报可追溯；导出为 24 小时不可变 JSON 快照并随孩子删除级联。
+- Flutter 使用真实任务与活动会话，确认题目后进入真实 Tutor；离线 Attempt 队列使用 SQLite 并按服务端/账号隔离。同一天重复拍题使用新的流程幂等 nonce，避免复用已完成会话。
+- 家长 Web 可创建当天数学任务、查看周报摘要、下载孩子数据导出；API 删除孩子档案会按依赖顺序清理学习、Capture/OCR、视觉、VerifiedQuestion、Tutor 和导出数据。
+- 自动验证：API 157 项非集成测试、Ruff/Mypy；Web 11 项测试/类型/Lint/生产构建；Flutter 29 项测试/analyze、Android release APK 和 iOS release 无签名构建（以 `TESTING.md` 最新记录为准）。
+- 未执行：用户当前不在实体设备旁，Nova 9/iPad 的最终相机、权限拒绝/允许、弱网、横竖屏和重启人工回归保留。自动视觉检测器仍未实现，当前外发门禁依赖规则信号、手动涂抹和用户确认，不得宣传为绝对匿名。
+- `2026-07-17` 架构变更：项目 Owner 接受 ADR-0018，要求 App 不再直连 MinIO；随后完成 API/Flutter/契约/Compose 迁移，关闭 Compose 的 MinIO `9000` 宿主入口。
+- `2026-07-18` PLAN-0012 远端收口：Ubuntu API/Web/两个 worker 已重建并运行，迁移到 `0016_child_account_uniqueness`；旧 `.env` 中残留的公开 MinIO 地址已清除，worker 使用 `http://minio:9000` 内部地址。synthetic 请求已到达 NewAPI，但 Provider 返回 HTTP `402`，属于额度/余额配置问题，不是上传链路失败。
+- `2026-07-18` 并行规划说明：项目 Owner 要求 Web 将孩子档案/账号合并为一个创建与管理体验，并支持首页当前孩子选择；PLAN-0013 已完成 API/Web 首版、唯一约束迁移和 Ubuntu 部署，浏览器 E2E 与双孩子实体验收仍待执行。
+- `2026-07-18` 产品主线规划：项目 Owner 批准“教材范围 → 错题讲解 → 错题沉淀 → 到期复习 → 今日任务”方向及详细建议，已建立 Accepted ADR-0020、PLAN-0014 和 TODO-016～019。随后先实现错题/复习最小闭环：`MistakeRecord`/`ReviewSchedule`、`0017`、到期查询、确定性复习、导出覆盖和 Web/Flutter 调用，并部署 Ubuntu；教材、作答四态和三入口仍待后续阶段。
+- `2026-07-18` 错题讲解规划补充：Owner 确认拍题会包含孩子解答，答题区确认空白表示“没有思路”并允许从头讲解。ADR-0020/PLAN-0014 已改为四态作答 Schema：`worked/blank/unclear/answer_area_missing`；空白必须用户确认，未拍入/不清不得自动当空白。当前 `MistakeRecord` 只接受服务端已确认 `VerifiedQuestion` 与会话引用，未伪造四态作答证据。
+- `2026-07-18` PLAN-0012 实现与部署：新增 Session 鉴权的单一 API 原始流上传，服务端用 boto3 S3 multipart 有界写入私有 MinIO，增量校验大小/SHA-256，完成后重新读取并完整解码图片，失败清理 multipart/对象；API/Flutter/契约/Compose 相关回归通过，Ubuntu 已成对部署。未完成：Nova 9/iPad 新链路人工验收、并发/断连现场压测和 Provider 额度恢复后的真实识别。
+- `2026-07-18` PLAN-0014 最小闭环：新增错题创建/列表/到期过滤/复习提交 API，使用 `0017_mistake_review` 和 PostgreSQL 事实源，连续三次正确关闭错题，非正确结果按确定性策略回退；导出包含错题/复习计划，Web 显示到期错题，Flutter 客户端可读取并提交复习结果。API 157 项非集成、Web 11 项、Flutter 29 项回归通过，Ubuntu 已前滚到 `0017`。
+
+---
+
+# 历史任务：TASK-0008 孩子档案 PostgreSQL 持久化
+
+## 当前任务元数据
+
+- 状态：`COMPLETE（代码、迁移与 Ubuntu 持久化验收完成；华为登录生命周期继续由 PLAN-0008 跟踪）`
+- 类型：`FEATURE / DATA MIGRATION`
+- 优先级：`P0`
+- Owner：Codex（执行）；项目 Owner（用户，明确要求生产标准持久化）
+- 创建/更新：`2026-07-17`
+- 关联：`PLAN-0009`、`ADR-0005`、`ADR-0009`、`ADR-0017`
+
+## 当前目标与验收
+
+将孩子档案和设备登记从进程内 synthetic 仓储切换到 PostgreSQL 业务事实源，保持现有 OpenAPI 字段与 Household/角色授权不变。新增/编辑/删除必须事务化且支持幂等重放；孩子账号与档案的 Household 绑定由数据库约束保护；Compose 重启后档案仍存在。
+
+- [x] 新增可前滚的 Profile/Device 数据库迁移，并兼容现有账号绑定和旧合成默认档案。
+- [x] 新增 PostgreSQL ProfileRepository，覆盖读取、新增、编辑、删除、设备登记、审计、并发与幂等冲突。
+- [x] Compose 默认启用 PostgreSQL ProfileRepository；内存仓储只保留给 unit/local synthetic 测试。
+- [x] API 单元/集成、迁移往返、OpenAPI/Web/Flutter 兼容检查通过。
+- [x] Ubuntu 应用迁移并重启后验证档案持久化；不输出凭据或真实儿童数据。
+
+## 兼容、迁移与回滚
+
+- OpenAPI 请求/响应保持兼容，不要求 Web 或 Flutter 修改字段。
+- 迁移优先前向修复；部署前记录 Alembic 版本和表计数。不得为回滚删除现有档案、账号、学习记录或图片。
+- 旧内存档案无法从进程外可靠读取；迁移使用既有确定性默认档案及已持久化孩子账号绑定生成兼容行，部署后以 PostgreSQL 为唯一事实源。
+
+## 完成记录
+
+- `0012_profile_persistence` 建立 `child_profiles`/`devices`、Household 查询索引、字段约束，以及 `accounts(child_id, household_id)` 到档案的级联复合外键；旧确定性档案和已持久化孩子账号绑定被前向兼容。
+- PostgreSQL 仓储使用事务、通用幂等表和稳定审计事件实现档案/设备 CRUD；并发同键创建只产生一个资源，跨 Household 返回不可枚举结果，删除档案级联孩子账号和会话。
+- 本机 127 项 API 单元、21 项 PostgreSQL/MinIO 集成、`0012 → 0011 → 0012` 往返、Ruff、Mypy 40 源文件、OpenAPI、Web 6 项测试/类型/构建、Flutter analyze/17 项测试通过。
+- Ubuntu 部署前生成权限 600 的 PostgreSQL 压缩备份；远端从 `0011` 前滚 `0012`，API/PostgreSQL/Web healthy，孤儿孩子账号绑定为 0。临时 synthetic 档案经 API 重启后可重新读取，随后档案、幂等和审计测试记录已清理，正式档案计数恢复为 1。
+- 修复 PostgreSQL 重复孩子用户名触发未处理 `IntegrityError` 的缺陷：只识别账号 Household/用户名唯一约束并转换为领域冲突，API 返回 409，Web 提供可操作提示；本机 128 项非集成、22 项集成、Web 7 项测试及生产构建通过。Ubuntu API/Web 重建后，对现有用户名的只回滚 smoke 返回 `duplicate_conflict=ok`，所有基础容器保持运行且健康，未修改现有账号。
+- 修复 Flutter 把首次改密门禁误显示为“API 尚未连接”的缺陷：登录响应和 `/auth/me` 会话恢复均识别 `must_change_password`，新增孩子首次改密、Token 轮换和安全存储 UI；API 将孩子档案列表/详情限制到账号绑定档案。本机 API 129 项非集成/22 项集成、Flutter analyze/21 项测试及 176 MB Debug APK 通过；Ubuntu API 已重建并健康，Nova 9 实机完成改密与档案读取，显示“小汤圆”学习桌和“在线”。手机竖屏标题溢出亦已修复并覆盖安装验证。
+- 华为 Nova 9 已重新由 ADB 稳定识别，App 冷启动到登录页，服务端地址正确且手机可达 API，日志无 Flutter 崩溃；真实密码登录和档案读取需用户在设备输入凭据，继续由 `PLAN-0008` 跟踪。
+
+---
+
+# 历史任务：TASK-0007 认证面收敛与 Flutter 服务端地址配置
 
 ## 任务元数据
 
@@ -151,4 +238,5 @@ Flutter 登录界面在用户提交账号密码前提供服务端基础地址编
 - `2026-07-16`：远端重建 x86_64 API 镜像后，OCR 预检输出 `ready`，`ocr-model-synthetic-v1` 4/4（普通文本 3、公式 1）通过；未发送图片到 NewAPI。
 - `2026-07-16`：项目 Owner 配置 NewAPI key 后启用远端 Provider；新增可清理的合成 live eval，主机和 API 容器访问 `newapi.iuhui.site` 均收到 HTTP 403，未取得 Extraction。worker 新增稳定 Provider 错误码，失败任务、MinIO 对象和合成数据库记录已清理。
 - `2026-07-16`：定位 HTTP 403 为 Cloudflare 1010 对 Python 默认 `urllib` User-Agent 的拦截；Adapter 新增受限 `STUDY_NEWAPI_USER_AGENT`（默认 `study-api/0.5`）、`Accept: application/json` 和完整 `question-extraction.v1` 字段提示。远端重建 API/worker 后，synthetic live eval 成功得到 `needs_confirmation=true` 的 Extraction，脱敏派生对象删除，PostgreSQL synthetic Job 残留为 0；不输出原始 Provider 响应或发送真实图片。远端人工确认生成 VerifiedQuestion 仍待 PLAN-0008 验收。
+- `2026-07-17`：家长 Web 增加孩子档案新增、编辑和删除入口；修复 POST/PATCH 代理遗漏 `application/json` 导致 FastAPI 返回 422，并增加代理 Header 回归测试。Web 镜像已部署到 Ubuntu，API/Web 容器及健康端点正常。Profile 仍使用进程内 synthetic 仓储，API 重启后改动不会保留，不把本轮描述为 PostgreSQL 持久化完成。
 - 下一步：继续执行 `PLAN-0008` 的远端人工确认、Cookie/CSRF、iPad 会话生命周期和备份恢复验收；真实视觉检测器和固定视觉评测仍作为后续实现项。

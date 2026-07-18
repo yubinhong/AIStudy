@@ -35,6 +35,10 @@ def test_learning_schema_is_at_head_in_local_postgresql() -> None:
         "verified_questions",
         "accounts",
         "auth_sessions",
+        "child_profiles",
+        "devices",
+        "tutor_turns",
+        "child_data_exports",
     } <= set(tables)
     assert {
         "object_key",
@@ -131,3 +135,40 @@ def test_learning_schema_is_at_head_in_local_postgresql() -> None:
         "expires_at",
         "revoked_at",
     } <= session_columns
+    profile_columns = {column["name"] for column in inspect(engine).get_columns("child_profiles")}
+    assert {
+        "household_id",
+        "display_name",
+        "grade",
+        "curriculum_version",
+        "subjects",
+        "created_at",
+        "updated_at",
+    } <= profile_columns
+    account_foreign_keys = {
+        foreign_key["name"] for foreign_key in inspect(engine).get_foreign_keys("accounts")
+    }
+    assert "fk_accounts_child_profile" in account_foreign_keys
+
+    tutor_turn_columns = {column["name"] for column in inspect(engine).get_columns("tutor_turns")}
+    assert {
+        "household_id",
+        "child_id",
+        "verified_question_id",
+        "level",
+        "policy_version",
+        "provider",
+        "model",
+        "prompt",
+        "next_step",
+        "cost_cents",
+        "created_at",
+    } <= tutor_turn_columns
+    study_session_columns = {
+        column["name"] for column in inspect(engine).get_columns("study_sessions")
+    }
+    assert {"completed_at", "outcome"} <= study_session_columns
+    export_columns = {
+        column["name"] for column in inspect(engine).get_columns("child_data_exports")
+    }
+    assert {"household_id", "child_id", "payload", "created_at", "expires_at"} <= (export_columns)

@@ -1,6 +1,6 @@
 # DECISIONS.md
 
-> 决策索引。完整决策使用 `docs/adr/NNNN-title.md`；项目 Owner（用户）已于 2026-07-13 批准 ADR-0001～0012、于 2026-07-14 批准 ADR-0013～0014，并于 2026-07-15 批准 ADR-0015～0017。ADR-0012 的默认本地完整 OCR 路线已被 ADR-0015 替代；ADR-0017 替代 ADR-0005 的 PIN/设备凭证默认认证方式和 ADR-0016 的 HMAC 家庭认证部分，ADR-0016 的 NewAPI 适配边界继续有效；每份 ADR 内保留的真实数据、法域和生产前置条件仍然有效。
+> 决策索引。完整决策使用 `docs/adr/NNNN-title.md`；项目 Owner（用户）已于 2026-07-13 批准 ADR-0001～0012、于 2026-07-14 批准 ADR-0013～0014、于 2026-07-15 批准 ADR-0015～0017、于 2026-07-17 批准 ADR-0018，并于 2026-07-18 批准 ADR-0020；ADR-0019 仍为 Proposed。ADR-0012 的默认本地完整 OCR 路线已被 ADR-0015 替代；ADR-0017 替代 ADR-0005 的 PIN/设备凭证默认认证方式和 ADR-0016 的 HMAC 家庭认证部分；ADR-0018 替代 ADR-0010/0014 的客户端预签名直传路线并继承其私有 MinIO/S3 Adapter 边界。每份 ADR 内保留的真实数据、法域和生产前置条件仍然有效。
 
 ## 决策原则
 
@@ -27,23 +27,27 @@
 | [ADR-0007](docs/adr/0007-toolchain-and-scaffold-baseline.md) | 工具链与骨架基线 | 变更须同步锁文件、验证和 ADR |
 | [ADR-0008](docs/adr/0008-deployment-observability-and-recovery.md) | 部署、可观测性与恢复 | 平台、SLO/RPO/RTO、值班与 Secret Manager 仍阻塞 staging |
 | [ADR-0009](docs/adr/0009-postgresql-persistence-and-migrations.md) | PostgreSQL 持久化与版本化迁移依赖 | 仅限 local synthetic 环境；真实数据与 production 前置条件仍有效 |
-| [ADR-0010](docs/adr/0010-local-minio-private-object-storage.md) | 本地 MinIO 私有对象存储与预签名上传；boto3 1.43.46、S3 兼容接口、不使用 MinIO 专属 SDK | TTL/CORS/大小限制和生产 Secret Manager 须在实现前锁定 |
 | [ADR-0011](docs/adr/0011-capture-media-retention-and-cascade-deletion.md) | Capture 图片保留、家长控制与级联删除 | 法域、同意、备份擦除和真实数据告知仍阻塞 production |
-| [ADR-0013](docs/adr/0013-flutter-capture-input.md) | Flutter 使用官方 `image_picker 1.2.3` 提供一次性相机/相册选择，图片先进入本地人工确认页 | 客户端签名上传、OCR 入队、真实设备权限回归仍须完成 |
-| [ADR-0014](docs/adr/0014-flutter-capture-upload-client.md) | Flutter 使用 Dart `HttpClient` 和 `crypto 3.0.7` 完成 SHA-256、预签名上传、服务端确认和幂等 OCR 入队 | local MinIO 必须提供 iPad 可达的预签名地址；任务/会话同步与生产认证仍未接线 |
+| [ADR-0013](docs/adr/0013-flutter-capture-input.md) | Flutter 使用官方 `image_picker 1.2.3` 提供一次性相机/相册选择，图片先进入本地人工确认页 | 输入边界继续有效；上传目标已改由 ADR-0018 规定的 API 流式接口，真实设备权限回归仍须完成 |
 | [ADR-0015](docs/adr/0015-local-privacy-sanitization-and-cloud-vision-parsing.md) | 原图留在家庭边界，本地 OCR/规则/视觉只生成不可逆脱敏副本；用户确认后由单一获批云端视觉 Provider 结构化解析 | 本地脱敏回执、哈希门禁、Provider-neutral Schema 和可开关 worker 已实现；人工确认持久化、临时副本删除、实际 Provider 联调和固定视觉 eval 仍待完成 |
 | [ADR-0016](docs/adr/0016-self-hosted-auth-and-newapi-provider.md) | HMAC 家庭认证与 NewAPI OpenAI-compatible Adapter | HMAC 认证已被 ADR-0017 替代；NewAPI 默认关闭、单 Provider、脱敏副本和 Adapter 边界继续有效 |
 | [ADR-0017](docs/adr/0017-self-hosted-password-accounts-and-sessions.md) | 自用 PostgreSQL 账号密码、一次性默认管理员、家长创建孩子账号和可撤销会话 | 已批准并完成 API/Web/Flutter/Compose 代码切换；2026-07-16 批准删除全部 HMAC/Demo 运行时兼容，Flutter 改为登录前配置服务端地址；环境验收仍未全部完成 |
+| [ADR-0018](docs/adr/0018-api-streaming-capture-upload.md) | App 只携带 Session 向 API 上传；API 有界流式校验并通过内部地址写入私有 MinIO | 已批准、尚未实现；当前 `0.8.0` 仍是预签名直传，按 PLAN-0012 迁移后关闭 MinIO `9000` LAN 暴露并删除公开端点配置 |
+| [ADR-0020](docs/adr/0020-curriculum-grounded-mistake-learning-loop.md) | 数学首科采用“教材范围 → 错题讲解 → 错题沉淀 → 到期复习 → 今日任务”主线 | 已批准、尚未实现；详细过程要求 VerifiedQuestion + 已确认作答状态，有作答诊断错步、确认空白从头讲，复习/任务按确定性策略与家长控制推进，见 PLAN-0014 |
 
 ## Proposed ADR
 
-暂无。
+| ADR | 提议 | 进入实施前条件 |
+| --- | --- | --- |
+| [ADR-0019](docs/adr/0019-child-management-aggregate-and-dashboard-scope.md) | Web/API 将档案与唯一孩子账号作为管理聚合，保持认证/档案分表；原子创建并按已授权当前孩子过滤工作台 | 项目 Owner 确认分表、事务、一对一约束和旧数据迁移细节；随后同步为 Accepted |
 
 ## 已废弃/被替代决策
 
 | ADR | 原决策 | 替代关系与保留事实 |
 | --- | --- | --- |
+| [ADR-0010](docs/adr/0010-local-minio-private-object-storage.md) | 私有 MinIO + 客户端短期预签名 PUT | `2026-07-17` 被 ADR-0018 替代；私有 Bucket、S3 兼容 Adapter、随机对象键、客户端无长期密钥和历史实现事实继续有效 |
 | [ADR-0012](docs/adr/0012-local-paddleocr-provider-and-zero-external-cost.md) | 本地 PaddleOCR 完整解析题目、人工确认、默认不外发图片 | `2026-07-15` 被 ADR-0015 替代；已实现的 OCR Job/结果/公式模式、模型供应链、评测和历史记录保持原义，迁移前不得冒充云端新路线 |
+| [ADR-0014](docs/adr/0014-flutter-capture-upload-client.md) | Flutter 解析预签名 URL 并直连 MinIO PUT 后确认 | `2026-07-17` 被 ADR-0018 替代；Dart `HttpClient`/`crypto` 依赖和既有真机 smoke 仅作为历史事实，目标客户端只连接 API |
 
 ## ADR 创建规则
 

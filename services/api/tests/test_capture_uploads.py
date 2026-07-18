@@ -47,6 +47,30 @@ class FakeObjectStorage:
         if self._objects.get(object_key) != (content_type, byte_size, content_sha256):
             raise ObjectStorageError("synthetic object metadata mismatch")
 
+    async def stream_capture_upload(
+        self,
+        object_key: str,
+        content_type: str,
+        byte_size: int,
+        content_sha256: str,
+        chunks,
+    ) -> None:
+        data = b"".join([chunk async for chunk in chunks])
+        self._objects[object_key] = (content_type, len(data), sha256(data).hexdigest())
+        if len(data) != byte_size or sha256(data).hexdigest() != content_sha256:
+            raise ObjectStorageError("synthetic stream metadata mismatch")
+
+
+def _stream_headers(client: TestClient, key: str, data: bytes) -> dict[str, str]:
+    return {
+        **_principal(client, role="child", child_id=CHILD_A),
+        "Idempotency-Key": key,
+        "X-Capture-Media-Type": "image/jpeg",
+        "X-Capture-Byte-Size": str(len(data)),
+        "X-Capture-Content-SHA256": sha256(data).hexdigest(),
+        "Content-Type": "application/octet-stream",
+    }
+
 
 def _principal(
     client: TestClient,
@@ -94,6 +118,67 @@ def _begin_upload(
     )
     assert response.status_code == 201
     return response.json()
+
+
+def test_stream_capture_upload_is_authenticated_bounded_and_idempotent() -> None:
+    storage = FakeObjectStorage()
+    client = TestClient(create_app(object_storage=storage))
+    session_id = str(_session(client)["id"])
+    data = b"synthetic-image-body"
+    headers = _stream_headers(client, "stream-upload-001", data)
+
+    response = client.post(
+        f"/households/{HOUSEHOLD_A}/sessions/{session_id}/captures/upload",
+        headers=headers,
+        content=data,
+    )
+    replay = client.post(
+        f"/households/{HOUSEHOLD_A}/sessions/{session_id}/captures/upload",
+        headers=headers,
+        content=data,
+    )
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "needs_correction"
+    assert response.json()["version"] == 2
+    assert replay.status_code == 200
+    assert replay.headers["Idempotency-Replayed"] == "true"
+    assert replay.json() == response.json()
+
+
+def test_stream_capture_upload_rejects_declared_hash_mismatch_before_persisting() -> None:
+    storage = FakeObjectStorage()
+    client = TestClient(create_app(object_storage=storage))
+    session_id = str(_session(client)["id"])
+    data = b"synthetic-image-body"
+    headers = _stream_headers(client, "stream-upload-bad-hash", data)
+    headers["X-Capture-Content-SHA256"] = "0" * 64
+
+    response = client.post(
+        f"/households/{HOUSEHOLD_A}/sessions/{session_id}/captures/upload",
+        headers=headers,
+        content=data,
+    )
+
+    assert response.status_code == 422
+
+
+def test_stream_capture_upload_rejects_content_length_mismatch_before_reading_body() -> None:
+    storage = FakeObjectStorage()
+    client = TestClient(create_app(object_storage=storage))
+    session_id = str(_session(client)["id"])
+    data = b"synthetic-image-body"
+    headers = _stream_headers(client, "stream-upload-bad-length", data)
+    headers["X-Capture-Byte-Size"] = str(len(data) + 1)
+
+    response = client.post(
+        f"/households/{HOUSEHOLD_A}/sessions/{session_id}/captures/upload",
+        headers=headers,
+        content=data,
+    )
+
+    assert response.status_code == 422
+    assert storage._objects == {}
 
 
 def test_capture_upload_requires_server_verified_private_object_and_is_idempotent() -> None:

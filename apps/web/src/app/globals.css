@@ -51,11 +51,23 @@ body {
   gap: 0.4rem;
   font-weight: 650;
 }
-.auth-form input {
+.auth-form input,
+.auth-form select {
   border: 1px solid #c9ddd0;
   border-radius: 0.75rem;
   padding: 0.75rem 0.85rem;
   font: inherit;
+}
+.child-row {
+  color: inherit;
+  text-decoration: none;
+}
+.child-row:hover {
+  background: #f3faf4;
+  border-radius: 1rem;
+}
+.danger-button {
+  color: #ad4b3d;
 }
 .auth-error {
   color: #ad4b3d;
@@ -239,6 +251,39 @@ h1 span {
   gap: 1rem;
   margin-top: 1rem;
 }
+.weekly-panel {
+  margin-top: 1rem;
+}
+.weekly-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  margin-top: 1.4rem;
+}
+.weekly-metrics > div {
+  display: grid;
+  gap: 0.25rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: #f3faf5;
+}
+.weekly-metrics strong {
+  color: #2f8f69;
+  font-size: 1.7rem;
+}
+.weekly-metrics span,
+.review-list p {
+  color: #789087;
+  font-size: 0.84rem;
+}
+.review-list {
+  margin-top: 1.25rem;
+  padding-top: 1.15rem;
+  border-top: 1px solid #e4ede6;
+}
+.review-list p {
+  margin: 0.55rem 0 0;
+}
 .panel {
   border: 1px solid #e2ece4;
   border-radius: 1.35rem;
@@ -325,6 +370,26 @@ h2 {
   gap: 0.8rem;
   margin: 1.8rem 0;
 }
+.child-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.8rem 0 1rem;
+}
+.child-switcher a {
+  border: 1px solid #dbe9df;
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  color: #6f8c7d;
+  font-size: 0.75rem;
+  text-decoration: none;
+}
+.child-switcher a.active {
+  border-color: #59b886;
+  background: #eff9f1;
+  color: #2b8d67;
+  font-weight: 700;
+}
 .avatar {
   display: grid;
   place-items: center;
@@ -402,6 +467,9 @@ h2 {
   .summary-grid,
   .content-grid {
     grid-template-columns: 1fr;
+  }
+  .weekly-metrics {
+    grid-template-columns: repeat(2, 1fr);
   }
   .summary-card {
     min-height: 5.5rem;

@@ -15,6 +15,7 @@ from study_api.auth_domain import (
     AuthError,
     ChangePasswordRequest,
     CreateChildAccountRequest,
+    DuplicateUsernameError,
     LoginRequest,
     LoginResponse,
     PasswordPolicyError,
@@ -200,6 +201,10 @@ def create_child_account(
         account, replayed = request.app.state.auth_service.create_child_account(
             household_id, body, idempotency_key
         )
+    except DuplicateUsernameError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="username already exists"
+        ) from error
     except (IdempotencyConflictError, ValueError, PasswordPolicyError) as error:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail="account cannot be created"

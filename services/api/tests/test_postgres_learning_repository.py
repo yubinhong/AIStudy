@@ -8,8 +8,14 @@ from auth_helpers import session_headers
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from study_api.domain.insights_repository import PostgresInsightsRepository
 from study_api.domain.learning_repository import ResourceVersionConflictError
-from study_api.domain.models import CreateTaskRequest, StartStudySessionRequest, Subject
+from study_api.domain.models import (
+    CreateTaskRequest,
+    SessionOutcome,
+    StartStudySessionRequest,
+    Subject,
+)
 from study_api.domain.repository import InMemoryProfileRepository
 from study_api.domain.sql_learning_repository import PostgresLearningRepository
 from study_api.main import create_app
@@ -108,6 +114,31 @@ def test_postgresql_repository_persists_append_only_attempts_and_reconnects_pool
         assert attempts[0]["sequence"] == 1
         assert [audit["event_name"] for audit in audits] == ["attempt_recorded"]
     finally:
+        repository.close()
+
+
+def test_postgresql_completion_projects_into_weekly_review_report() -> None:
+    client, repository = _create_client()
+    insights = PostgresInsightsRepository()
+    try:
+        _, _, session_id = _create_task_and_session(client)
+        response = client.post(
+            f"/households/{HOUSEHOLD_A}/sessions/{session_id}/completion",
+            headers={
+                **_principal(client, "child", CHILD_A),
+                "Idempotency-Key": f"pg-complete-{uuid4()}",
+            },
+            json={"outcome": "needs_review"},
+        )
+        report = insights.weekly_report(UUID(HOUSEHOLD_A), UUID(CHILD_A), date(2026, 7, 13))
+
+        assert response.status_code == 200
+        assert response.json()["outcome"] == SessionOutcome.NEEDS_REVIEW.value
+        assert report.tasks_completed >= 1
+        assert report.sessions_completed >= 1
+        assert any(str(item.session_id) == session_id for item in report.review_items)
+    finally:
+        insights.close()
         repository.close()
 
 
@@ -226,5 +257,36 @@ def test_postgresql_sync_preflight_rejects_conflicting_batch_without_writes() ->
                 .all()
             )
         assert attempts == []
+    finally:
+        repository.close()
+
+
+def test_postgresql_capture_session_is_atomic_and_idempotent() -> None:
+    client, repository = _create_client()
+    try:
+        key = f"pg-capture-session-{uuid4()}"
+        headers = {**_principal(client, "child", CHILD_A), "Idempotency-Key": key}
+
+        first = client.post(f"/households/{HOUSEHOLD_A}/capture-sessions", headers=headers)
+        repository.engine.dispose()
+        replay = client.post(f"/households/{HOUSEHOLD_A}/capture-sessions", headers=headers)
+
+        assert first.status_code == 201
+        assert replay.status_code == 200
+        assert replay.json() == first.json()
+        session_id = UUID(first.json()["id"])
+        task_id = UUID(first.json()["task_id"])
+        with repository.engine.connect() as connection:
+            assert connection.execute(
+                select(repository._sessions).where(repository._sessions.c.id == session_id)
+            ).mappings().one()["child_id"] == UUID(CHILD_A)
+            assert (
+                connection.execute(
+                    select(repository._tasks).where(repository._tasks.c.id == task_id)
+                )
+                .mappings()
+                .one()["title"]
+                == "即时拍题"
+            )
     finally:
         repository.close()

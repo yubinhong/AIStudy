@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 
 from study_api.auth import (
@@ -16,10 +16,12 @@ from study_api.auth import (
 from study_api.domain.learning_repository import (
     ChildAssignmentError,
     ResourceVersionConflictError,
+    SessionAlreadyCompletedError,
 )
 from study_api.domain.models import (
     AccountRole,
     Attempt,
+    CompleteStudySessionRequest,
     CreateTaskRequest,
     RecordAttemptRequest,
     StartStudySessionRequest,
@@ -48,9 +50,18 @@ def _conflict(detail: str) -> HTTPException:
 
 
 @router.get("/tasks", response_model=list[StudyTask])
-def list_tasks(household_id: UUID, principal: Principal, repository: Repository) -> list[StudyTask]:
+def list_tasks(
+    household_id: UUID,
+    principal: Principal,
+    repository: Repository,
+    child_id: Annotated[UUID | None, Query()] = None,
+) -> list[StudyTask]:
     role = require_household(principal, household_id)
-    child_id = require_bound_child(principal) if role is AccountRole.CHILD else None
+    if role is AccountRole.CHILD:
+        bound_child_id = require_bound_child(principal)
+        if child_id is not None and child_id != bound_child_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
+        child_id = bound_child_id
     return repository.list_tasks(household_id, child_id)
 
 
@@ -114,6 +125,49 @@ def start_session(
     )
 
 
+@router.get("/tasks/{task_id}/active-session", response_model=StudySession)
+def get_active_session(
+    household_id: UUID,
+    task_id: UUID,
+    principal: Principal,
+    repository: Repository,
+) -> StudySession:
+    require_household(principal, household_id)
+    child_id = require_bound_child(principal)
+    session = repository.find_active_session(household_id, task_id, child_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
+    return session
+
+
+@router.post("/capture-sessions", response_model=StudySession, status_code=status.HTTP_201_CREATED)
+def create_capture_session(
+    household_id: UUID,
+    idempotency_key: IdempotencyKey,
+    principal: Principal,
+    repository: Repository,
+) -> JSONResponse:
+    """Create or replay a bound child's ad-hoc session for photo questions."""
+
+    require_household(principal, household_id)
+    child_id = require_bound_child(principal)
+    try:
+        session, replayed = repository.create_capture_session(
+            household_id, child_id, idempotency_key
+        )
+    except LookupError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="resource not found"
+        ) from error
+    except IdempotencyConflictError as error:
+        raise _conflict("idempotency key reused with a different payload") from error
+    return JSONResponse(
+        status_code=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
+        content=session.model_dump(mode="json"),
+        headers={"Idempotency-Replayed": "true"} if replayed else {},
+    )
+
+
 @router.post(
     "/sessions/{session_id}/attempts", response_model=Attempt, status_code=status.HTTP_201_CREATED
 )
@@ -144,6 +198,36 @@ def record_attempt(
     return JSONResponse(
         status_code=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
         content=attempt.model_dump(mode="json"),
+        headers={"Idempotency-Replayed": "true"} if replayed else {},
+    )
+
+
+@router.post("/sessions/{session_id}/completion", response_model=StudySession)
+def complete_session(
+    household_id: UUID,
+    session_id: UUID,
+    request: CompleteStudySessionRequest,
+    idempotency_key: IdempotencyKey,
+    principal: Principal,
+    repository: Repository,
+) -> JSONResponse:
+    require_household(principal, household_id)
+    child_id = require_bound_child(principal)
+    try:
+        session, replayed = repository.complete_session(
+            household_id, session_id, child_id, request, idempotency_key
+        )
+    except (LookupError, ChildAssignmentError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="resource not found"
+        ) from error
+    except SessionAlreadyCompletedError as error:
+        raise _conflict("study session is already completed") from error
+    except IdempotencyConflictError as error:
+        raise _conflict("idempotency key reused with a different payload") from error
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=session.model_dump(mode="json"),
         headers={"Idempotency-Replayed": "true"} if replayed else {},
     )
 

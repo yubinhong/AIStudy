@@ -1,4 +1,4 @@
-"""Synthetic household profile domain models for the first vertical slice."""
+"""Household profile and learning domain models."""
 
 from datetime import date, datetime
 from enum import StrEnum
@@ -33,10 +33,19 @@ class DevicePlatform(StrEnum):
 class TaskStatus(StrEnum):
     ASSIGNED = "assigned"
     IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    SKIPPED = "skipped"
 
 
 class StudySessionStatus(StrEnum):
     ACTIVE = "active"
+    COMPLETED = "completed"
+
+
+class SessionOutcome(StrEnum):
+    LEARNED = "learned"
+    NEEDS_REVIEW = "needs_review"
+    SKIPPED = "skipped"
 
 
 class CaptureStatus(StrEnum):
@@ -83,6 +92,10 @@ class CreateChildRequest(BaseModel):
     grade: int = Field(ge=1, le=6)
     curriculum_version: str = Field(min_length=1, max_length=80)
     subjects: list[Subject] = Field(min_length=1)
+
+
+class UpdateChildRequest(CreateChildRequest):
+    """Replace the editable fields of one ChildProfile."""
 
 
 class Device(BaseModel):
@@ -134,10 +147,16 @@ class StudySession(BaseModel):
     task_version: int = Field(ge=1)
     status: StudySessionStatus
     started_at: datetime
+    completed_at: datetime | None = None
+    outcome: SessionOutcome | None = None
 
 
 class StartStudySessionRequest(BaseModel):
     expected_task_version: int = Field(ge=1)
+
+
+class CompleteStudySessionRequest(BaseModel):
+    outcome: SessionOutcome
 
 
 class Capture(BaseModel):

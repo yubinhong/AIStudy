@@ -6,6 +6,7 @@ question so the child can continue learning while a Tutor Provider remains
 unapproved. The response is a hint, never a verified answer.
 """
 
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -21,13 +22,16 @@ class TutorHintRequest(BaseModel):
     level: int = Field(ge=1, le=3)
 
 
-class StartTutorHintRequest(TutorHintRequest):
-    """API envelope that binds a stateless hint to the authenticated child."""
+class StartTutorHintRequest(BaseModel):
+    """Reference a server-owned verified fact; child identity comes from auth."""
 
-    child_id: UUID
+    model_config = ConfigDict(frozen=True)
+
+    verified_question_id: UUID
+    level: int = Field(ge=1, le=3)
 
 
-class TutorHintResponse(BaseModel):
+class TutorHintContent(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     schema_version: Literal["tutor-hint.v1"] = "tutor-hint.v1"
@@ -40,6 +44,14 @@ class TutorHintResponse(BaseModel):
     requires_child_response: Literal[True] = True
     direct_answer: None = None
     cost_cents: Literal[0] = 0
+
+
+class TutorHintResponse(TutorHintContent):
+    """Persisted Tutor turn returned to the authenticated child."""
+
+    id: UUID
+    verified_question_id: UUID
+    created_at: datetime
 
 
 _LEVEL_PROMPTS = {
@@ -58,7 +70,7 @@ _LEVEL_PROMPTS = {
 }
 
 
-def create_offline_hint(request: TutorHintRequest) -> TutorHintResponse:
+def create_offline_hint(request: TutorHintRequest) -> TutorHintContent:
     """Return the next bounded hint for a human-confirmed math question."""
 
     prompt, next_step = _LEVEL_PROMPTS[request.level]
@@ -66,4 +78,4 @@ def create_offline_hint(request: TutorHintRequest) -> TutorHintResponse:
     # no answer, candidate text, or Provider payload is copied to the output.
     if request.verified_question.formulas:
         next_step = f"{next_step} 题目里有公式时，先确认每个符号代表什么。"
-    return TutorHintResponse(level=request.level, prompt=prompt, next_step=next_step)
+    return TutorHintContent(level=request.level, prompt=prompt, next_step=next_step)

@@ -17,6 +17,20 @@ class ChildAuthException implements Exception {
   String toString() => message;
 }
 
+class ChildSessionExpiredException extends ChildAuthException {
+  const ChildSessionExpiredException() : super('登录已失效，请重新登录。');
+}
+
+class ChildLoginResult {
+  const ChildLoginResult({
+    required this.token,
+    required this.mustChangePassword,
+  });
+
+  final String token;
+  final bool mustChangePassword;
+}
+
 String normalizeServerBaseUrl(String value) {
   final text = value.trim();
   final uri = Uri.tryParse(text);
@@ -84,7 +98,7 @@ class ChildAuthClient {
 
   final String baseUrl;
 
-  Future<String> login(String username, String password) async {
+  Future<ChildLoginResult> login(String username, String password) async {
     final client = HttpClient();
     try {
       final request = await client.postUrl(Uri.parse('$baseUrl/auth/login'));
@@ -100,8 +114,88 @@ class ChildAuthClient {
       final body = jsonDecode(await response.transform(utf8.decoder).join());
       if (response.statusCode != HttpStatus.ok ||
           body is! Map ||
-          body['access_token'] is! String) {
+          body['access_token'] is! String ||
+          body['account'] is! Map) {
         throw const ChildAuthException('用户名或密码不正确。');
+      }
+      final account = body['account'] as Map;
+      if (account['role'] != 'child' || account['child_id'] is! String) {
+        throw const ChildAuthException('请使用孩子账号登录。');
+      }
+      final mustChangePassword = account['must_change_password'];
+      if (mustChangePassword is! bool) {
+        throw const ChildAuthException('登录响应不完整，请联系家长。');
+      }
+      return ChildLoginResult(
+        token: body['access_token'] as String,
+        mustChangePassword: mustChangePassword,
+      );
+    } on ChildAuthException {
+      rethrow;
+    } on Object {
+      throw const ChildAuthException('暂时无法连接学习服务。');
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<bool> mustChangePassword(String token) async {
+    final client = HttpClient();
+    try {
+      final request = await client.getUrl(Uri.parse('$baseUrl/auth/me'));
+      request.headers.set('Authorization', 'Bearer $token');
+      final response = await request.close();
+      final body = jsonDecode(await response.transform(utf8.decoder).join());
+      if (response.statusCode == HttpStatus.unauthorized) {
+        throw const ChildSessionExpiredException();
+      }
+      if (response.statusCode != HttpStatus.ok || body is! Map) {
+        throw const ChildAuthException('暂时无法读取登录状态。');
+      }
+      if (body['role'] != 'child' || body['child_id'] is! String) {
+        throw const ChildSessionExpiredException();
+      }
+      final required = body['must_change_password'];
+      if (required is! bool) {
+        throw const ChildAuthException('登录状态响应不完整。');
+      }
+      return required;
+    } on ChildAuthException {
+      rethrow;
+    } on Object {
+      throw const ChildAuthException('暂时无法连接学习服务。');
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<String> changePassword({
+    required String token,
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final client = HttpClient();
+    try {
+      final request = await client.postUrl(
+        Uri.parse('$baseUrl/auth/change-password'),
+      );
+      request.headers
+        ..contentType = ContentType.json
+        ..set('Authorization', 'Bearer $token');
+      request.write(
+        jsonEncode({
+          'current_password': currentPassword,
+          'new_password': newPassword,
+        }),
+      );
+      final response = await request.close();
+      final body = jsonDecode(await response.transform(utf8.decoder).join());
+      if (response.statusCode != HttpStatus.ok ||
+          body is! Map ||
+          body['access_token'] is! String ||
+          body['account'] is! Map ||
+          (body['account'] as Map)['must_change_password'] != false) {
+        throw const ChildAuthException('当前密码不正确，或新密码不符合要求。');
       }
       return body['access_token'] as String;
     } on ChildAuthException {

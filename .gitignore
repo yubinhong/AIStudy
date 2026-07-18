@@ -44,3 +44,4 @@ tmp/
 *.tar
 *.tar.gz
 services/api/model-cache/
+infra/compose/backups/

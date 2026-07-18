@@ -5,29 +5,32 @@
 ## 1. 项目快照
 
 - 项目：家庭 AI 学习助手
-- 一句话目标：复用家庭现有设备，提供“任务 → 作答 → 分步提示 → 错题/复习 → 家长反馈”的开源、可控、可离线学习闭环。
-- 当前阶段：`P1 CAPTURE/CORRECTION FOUNDATION`
+- 一句话目标：复用家庭现有设备，以数学为首科提供“家庭教材范围 → 错题讲解 → 错题沉淀 → 到期复习 → 今日任务/家长反馈”的开源、可控学习闭环。
+- 当前阶段：`P1 SECURITY FOUNDATION / CURRICULUM-MISTAKE ROADMAP`
 - 主要用户：小学阶段孩子与家长/监护人；辅助角色为家庭内容维护者和项目维护者。
-- 生产状态：`NOT_DEPLOYED`（Ubuntu 自用 Compose 基础栈已验证运行，不代表生产发布）
-- 当前版本：`0.0.0（尚无产品发布）`
-- 最近更新：`2026-07-16`
+- 生产状态：`SELF_HOSTED_DEPLOYED`（Ubuntu 单家庭 Compose 正在运行；不等同于公网/商业生产批准）
+- 当前版本：API/OpenAPI `0.8.0`（尚无正式产品发布标签）
+- 最近更新：`2026-07-18`
 
 ## 2. 当前工作状态
 
-- 活动计划：`PLAN-0008` — Ubuntu x86_64 与自托管 NewAPI 环境验收（PLAN-0007 认证代码已完成）
-- 任务状态：`TASK-0007 COMPLETE；PLAN-0008 环境验收继续进行（2026-07-16）`
-- 当前分支：`master`；最近提交 `c3a107e`，当前工作区含 OCR 入队/调度增量。
-- 当前重点：TASK-0007 已把运行时认证收敛为唯一的用户名/密码+可撤销会话，并让 Flutter 在登录前配置服务端地址；后续只继续 PLAN-0008 的远端重新部署、真实浏览器/设备认证和 NewAPI 环境验收。
-- 已完成：本地 MinIO、图片安全读取/无 EXIF 规范化、授权/幂等/生命周期、人工校正和旧 PaddleOCR text/formula Job/结果链路均已实现并通过 synthetic 验证；`PrivacySanitizer`、ImageAnalysis/QuestionExtraction/VerifiedQuestion、NewAPI Adapter、offline Tutor Policy、Web 家长工作台、Flutter 脱敏预览和有限启动过渡也已落代码。认证运行时已删除 HMAC、Demo Header、静态 Web Token 和免登录开关；OpenAPI `0.6.0` 仅声明 Cookie/Bearer Session，Web 保护工作台/账号/首次改密页，Flutter 支持登录前地址配置并在地址变更时清除旧会话。Compose worker 已进入默认 profile，Provider 关闭时安全空闲；Linux ARM64 调试镜像已原生构建。
-- 当前未完成：QuestionExtraction 已形成服务端持久化和读取接口，人工确认生成 VerifiedQuestion、临时派生副本成功/失败清理代码和 API 已实现；真实视觉检测器、视觉固定 eval、备份恢复和人工确认 API 的远端完整验收仍待完成。Ubuntu 24.04 x86_64 Compose 基础栈、0011 迁移、健康检查、loopback bootstrap login、重启恢复和锁定容器 4-case synthetic OCR eval 已通过；NewAPI Key/模型已配置并启用，修复 Cloudflare 对 Python 默认 User-Agent 的 1010 拦截后，synthetic 脱敏图片已成功得到 `needs_confirmation=true` 的 Extraction，派生副本和 synthetic Job 均已清理。
-- 当前认证：只有家长/孩子用户名密码、Argon2id 和可撤销不透明会话；Web 提供首次改密和孩子账号管理，Flutter 提供登录前服务端地址配置和孩子登录。认证生命周期已写入 `audit_events` 的稳定字段，不含用户名、密码或令牌。空数据库的一次性 `admin/admin123456` 只允许本机首次登录，改密前阻断家庭数据。远端 PostgreSQL/0011 migration 和 loopback bootstrap login 已验收，首次改密、浏览器 E2E、Cookie/CSRF 和 iPad 会话生命周期仍待验收。
+- 活动计划：`PLAN-0012` — Capture 服务端流式上传收敛已部署，活动任务仍为 `TASK-0009`；下一阶段是最终设备回归与 Provider 额度恢复后的识别验收。`PLAN-0013` 已完成 API/Web 首版并部署，`PLAN-0014` 已开始实现错题/复习最小闭环。
+- 任务状态：ADR-0018/PLAN-0012 已完成本地与 Ubuntu API/Flutter/Compose/契约迁移；Ubuntu 不再依赖预签名直传，MinIO `9000` 未向宿主/LAN 暴露。最终真机仍未回归。
+- 当前分支：`master`；工作区包含本轮未提交的 P1 闭环代码、迁移、测试和文档。
+- 当前重点：在已部署的 API 流式上传和孩子管理聚合上完成真实设备/浏览器回归；同时保留 Provider HTTP `402` 的可操作错误提示，待 NewAPI 额度恢复后复验真实识别。
+- 已完成：OpenAPI `0.8.0`、迁移 `0013`～`0017`、可信 VerifiedQuestion → TutorTurn、错题/复习最小闭环、会话完成/复习、周报、24 小时孩子数据导出、级联删除、SQLite 离线 Attempt 队列、真实任务/活动会话 Flutter 首页和家长任务/周报/导出 UI。Ubuntu Compose 运行 API/Web/ImageAnalysis/DataLifecycle worker，流式上传、孩子管理聚合和 PostgreSQL/MinIO 隔离恢复通过。
+- 当前未完成：最终设备回归、浏览器 E2E、Provider 额度恢复后的真实识别、自动视觉检测器、四设备最终权限/弱网/横竖屏/重启回归、正式依赖/镜像安全扫描、监控告警和已批准的 RPO/RTO。SDK 生成器仍未选择。
+- 新产品主线部分完成：ADR-0020/PLAN-0014 已新增 `MistakeRecord`/`ReviewSchedule`、`0017` 迁移、到期查询、确定性复习和 Web/Flutter 调用；仍没有教材导入/审核发布、CurriculumSnapshot、作答四态/错因讲解、任务建议或 Flutter“数学三入口”。
+- Web 多孩子现状：账号与档案已由孩子管理聚合 API/Web 首版统一创建、列表和删除；首页支持 `?child=` 并按所选孩子过滤任务/周报。双孩子浏览器 E2E 和真实设备验收仍待完成；目标是产品/API 聚合而非物理合表，详见 PLAN-0013。
+- 当前认证：只有家长/孩子用户名密码、Argon2id 和可撤销不透明会话；Web 使用 HttpOnly Cookie/CSRF，Flutter 使用平台安全存储。Ubuntu LAN 登录、首次改密和 Nova 9 绑定档案读取已有实机记录；浏览器自动 E2E 和多设备重启生命周期仍待验收。
+- Android 设备验收：Nova 9 登录/首次改密/绑定档案历史记录有效；流式上传新链路已部署但最终拍题、Extraction/VerifiedQuestion、权限拒绝恢复、弱网和重启仍需设备在场时验收。
 
 ## 3. 已验证的仓库事实
 
 - 仓库根目录：`/Users/ybh/PycharmProjects/study`。
-- Git：分支 `master`，最近提交 `c3a107e`；工作区有本轮未提交的 API、迁移与文档改动。
+- Git：分支 `master`，最近提交 `c86490f`；工作区有本轮未提交的 P1 闭环、迁移、客户端和文档改动。
 - 现有内容：根目录上下文文档、`prompts/` 工作流模板、`docs/adr/0000-template.md`、`家庭AI学习助手_架构设计_v1.0.docx`。
-- 已创建并部分验证：`apps/`、`services/`、`packages/`、`evals/`、`infra/` 的 P0 骨架、家庭 Profile/Device 合成切片、配置样例、最小测试、Compose 和 CI；三类锁文件已生成，Flutter Android 调试 APK 和 iOS 无签名 Runner.app 已构建。自用 Compose 的 `linux/amd64` 发布镜像和原生 `linux/arm64` 调试镜像均已在 macOS arm64 Docker 构建通过；Ubuntu VM 上的 amd64 完整栈也已运行并通过基础验收，ARM 调试镜像因 PaddlePaddle 3.3.1 无 Linux aarch64 wheel 而不含旧本地 OCR。
+- 已创建并验证：`apps/`、`services/`、`packages/`、`evals/`、`infra/` 的 P0/P1 核心路径、配置、锁文件、测试和 Compose；Flutter Android release APK 与 iOS release 无签名 Runner.app 已构建。Ubuntu VM 上的 amd64 完整栈运行 API `0.8.0`/迁移 `0016`，新流式上传和孩子管理聚合已部署；synthetic 识别请求到达 NewAPI 但返回 HTTP `402`，因此实际 Provider 识别尚待额度恢复；ARM 调试镜像因 PaddlePaddle 3.3.1 无 Linux aarch64 wheel 而不含旧本地 OCR。
 - 设计稿：31 个段落、6 个表格、3 页，定义 P0/P1/P2、设备职责、核心实体/API 和发布门槛；本地渲染缺少部分中文字体，但 OOXML 文本可完整提取。
 
 ## 4. 主文档索引
@@ -36,38 +39,39 @@
 | --- | --- | --- |
 | 项目目标、范围、设备、环境 | `PROJECT.md` | Active；目标与现状已分离 |
 | P1 产品需求与验收 | `PRD.md` | Draft；待产品 Owner 审批 |
-| 当前任务 | `TASK.md` | TASK-0007 代码与本地质量门槛完成；PLAN-0008 继续环境验收 |
-| 复杂任务计划 | `PLANS.md` | PLAN-0001～0005 已完成；PLAN-0007 认证代码完成环境验收；PLAN-0008 Ubuntu/NewAPI 验收进行中 |
-| 系统结构、数据流、接口 | `ARCHITECTURE.md` | Draft 目标架构；P0 合成切片已实现 |
+| 当前任务 | `TASK.md` | TASK-0009 代码/自动化/Ubuntu 完成；等待最终真机相机人工验收与 Provider 额度恢复 |
+| 复杂任务计划 | `PLANS.md` | PLAN-0012 已部署并等待最终验收；PLAN-0013 API/Web 首版已部署、浏览器 E2E 待执行；PLAN-0014 已完成错题/复习最小闭环，教材/三入口/建议待实现；PLAN-0011 已完成 |
+| 系统结构、数据流、接口 | `ARCHITECTURE.md` | P0/P1 单家庭核心闭环已实现；残余边界明确记录 |
 | 测试命令和质量门槛 | `TESTING.md` | API/Web/Flutter 质量命令已有验证；原生构建结果以最新记录为准 |
 | 儿童数据、权限与 AI 安全 | `SECURITY.md` | 基线草案；生产开放项未决 |
-| 部署、回滚、告警与恢复 | `RUNBOOK.md` | Not deployed；仅生产前契约 |
-| 架构决策 | `DECISIONS.md`、`docs/adr/` | ADR-0001～0011、0013～0017 Accepted；ADR-0012 Superseded；ADR-0017 账号/会话代码目标已实现，环境验收未完成 |
-| 工作队列 | `TODO.md` | TODO-001、TODO-003、TODO-007、TODO-012 已完成；账号/会话远端与设备验收由 PLAN-0008 跟踪 |
+| 部署、回滚、告警与恢复 | `RUNBOOK.md` | Ubuntu 自用部署与恢复已验证；监控/公网发布未建立 |
+| 架构决策 | `DECISIONS.md`、`docs/adr/` | ADR-0020 教材驱动错题主线 Accepted；ADR-0018 Accepted；ADR-0019 孩子管理聚合/工作台作用域 Proposed；替代关系见索引 |
+| 工作队列 | `TODO.md` | TODO-014/015 In Progress 并已部署；TODO-016 教材/知识发布 Ready；TODO-017 错题讲解 Planned；TODO-018 错题/复习最小闭环已实现、完整体验待补；TODO-019 Planned |
 | 已发布变化 | `CHANGELOG.md` | 无产品发布 |
 | 原始设计基线 | `家庭AI学习助手_架构设计_v1.0.docx` | v1.0；后续 ADR 可替代 |
 
-## 5. 技术摘要（目标，尚未实现）
+## 5. 技术摘要
 
 - 客户端：Flutter iOS/Android；Next.js + TypeScript Web/PWA；端侧 SQLite。
 - 后端：Python 3.12 + FastAPI 模块化单体 + 异步 Worker。
-- 数据：PostgreSQL 为业务事实源；pgvector 做检索；Redis 做缓存/队列；S3/MinIO 存图片。
-- 契约：`packages/contracts` 已有 P0 健康/Profile/Device、P1 Learning/Capture/Account Session `0.6.0` 合同；SDK 生成方向已由 ADR-0002 接受，具体生成器尚未选择。
-- AI：本地 PrivacySanitizer 核心使用版本化敏感区域信号做实色覆盖和不可逆重编码，视觉解析经 Provider Adapter；图片解析和 Tutor 分离，均需固定 Schema/人工确认。Provider-neutral Schema、6-case 脱敏 eval、无 Provider 的 1～3 级 offline Tutor Policy、3-case eval、NewAPI Adapter、ImageAnalysis worker、QuestionExtraction 和 VerifiedQuestion 持久化已实现；远端 synthetic NewAPI `queued → Extraction` 已验证，真实检测器、视觉固定 eval 和远端人工确认验收尚未实现。
-- 交付：P0 Compose/CI 已创建；旧 OCR、PrivacySanitizer 和 offline Tutor Policy synthetic eval 已实现，云 Provider eval、OpenTelemetry 和部署仍未实现。
+- 数据：PostgreSQL 为业务事实源；pgvector 做检索；Redis 做缓存/队列；私有 S3/MinIO 存图片。本地新链路仅由 API/worker 通过内部网络访问；Ubuntu `0.8.0` 已完成成对迁移。
+- 契约：`packages/contracts` 已有 P0 健康/Profile/Device 和 P1 Learning/Capture/Account Session/Tutor/Report/Export `0.8.0` 合同；SDK 生成方向已由 ADR-0002 接受，具体生成器尚未选择。
+- AI：本地 PrivacySanitizer、固定 OCR/脱敏/Tutor eval、NewAPI Adapter、ImageAnalysis worker、QuestionExtraction/VerifiedQuestion 和服务端可信 TutorTurn 已实现；Ubuntu synthetic 大图完成真实单 Provider 链路。自动视觉检测器与外部 Tutor Provider 未实现，后者保持零成本离线策略。
+- 交付：Ubuntu 自用 Compose 已部署并完成迁移、健康、NewAPI synthetic 和 PostgreSQL/MinIO 恢复验收；OpenTelemetry、正式告警和公网发布未实现。
 - 认证：ADR-0017 已实现代码目标：同一 Household 内家长/孩子账号密码 + 可撤销不透明会话；Web 用 HttpOnly Cookie/CSRF，Flutter 用平台安全存储；不接入短信、邮箱、社交登录、OIDC 或 MFA，也不保留 HMAC/Demo 兼容。
+- 学习主线：ADR-0020 已批准 CurriculumAssignment/Material/Snapshot → VerifiedQuestion+已确认 AttemptEvidence（`worked` 或 `blank_confirmed`）→ 分模式 Tutor → MistakeRecord/ReviewSchedule → TaskRecommendation；当前已写入 `MistakeRecord`/`ReviewSchedule` OpenAPI/`0017` 迁移，教材/作答证据/任务建议仍未实现。
 
 ## 6. 仓库地图
 
 | 路径 | 责任 | 当前状态 |
 | --- | --- | --- |
-| `apps/child_flutter` | 孩子学习、拍题、提示交互、离线队列 | 相机/相册、1.2 秒有限启动过渡、ADR-0015 本地脱敏预览/手动涂抹/确认、登录前服务端地址配置、账号密码登录和安全会话存储已实现；离线 SQLite 和真实设备生命周期待后续 |
-| `apps/web` | 家长后台、内容维护、Windows Web/PWA | 简洁明亮的学习概览、登录、首次改密、退出和孩子账号管理已实现；真实浏览器 E2E 待执行 |
-| `services/api` | FastAPI 模块化单体和 Worker | Capture/ImageAnalysis/NewAPI、VerifiedQuestion、Account/AuthSession、Argon2id、登录限速、首次改密和会话撤销已实现；Cloudflare-compatible NewAPI synthetic 链路已通过，真实视觉检测器和远端人工确认验收待执行 |
-| `packages/contracts` | OpenAPI、JSON Schema、生成 SDK | 健康 + Profile/Device + Learning/Capture/OCR/Account Session `0.6.0` 合同及 ADR-0015/0016 的 6 份 Schema 已写，SDK 生成器尚未固定 |
-| `evals` | 固定 AI 质量/安全/成本评测 | 旧 OCR、6-case PrivacySanitizer 和 3-case offline Tutor Policy synthetic eval 已有；云视觉结构化/Tutor Provider eval 未实现，无真实数据 |
-| `infra/compose` | 本地 PostgreSQL/Redis/MinIO/API/家长 Web/迁移/worker 编排 | Compose 配置展开及 Ubuntu x86_64 完整启动通过；ImageAnalysis worker 默认启动、Provider 关闭时安全空闲；amd64 发布镜像、无 Paddle 的 ARM64 调试镜像和 Web standalone 镜像已纳入编排，备份恢复、真实 NewAPI 和监控仍待验证 |
-| `docs/adr` | 架构决策 | 模板 + ADR-0001～0011、0013～0017 Accepted；ADR-0012 Superseded；ADR-0017 待实施 |
+| `apps/child_flutter` | 孩子学习、拍题、提示交互、离线队列 | 当前真实任务/拍题/题目确认/最小 Tutor 和 API 单次流式上传已实现；数学三入口、题目+作答区拍摄/状态确认、错题本和到期复习尚未实现 |
+| `apps/web` | 家长后台、内容维护、Windows Web/PWA | 学习概览、登录、任务/周报及分离账号/档案管理已实现；聚合孩子、教材导入审核发布、任务建议审批尚未实现 |
+| `services/api` | FastAPI 模块化单体和 Worker | Capture/VerifiedQuestion/Tutor/Report 基础及本地流式上传已实现；远端部署收口与 Curriculum/Material/Mistake/Review/Recommendation 模块尚未实现 |
+| `packages/contracts` | OpenAPI、JSON Schema、生成 SDK | 健康 + Profile/Device + Learning/Capture/OCR/Account Session/Tutor/Report/Export `0.8.0` 合同已改为单一流式上传，SDK 生成器尚未固定 |
+| `evals` | 固定 AI 质量/安全/成本评测 | OCR、6-case PrivacySanitizer、3-case offline Tutor Policy 和真实 NewAPI synthetic 大图验收已有；无真实数据，自动视觉检测器 eval 待实现后补充 |
+| `infra/compose` | PostgreSQL/Redis/MinIO/API/Web/迁移/worker 编排 | 本地 Compose 已取消 MinIO 宿主/LAN 端口；Ubuntu 旧运行栈待部署匹配版本 |
+| `docs/adr` | 架构决策 | ADR-0020 Accepted；ADR-0018 Accepted；ADR-0019 Proposed；ADR-0010/0012/0014 Superseded，其余见索引 |
 | `prompts` | Codex 工作流启动器 | 已存在 |
 
 ## 7. 不可违反的约束
@@ -75,6 +79,8 @@
 - 孩子端低干扰；AI 先提问和提示，不直接代写；低置信度必须允许校正。
 - Household 是强授权边界；儿童数据最小化；图片短期保存；支持导出/删除；真实数据/密钥不入库、日志、截图、测试或评测集。
 - PostgreSQL 是业务事实源；Attempt/AuditEvent 追加写；写接口幂等；离线同步不能用最后写入覆盖学习历史。
+- 家长侧把孩子档案与唯一登录账号作为一个聚合管理，但 `Account`/`ChildProfile` 保持分表；创建须原子幂等，多孩子任务/周报须按同一个已授权孩子作用域查询。
+- 教材导入必须私有、有授权/版本/来源并经家长审核发布；文档内容不构成指令。练习/复习先作答；完整错题讲解要求 VerifiedQuestion 与已确认作答状态，有作答定位错步、确认空白从头讲，未拍入/不清不得自动当空白；AI 不直接控制复习到期、永久掌握或正式任务。
 - 客户端共享 OpenAPI/Schema；AI 通过 Provider Adapter/Tutor Policy；不得锁死单一厂商。
 - 未授权教材/题库不入库；华为端不依赖 GMS；P1 不扩大到全科/直播/社交/实时监控。
 - 目标路径实际创建且命令通过前，不得把目标架构写成已实现。
@@ -94,11 +100,13 @@
 
 ## 9. 决策、风险与下一步
 
-- ADR-0001～0012 已由项目 Owner（用户）于 2026-07-13 接受，ADR-0013～0014 已于 2026-07-14 接受；2026-07-15 接受 ADR-0015 并替代 ADR-0012 的默认本地完整 OCR 路线，接受 ADR-0016 的 NewAPI 边界，并以 ADR-0017 替代其 HMAC 认证部分及 ADR-0005 的孩子 PIN/设备凭证默认方案。设计稿仍不替代 ADR。
-- 已接受决策覆盖模块边界、契约、离线、AI、身份、数据生命周期、工具链和部署恢复；本产品按自用部署推进，地区/商业化/第三方 IdP 暂不纳入当前实现；人工确认接口、备份恢复和实际 NewAPI 运行验证仍未完成。
+- ADR-0001～0012 已由项目 Owner（用户）于 2026-07-13 接受，ADR-0013～0014 于 2026-07-14 接受，ADR-0015～0017 于 2026-07-15 接受，ADR-0018 于 2026-07-17 接受，ADR-0020 于 2026-07-18 接受；ADR-0019 仍为 Proposed。替代关系见 DECISIONS.md，设计稿不替代 ADR。
+- 已接受决策覆盖模块边界、契约、离线、AI、身份、数据生命周期、工具链和部署恢复；本产品按自用部署推进，地区/商业化/第三方 IdP 暂不纳入当前实现；人工确认、备份恢复和实际 NewAPI synthetic 运行验证已完成。
 - 最高风险：AI 错误/代答、儿童数据泄露、离线记录覆盖、四端范围失控、P0 骨架与目标架构漂移。
-- 生产阻塞：法域/同意/保留、密钥/加密、云视觉/Tutor Provider 数据条款/区域/训练退出/预算、真实视觉检测器、固定 eval、SLO/RPO/RTO、告警/备份恢复；账号密码代码已实现，远端 Compose 基础验收通过，但真实设备/浏览器和 Provider 生命周期仍待完成。
-- 最近完成：`TASK-0006` / `TODO-008` 代码闭环，包括 VerifiedQuestion 人工确认和派生对象清理；当前继续 `PLAN-0008`，只用 synthetic 数据验证 Ubuntu/Compose/NewAPI，仍不把环境验收项描述成已通过。
+- 正式发布阻塞：自动视觉检测器、法域/正式告知、密钥/静态加密、SLO/RPO/RTO、监控告警、浏览器 E2E 和四设备回归；单家庭自用 LAN 部署已可运行。
+- 最近完成：`PLAN-0011` 的可信 Tutor、SQLite 离线、会话/复习/周报、数据导出/删除、生命周期 worker、恢复演练和 Ubuntu `0.8.0` 部署。
+- 最近规划：`PLAN-0013` 已把“创建孩子合并账号/档案”和“首页切换当前孩子”拆成契约/迁移、API 事务、Web 管理页、工作台选择及双孩子 E2E 五阶段；前四阶段已实现并部署，双孩子 E2E 待执行。
+- 最近决策：`ADR-0020` 已接受，`PLAN-0014` 将数学主线拆成教材发布、三入口/错题讲解、错题本/到期复习、任务建议和质量发布五阶段。当前已先落地错题/复习最小闭环；拍题作答四态、教材 grounding 和建议审批仍待后续阶段。
 
 ## 10. 更新规则
 

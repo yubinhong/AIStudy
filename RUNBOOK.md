@@ -20,31 +20,49 @@ SLO 必须在 staging 获得基线后由产品/技术 Owner 批准，不在零�
 | 本地脱敏/云视觉解析/首个 Tutor 提示延迟 | `TBD` | `TBD` | 仅旧本地 OCR 有 synthetic 基线；新路线无 Provider |
 | 错误率 | `TBD` | `TBD` | 无基线 |
 | 离线同步冲突/失败 | 不得丢失或覆盖学习记录 | 阈值 `TBD`；任何确认的数据丢失立即升级 | 无实现 |
-| AI Schema/安全失败 | 阻断不合规响应 | 阈值 `TBD`；直接代答/敏感泄露立即升级 | 无 eval |
+| AI Schema/安全失败 | 阻断不合规响应 | 阈值 `TBD`；无错题门禁直接代答、错误完整讲解或敏感泄露立即升级 | 现有最小 Tutor eval；ADR-0020 eval 未实现 |
 | AI 成本 | 每家庭/请求预算 `TBD` | 超批准预算即告警/降级 | 无成本数据 |
-| 导出/删除/备份失败 | 0 个静默失败 | 任一超时或错误立即告警 | 无实现 |
+| 导出/删除/备份失败 | 0 个静默失败 | 任一超时或错误立即告警 | 导出/删除/备份恢复已实现；自动告警未接入 |
 
 ## 3. 环境与部署
 
 ### 当前环境
 
 - local：`infra/compose/compose.yml` 已编排 PostgreSQL、Redis、MinIO、API、家长 Web、一次性 Alembic migration 和默认启动的 ImageAnalysis worker；Apple Silicon `linux/arm64` 调试镜像构建成功。NewAPI 默认关闭；此时 worker 保持空闲。
-- Ubuntu 自用验收：宿主确认 Ubuntu 24.04/x86_64、Docker 29.1.3、Compose 2.40.3；Docker IPv6 已关闭并经 `socks5://192.168.1.100:7893` 出网。远端 Compose config、`0011` migration、amd64 Paddle 模型镜像、API/Web healthz、loopback bootstrap login、重启恢复和内存 synthetic OCR smoke 已通过；远端 `.env` 未进入仓库且权限为 600。NewAPI Key/模型已配置并启用；Cloudflare 1010 拦截 Python 默认 User-Agent 后，受限 `study-api/0.5` 请求已成功完成 synthetic `queued → Extraction`，临时派生对象删除且残留 Job 为 0。首次改密、Cookie/CSRF、孩子账号/iPad 生命周期、备份恢复和生产监控仍未执行。
+- Ubuntu 自用验收：宿主为 Ubuntu 24.04/x86_64，远端 `.env` 权限 600。2026-07-18 前滚至 `0016_child_account_uniqueness`；API `0.8.0`、PostgreSQL、MinIO、Redis、Web、ImageAnalysis 和 DataLifecycle worker 运行。新流式上传使用内部 `minio:9000`，宿主/LAN 未发布 MinIO `9000`。synthetic 请求已到达 NewAPI，但当前 Provider 返回 HTTP `402`，因此 `Extraction → VerifiedQuestion → TutorTurn` 需在额度恢复后复验；PostgreSQL custom dump 与 MinIO 快照已在隔离 PostgreSQL 16.10 容器恢复校验。生产监控仍未实现。
+- 真机拍题当前事实：API/Flutter/Compose/Ubuntu 已切换为 App 携带 Session 向 API 上传，且 Compose 不发布 MinIO `9000`；Nova 9/iPad 需在设备可用时重新执行拍题、权限、弱网和重启验收。Provider HTTP `402` 只表示 NewAPI 余额/模型额度不可用，不应误判为上传或 MinIO 故障。
 - staging：未建立。
 - production：未建立且未获部署授权。
 
 ### 账号密码认证切换（ADR-0017；代码已实现，环境验收待执行）
 
-自用首次启动和迁移按以下顺序执行；`0011_account_password_session` 已提供 migration/API，Ubuntu Compose 健康与 loopback bootstrap login 已验证，首次改密和真实设备验收仍需执行：
+自用首次启动和迁移按以下顺序执行；`0011_account_password_session` 已提供 migration/API。项目 Owner 已授权首次引导可从受信家庭局域网完成，首次改密和真实设备验收仍需执行：
 
-1. 先让 Web/API 只监听 loopback，应用 Account/AuthSession 前滚迁移；仅当账号表为空时创建一次性 `admin/admin123456`，确认数据库只含 Argon2id 哈希且 `must_change_password=true`。
-2. 从服务器本机登录，验证除当前账号、改密和退出外的家庭数据接口均返回 `password_change_required`；立即修改管理员密码。
-3. 确认所有引导会话已撤销，新会话可读取同一 Household 数据后，才允许把 Web 暴露到家庭局域网；禁止让默认密码在非 loopback 环境继续有效。
+1. 应用 Account/AuthSession 前滚迁移；仅当账号表为空时创建一次性 `admin/admin123456`，确认数据库只含 Argon2id 哈希且 `must_change_password=true`。首次引导仅限受信家庭局域网，禁止公网暴露。
+2. 从受信 LAN 设备登录，验证除当前账号、改密和退出外的家庭数据接口均返回 `password_change_required`；立即修改管理员密码。
+3. 确认所有引导会话已撤销，新会话可读取同一 Household 数据；禁止让默认密码继续有效。
 4. 在 Web 创建孩子账号并绑定 ChildProfile；验证孩子只能访问自己的任务/会话，不能访问家长管理接口或兄弟孩子数据。
 5. 验证登出、改密、停用、重置和 30 天到期均能撤销会话；验证 Web Cookie/CSRF、Flutter 登录前服务端地址配置和 Keychain/Android Keystore 生命周期。
 6. 唯一管理员忘记密码时当前仅允许服务器本机维护人员按恢复方案处理；正式受审计恢复命令仍待实现，不提供短信、邮箱或 MFA 恢复。
 
-回滚时优先前滚修复；确需回退时只回退到上一应用版本，不删除 Account/AuthSession 表或恢复已撤销会话。上一版本包含的 HMAC/Demo 路径不视为安全回滚方案，若必须启用需项目 Owner 另行明确批准且限于隔离环境。迁移版本为 `0011_account_password_session`，真实回滚/恢复脚本仍待实测。
+回滚时优先前滚修复；确需回退时只回退应用镜像并保留 `0012`～`0016` 数据表，不执行生产 downgrade，不删除 Profile/Device/Account/AuthSession/TutorTurn/Export 或恢复已撤销会话。迁移前备份必须保留到新版本验收完成；恢复验证脚本不得对运行中数据库执行。
+
+### 统一孩子管理迁移（PLAN-0013 / ADR-0019 Proposed；首版已实施）
+
+实施前先对 `accounts` 与 `child_profiles` 做只读基数审计，分别统计无账号档案、一对一绑定和同档案多账号；报告只使用 UUID/计数，不打印用户名或儿童姓名。发现重复绑定时停止自动迁移，由项目 Owner 选择保留的账号并显式处理其余账号/会话，不得静默删除。
+
+发布顺序为：备份 → 数据审计/处置 → 部署扩展后的数据库约束与 API 聚合合同 → 运行原子创建/授权 smoke → 部署匹配 Web → 用两个 synthetic 孩子验证切换、刷新和删除回退 → 收缩旧 Web 分离创建入口。数据库继续保留 `accounts`/`child_profiles` 两表，应用回滚不得重新允许同档案多账号。该流程只在 ADR-0019 Accepted 且实现/测试完成后执行；当前 Ubuntu 不做任何迁移。
+
+### 教材驱动错题闭环发布（ADR-0020 / PLAN-0014；错题/复习最小闭环已实施）
+
+按独立特性开关和里程碑发布，禁止一次性开放全部目标能力：
+
+1. 完成 PLAN-0012 后，备份 PostgreSQL/MinIO，先部署 Curriculum/Material/Snapshot 迁移、API/worker 和家长审核 Web；只用 synthetic PDF 验证，真实教材导入前必须批准文件处理依赖、资源上限、授权声明、原文保留与备份删除。
+2. 确认未发布/跨家庭材料无法检索、Snapshot 来源可追溯后，再部署匹配的 Flutter 数学三入口与错题讲解。Provider/完整讲解开关默认关闭，固定数学 eval 必须通过题目/作答分区、`worked/blank/unclear/answer_area_missing`、人工修正、有作答错步讲解和空白从头讲解后才开启。
+3. `0017` 已部署 MistakeRecord/ReviewSchedule；继续用 synthetic 时钟验证 ReviewPolicy v1、时区、并发、重试和重激活。当前 `needs_review` 不会自动生成错误答案/知识点，正式记录必须引用已确认 VerifiedQuestion 和会话。
+4. 最后开放 TaskRecommendation；默认必须家长批准。到期复习确定性下发需家庭显式开启，AI 新编题继续关闭。
+
+回滚只关闭对应开关并回退匹配应用，不破坏性 downgrade 或删除已发布 Snapshot、Mistake、Attempt、Review/审批事实。Provider 不可用时保留手工教材/错题、既有讲解和确定性复习队列。当前 Ubuntu 未执行上述迁移或部署。
 
 ### 自用 NewAPI 启用流程
 
@@ -66,10 +84,13 @@ uv run python scripts/run_image_analysis_worker.py --watch
 
 - [ ] CI、契约、测试、AI eval、安全扫描和四设备回归通过。
 - [ ] 版本化产物、配置清单、迁移、容量、功能开关、模型/Prompt/Policy 版本已审查。
-- [ ] 备份、恢复演练、数据导出/删除、成本和安全告警就绪。
+- [x] 备份、隔离恢复演练和数据导出/删除已验证；成本和安全告警仍未接入。
 - [ ] 适用法域、儿童隐私、保留期限、Owner/值班和安全联系渠道已批准。
 - [ ] ADR-0017 环境验收：代码已实现默认管理员仅本机首次登录、首次改密、会话撤销、Web Cookie/CSRF 和孩子账号反向授权；完整 Compose、浏览器 E2E 和真实设备验证后才能勾选。
-- [ ] 自用 NewAPI 的 URL、API key、视觉模型、响应 Schema、停用开关和本地 synthetic 联调已验证；PrivacySanitizer/用户确认/临时副本删除 eval 已通过。
+- [x] 自用 NewAPI 的 URL、API key、视觉模型、响应 Schema、停用开关和 synthetic 大图联调已验证；PrivacySanitizer/用户确认/临时副本删除 eval 已通过。
+- [ ] ADR-0018 上传收敛：本地与 Ubuntu OpenAPI/Flutter/API/Compose 已切换为单一有界流式上传；公开 MinIO 配置和 `9000` 映射已删除，相关本地回归及远端端口复核通过；断连/超限/超时/并发现场压测和真机验证待执行。
+- [ ] ADR-0019/PLAN-0013：孩子聚合原子创建/幂等/唯一约束、孩子选择/服务端过滤、反向授权和 API/Web 成对部署已通过；双孩子浏览器 E2E、旧数据审计和真实回归仍待执行。
+- [ ] ADR-0020/PLAN-0014：材料解析依赖/上限/保留已批准；Curriculum 发布、数学三入口、作答状态确认与分支讲解、Mistake/ReviewPolicy、任务建议审批按阶段通过 synthetic/双孩子/授权/删除/恢复/eval 后才逐项开关。
 - [ ] 发布、停止、回滚和前滚负责人明确，真实数据不来自开发环境。
 
 ### 本地/自用 Compose 流程
@@ -83,7 +104,7 @@ docker compose -f infra/compose/compose.yml ps
 curl http://127.0.0.1:${WEB_PORT:-3000}/healthz
 ```
 
-ImageAnalysis worker 是默认服务；NewAPI 关闭时它安全空闲，启用后执行 `up -d --build api image-analysis-worker` 使配置生效。Apple Silicon 默认构建原生 Linux ARM 调试镜像；它不包含只提供 macOS ARM64/Linux x86_64 wheel 的 PaddlePaddle 3.3.1，因此不能用于验证旧本地 Paddle OCR。需要完整 Paddle 路线时，在 macOS 原生进程运行 API/OCR worker，或显式使用 `linux/amd64` 模拟镜像。完整变量说明、NewAPI 容器外部接入、迁移、停止、升级和回滚见 `infra/compose/README.md`。Compose 使用持久卷；未完成备份前不得使用 `down -v`。日志/遥测、自动备份、保留清理器和生产安全默认值仍需补齐。
+ImageAnalysis 和 DataLifecycle worker 是默认服务；NewAPI 关闭时前者安全空闲，后者继续执行到期对象/导出清理。Apple Silicon 原生 Linux ARM 调试镜像不包含 PaddlePaddle 3.3.1；需要旧完整 Paddle 路线时使用 macOS 原生进程或 `linux/amd64` 镜像。完整变量、迁移、备份、恢复验证、停止和回滚见 `infra/compose/README.md`。Compose 使用持久卷；任何时候都不得把 `down -v` 当作备份或正式删除。日志/遥测、定时异机备份、告警和静态加密仍需补齐。
 
 以下命令只运行 ADR-0012 下已经实现的本地完整 OCR synthetic 路线，用于兼容/回滚验证；它不实现 ADR-0015，也不会向云端发送图片。API 与旧 OCR Worker 要共享 Job 状态时，必须显式启用 PostgreSQL Learning/Capture、Job 和结果仓储；Worker 需要五个带构建期 SHA-256 标记的模型目录、PostgreSQL、MinIO 配置：
 
@@ -107,7 +128,7 @@ uv run python scripts/run_ocr_worker.py --watch
 ### staging/production 部署
 
 ```text
-TBD：当前只提供单家庭自托管 Compose；公网暴露、CI/CD、自动备份、监控和多环境发布流程尚未决定。
+TBD：当前提供已验证的单家庭自托管 Compose；公网暴露、CI/CD、定时异机备份、监控和多环境发布流程尚未决定。
 ```
 
 未获用户明确授权不得部署、修改云资源、迁移生产数据或发送外部通知。
@@ -117,7 +138,7 @@ TBD：当前只提供单家庭自托管 Compose；公网暴露、CI/CD、自动�
 1. 验证版本、配置、迁移状态和依赖健康，不打印密钥。
 2. 使用合成监控家庭验证家长登录/改密/退出、孩子账号创建/停用/重置、孩子登录、会话撤销、孩子档案、任务同步和会话开始；确认默认引导凭据和改密前会话不能读取家庭数据。
 3. 验证一次离线作答重连、幂等重复提交和同步冲突路径。
-4. 使用 synthetic 图片验证签名上传、本地脱敏/手动涂抹/用户确认、单 Provider 云视觉结构化、题目校正、临时副本删除、Tutor Schema/Policy 和成本记录；确认 Provider 请求不含原图、MinIO URL、对象键或敏感 OCR 文本。
+4. 使用 synthetic 图片验证 Session 鉴权的 API 有界流式上传、大小/类型/文件头/尺寸/哈希、断连清理、本地脱敏/手动涂抹/用户确认、单 Provider 云视觉结构化、题目校正、临时副本删除、Tutor Schema/Policy 和成本记录；确认 App 不连接 MinIO，Provider 请求不含原图、MinIO URL、对象键或敏感 OCR 文本。
 5. 验证错题/周报追溯、应用内提醒降级和导出/删除测试流程。
 6. 检查授权异常、错误率、延迟、队列、AI 安全/成本、对象删除和备份指标。
 
@@ -150,7 +171,7 @@ TBD：当前只提供单家庭自托管 Compose；公网暴露、CI/CD、自动�
 
 ### AI Schema/安全/成本异常
 
-- 含义：模型输出不符合契约、Tutor Policy 阻断率变化、直接代答或成本超限。
+- 含义：模型输出不符合契约、Tutor Policy 阻断率变化、练习/复习直接代答、错题完整讲解错误或成本超限。
 - 首先检查：Provider/model、Prompt/Policy/Schema 版本、路由、延迟/token/成本和最近开关。
 - 临时缓解：切回已验证版本/低风险模型，收紧提示或暂停 AI；保留任务与手工学习路径。
 - 升级：敏感泄漏、对儿童有害输出或预算失控立即升级产品/安全/技术 Owner。

@@ -203,8 +203,6 @@ class InMemoryCaptureRepository:
                 raise IdempotencyConflictError
             capture = self._as_capture(existing.value)
             current = self._captures[capture.id]
-            if current.status is not CaptureStatus.UPLOAD_PENDING:
-                raise CaptureStateError
             return PendingCaptureUpload(current, self._object_keys[current.id]), True
         capture = Capture(
             id=uuid4(),

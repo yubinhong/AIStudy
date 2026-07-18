@@ -4,7 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
-from typing import TypeVar, cast
+from typing import Protocol, TypeVar, cast
 from uuid import UUID, uuid4
 
 from study_api.domain.models import (
@@ -16,6 +16,7 @@ from study_api.domain.models import (
     DeviceKind,
     DevicePlatform,
     Subject,
+    UpdateChildRequest,
 )
 
 T = TypeVar("T", ChildProfile, Device)
@@ -26,6 +27,36 @@ HOUSEHOLD_B = UUID("00000000-0000-0000-0000-000000000002")
 
 class IdempotencyConflictError(Exception):
     """Raised when a key is reused with a different request payload."""
+
+
+class ProfileRepository(Protocol):
+    """Household-scoped profile and device persistence boundary."""
+
+    def list_children(self, household_id: UUID) -> list[ChildProfile]: ...
+
+    def get_child(self, household_id: UUID, child_id: UUID) -> ChildProfile | None: ...
+
+    def create_child(
+        self, household_id: UUID, request: CreateChildRequest, idempotency_key: str
+    ) -> tuple[ChildProfile, bool]: ...
+
+    def update_child(
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        request: UpdateChildRequest,
+        idempotency_key: str,
+    ) -> tuple[ChildProfile | None, bool]: ...
+
+    def delete_child(
+        self, household_id: UUID, child_id: UUID, idempotency_key: str
+    ) -> tuple[bool, bool]: ...
+
+    def list_devices(self, household_id: UUID) -> list[Device]: ...
+
+    def create_device(
+        self, household_id: UUID, request: CreateDeviceRequest, idempotency_key: str
+    ) -> tuple[Device, bool]: ...
 
 
 @dataclass(frozen=True)
@@ -131,6 +162,34 @@ class InMemoryProfileRepository:
             ),
             self._children,
         )
+
+    def update_child(
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        request: UpdateChildRequest,
+        idempotency_key: str,
+    ) -> tuple[ChildProfile | None, bool]:
+        existing = self.get_child(household_id, child_id)
+        if existing is None:
+            return None, False
+        updated, replayed = self._create(
+            household_id,
+            f"child_update:{child_id}",
+            request.model_dump_json(),
+            idempotency_key,
+            lambda: ChildProfile(
+                id=child_id,
+                household_id=household_id,
+                display_name=request.display_name,
+                grade=request.grade,
+                curriculum_version=request.curriculum_version,
+                subjects=request.subjects,
+                created_at=existing.created_at,
+            ),
+            self._children,
+        )
+        return updated, replayed
 
     def list_devices(self, household_id: UUID) -> list[Device]:
         return sorted(

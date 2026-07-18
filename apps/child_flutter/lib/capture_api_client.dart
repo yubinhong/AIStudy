@@ -1,11 +1,18 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:image_picker/image_picker.dart';
 
 const maxCaptureBytes = 8 * 1000 * 1000;
+
+String _newSessionNonce() {
+  final random = Random.secure();
+  final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+  return bytes.map((value) => value.toRadixString(16).padLeft(2, '0')).join();
+}
 
 enum OcrMode { text, formula }
 
@@ -70,9 +77,10 @@ class CaptureApiClient {
     required String baseUrl,
     required this.householdId,
     required this.childId,
-    required this.sessionId,
+    this.sessionId,
     required this.authorizationToken,
-  }) : _baseUri = Uri.parse(baseUrl) {
+  }) : _baseUri = Uri.parse(baseUrl),
+       _resolvedSessionId = sessionId {
     if (authorizationToken.isEmpty) {
       throw ArgumentError.value(
         authorizationToken,
@@ -85,8 +93,64 @@ class CaptureApiClient {
   final Uri _baseUri;
   final String householdId;
   final String childId;
-  final String sessionId;
+  final String? sessionId;
   final String authorizationToken;
+  String? _resolvedSessionId;
+  String _captureSessionNonce = _newSessionNonce();
+
+  Future<List<Map<String, dynamic>>> listTasks() =>
+      _getJsonList(_path('/households/$householdId/tasks'));
+
+  Future<List<Map<String, dynamic>>> listDueMistakes() => _getJsonList(
+    _path('/households/$householdId/children/$childId/mistakes?due_only=true'),
+  );
+
+  Future<Map<String, dynamic>> reviewMistake(
+    String mistakeId,
+    String outcome, {
+    String? idempotencyKey,
+  }) async {
+    if (!const {'correct', 'needs_review', 'skipped'}.contains(outcome)) {
+      throw const CaptureApiException('复习结果不合法。');
+    }
+    return _postJson(
+      _path(
+        '/households/$householdId/children/$childId/mistakes/$mistakeId/review',
+      ),
+      headers: {
+        'Idempotency-Key': idempotencyKey ?? 'review-$mistakeId-$outcome',
+      },
+      body: {'outcome': outcome},
+      acceptedStatuses: const {200},
+    );
+  }
+
+  Future<void> prepareTaskSession(Map<String, dynamic> task) async {
+    final taskId = _string(task['id']);
+    final status = _string(task['status']);
+    if (status == 'in_progress') {
+      try {
+        final active = await _getJson(
+          _path('/households/$householdId/tasks/$taskId/active-session'),
+        );
+        _resolvedSessionId = _string(active['id']);
+        return;
+      } on CaptureApiException catch (error) {
+        if (error.statusCode != HttpStatus.notFound) rethrow;
+      }
+    }
+    if (status != 'assigned') {
+      throw const CaptureApiException('这个任务已经结束，请选择其他任务。');
+    }
+    final version = _int(task['version']);
+    final session = await _postJson(
+      _path('/households/$householdId/tasks/$taskId/sessions'),
+      headers: {'Idempotency-Key': 'start-task-$taskId-v$version'},
+      body: {'expected_task_version': version},
+      acceptedStatuses: const {200, 201},
+    );
+    _resolvedSessionId = _string(session['id']);
+  }
 
   Future<CaptureUploadReceipt> uploadAndEnqueue(
     XFile image, {
@@ -105,33 +169,16 @@ class CaptureApiClient {
     final mediaType = _mediaTypeFor(bytes);
     final contentSha256 = sha256.convert(bytes).toString();
     final uploadKey = 'capture-upload-${contentSha256.substring(0, 32)}';
+    final activeSessionId = await _ensureCaptureSession();
 
-    final pending = await _postJson(
-      _path('/households/$householdId/sessions/$sessionId/capture-uploads'),
-      headers: {'Idempotency-Key': uploadKey},
-      body: {
-        'media_type': mediaType,
-        'byte_size': bytes.length,
-        'content_sha256': contentSha256,
-      },
-      acceptedStatuses: const {200, 201},
+    final confirmedCapture = await _uploadCapture(
+      activeSessionId,
+      bytes,
+      mediaType: mediaType,
+      contentSha256: contentSha256,
+      idempotencyKey: uploadKey,
     );
-    final pendingCapture = _map(pending['capture']);
-    final captureId = _string(pendingCapture['id']);
-    final captureVersion = _int(pendingCapture['version']);
-    final uploadUrl = _string(pending['upload_url']);
-
-    await _putSignedImage(Uri.parse(uploadUrl), mediaType, bytes);
-
-    final confirmed = await _postJson(
-      _path(
-        '/households/$householdId/captures/$captureId/upload-confirmations',
-      ),
-      headers: {'Idempotency-Key': 'capture-confirm-$captureId'},
-      body: {'expected_capture_version': captureVersion},
-      acceptedStatuses: const {200, 201},
-    );
-    final confirmedCapture = _map(confirmed);
+    final captureId = _string(confirmedCapture['id']);
     final confirmedVersion = _int(confirmedCapture['version']);
 
     final job = await _postJson(
@@ -162,33 +209,15 @@ class CaptureApiClient {
     final mediaType = _mediaTypeFor(bytes);
     final contentSha256 = sha256.convert(bytes).toString();
     final uploadKey = 'capture-upload-$contentSha256'.substring(0, 47);
-    final pending = await _postJson(
-      _path('/households/$householdId/sessions/$sessionId/capture-uploads'),
-      headers: {'Idempotency-Key': uploadKey},
-      body: {
-        'media_type': mediaType,
-        'byte_size': bytes.length,
-        'content_sha256': contentSha256,
-      },
-      acceptedStatuses: const {200, 201},
-    );
-    final pendingCapture = _map(pending['capture']);
-    final captureId = _string(pendingCapture['id']);
-    final captureVersion = _int(pendingCapture['version']);
-    await _putSignedImage(
-      Uri.parse(_string(pending['upload_url'])),
-      mediaType,
+    final activeSessionId = await _ensureCaptureSession();
+    final confirmedCapture = await _uploadCapture(
+      activeSessionId,
       bytes,
+      mediaType: mediaType,
+      contentSha256: contentSha256,
+      idempotencyKey: uploadKey,
     );
-    final confirmed = await _postJson(
-      _path(
-        '/households/$householdId/captures/$captureId/upload-confirmations',
-      ),
-      headers: {'Idempotency-Key': 'capture-confirm-$captureId'},
-      body: {'expected_capture_version': captureVersion},
-      acceptedStatuses: const {200, 201},
-    );
-    final confirmedCapture = _map(confirmed);
+    final captureId = _string(confirmedCapture['id']);
     final confirmedVersion = _int(confirmedCapture['version']);
     final job = await _postJson(
       _path('/households/$householdId/captures/$captureId/image-analysis-jobs'),
@@ -214,6 +243,138 @@ class CaptureApiClient {
       imageAnalysisJobId: _string(job['id']),
       imageAnalysisStatus: _string(job['status']),
     );
+  }
+
+  Future<Map<String, dynamic>> getImageAnalysisJob(
+    CaptureUploadReceipt receipt,
+  ) async {
+    final jobId = receipt.imageAnalysisJobId;
+    if (jobId == null || jobId.isEmpty) {
+      throw const CaptureApiException('视觉识别任务不存在，请重新拍题。');
+    }
+    return _getJson(
+      _path(
+        '/households/$householdId/captures/${receipt.captureId}/image-analysis-jobs/$jobId',
+      ),
+    );
+  }
+
+  Future<Map<String, dynamic>> getQuestionExtraction(
+    CaptureUploadReceipt receipt,
+  ) async {
+    final jobId = receipt.imageAnalysisJobId;
+    if (jobId == null || jobId.isEmpty) {
+      throw const CaptureApiException('视觉识别任务不存在，请重新拍题。');
+    }
+    return _getJson(
+      _path(
+        '/households/$householdId/captures/${receipt.captureId}/image-analysis-jobs/$jobId/extraction',
+      ),
+    );
+  }
+
+  Future<Map<String, dynamic>?> waitForQuestionExtraction(
+    CaptureUploadReceipt receipt, {
+    Duration timeout = const Duration(seconds: 60),
+    Duration pollInterval = const Duration(seconds: 2),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      final job = await getImageAnalysisJob(receipt);
+      final status = _string(job['status']);
+      if (status == 'blocked') {
+        final errorCode = job['error_code']?.toString();
+        if (errorCode == 'provider_not_enabled') {
+          throw const CaptureApiException('视觉识别服务尚未启用，请联系家长检查服务配置。');
+        }
+        throw const CaptureApiException('照片未通过安全检查，请重新裁剪或遮挡敏感信息。');
+      }
+      if (status == 'failed') {
+        if (job['error_code'] == 'provider_http_413') {
+          throw const CaptureApiException('照片数据过大，已停止识别；请重新拍摄并只保留题目区域。');
+        }
+        if (job['error_code'] == 'provider_http_402') {
+          throw const CaptureApiException(
+            '视觉识别服务当前不可用，请家长检查 NewAPI 余额或模型额度后重试。',
+          );
+        }
+        if (job['error_code'] == 'provider_timeout' ||
+            job['error_code'] == 'provider_network_error') {
+          throw const CaptureApiException('视觉识别服务连接超时，请检查服务端网络后重试。');
+        }
+        throw const CaptureApiException('题目识别失败，请换一张更清晰的照片重试。');
+      }
+      if (status == 'succeeded') {
+        return getQuestionExtraction(receipt);
+      }
+      await Future<void>.delayed(pollInterval);
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>> verifyQuestionExtraction({
+    required CaptureUploadReceipt receipt,
+    required String questionText,
+    required Map<String, dynamic> extraction,
+  }) {
+    final jobId = receipt.imageAnalysisJobId;
+    if (jobId == null || jobId.isEmpty) {
+      throw const CaptureApiException('视觉识别任务不存在，请重新拍题。');
+    }
+    return _postJson(
+      _path(
+        '/households/$householdId/captures/${receipt.captureId}/image-analysis-jobs/$jobId/extraction/verify',
+      ),
+      headers: {'Idempotency-Key': 'verify-question-$jobId'},
+      body: {
+        'expected_capture_version': receipt.captureVersion,
+        'question_text': questionText,
+        'options': _stringList(extraction['options']),
+        'formulas': _stringList(extraction['formulas']),
+        'has_diagram': extraction['has_diagram'] == true,
+        'has_handwriting': extraction['has_handwriting'] == true,
+        'answer_text': extraction['detected_answer']?.toString(),
+      },
+      acceptedStatuses: const {200, 201},
+    );
+  }
+
+  Future<Map<String, dynamic>> createTutorHint({
+    required String verifiedQuestionId,
+    required int level,
+  }) {
+    if (verifiedQuestionId.isEmpty) {
+      throw const CaptureApiException('已确认题目不存在，请重新拍题。');
+    }
+    if (level < 1 || level > 3) {
+      throw const CaptureApiException('提示级别不正确。');
+    }
+    return _postJson(
+      _path('/households/$householdId/tutor/hints'),
+      headers: {'Idempotency-Key': 'tutor-hint-$verifiedQuestionId-$level'},
+      body: {'verified_question_id': verifiedQuestionId, 'level': level},
+      acceptedStatuses: const {200},
+    );
+  }
+
+  Future<Map<String, dynamic>> completeCurrentSession({
+    required String outcome,
+  }) async {
+    if (!const {'learned', 'needs_review', 'skipped'}.contains(outcome)) {
+      throw const CaptureApiException('学习结果不正确。');
+    }
+    final activeSessionId = await _ensureCaptureSession();
+    final completed = await _postJson(
+      _path('/households/$householdId/sessions/$activeSessionId/completion'),
+      headers: {
+        'Idempotency-Key': 'complete-session-$activeSessionId-$outcome',
+      },
+      body: {'outcome': outcome},
+      acceptedStatuses: const {200},
+    );
+    _resolvedSessionId = null;
+    _captureSessionNonce = _newSessionNonce();
+    return completed;
   }
 
   Future<OcrJobSnapshot> getOcrJob(CaptureUploadReceipt receipt) async {
@@ -297,7 +458,31 @@ class CaptureApiClient {
     );
   }
 
-  Uri _path(String path) => _baseUri.replace(path: path, query: null);
+  Future<String> _ensureCaptureSession() async {
+    final existing = _resolvedSessionId;
+    if (existing != null && existing.isNotEmpty) return existing;
+    final session = await _postJson(
+      _path('/households/$householdId/capture-sessions'),
+      headers: {
+        'Idempotency-Key': 'capture-session-$childId-$_captureSessionNonce',
+      },
+      body: null,
+      acceptedStatuses: const {200, 201},
+    );
+    final resolved = _string(session['id']);
+    _resolvedSessionId = resolved;
+    return resolved;
+  }
+
+  Uri _path(String path) {
+    final parsed = Uri.parse(path);
+    return _baseUri.replace(
+      path: parsed.path,
+      queryParameters: parsed.queryParameters.isEmpty
+          ? null
+          : parsed.queryParameters,
+    );
+  }
 
   Future<Map<String, dynamic>> _postJson(
     Uri uri, {
@@ -365,34 +550,85 @@ class CaptureApiClient {
     }
   }
 
+  Future<List<Map<String, dynamic>>> _getJsonList(Uri uri) async {
+    final client = HttpClient();
+    try {
+      final request = await client.getUrl(uri);
+      _setPrincipalHeaders(request.headers);
+      final response = await request.close();
+      final payload = await response.transform(utf8.decoder).join();
+      if (response.statusCode != HttpStatus.ok) {
+        throw CaptureApiException(
+          '暂时无法读取学习任务。',
+          statusCode: response.statusCode,
+        );
+      }
+      final decoded = jsonDecode(payload);
+      if (decoded is! List) {
+        throw const CaptureApiException('服务端返回了无法识别的结果。');
+      }
+      return decoded
+          .whereType<Map>()
+          .map(Map<String, dynamic>.from)
+          .toList(growable: false);
+    } on CaptureApiException {
+      rethrow;
+    } on SocketException {
+      throw const CaptureApiException('无法连接学习服务，请检查设备网络。');
+    } on FormatException {
+      throw const CaptureApiException('服务端返回了无法识别的结果。');
+    } finally {
+      client.close(force: true);
+    }
+  }
+
   void _setPrincipalHeaders(HttpHeaders headers) {
     headers.set(HttpHeaders.authorizationHeader, 'Bearer $authorizationToken');
   }
 
-  Future<void> _putSignedImage(
-    Uri uri,
-    String mediaType,
-    List<int> bytes,
-  ) async {
+  Future<Map<String, dynamic>> _uploadCapture(
+    String activeSessionId,
+    Uint8List bytes, {
+    required String mediaType,
+    required String contentSha256,
+    required String idempotencyKey,
+  }) async {
     final client = HttpClient();
     try {
-      final request = await client.putUrl(uri);
+      final request = await client.postUrl(
+        _path(
+          '/households/$householdId/sessions/$activeSessionId/captures/upload',
+        ),
+      );
+      _setPrincipalHeaders(request.headers);
       request.headers
-        ..set(HttpHeaders.contentTypeHeader, mediaType)
+        ..set(HttpHeaders.contentTypeHeader, 'application/octet-stream')
+        ..set('X-Capture-Media-Type', mediaType)
+        ..set('X-Capture-Byte-Size', bytes.length.toString())
+        ..set('X-Capture-Content-SHA256', contentSha256)
+        ..set('Idempotency-Key', idempotencyKey)
         ..contentLength = bytes.length;
       request.add(bytes);
       final response = await request.close();
-      await response.drain<void>();
-      if (response.statusCode < 200 || response.statusCode >= 300) {
+      final payload = await response.transform(utf8.decoder).join();
+      if (response.statusCode != HttpStatus.ok &&
+          response.statusCode != HttpStatus.created) {
+        if (response.statusCode == HttpStatus.unprocessableEntity) {
+          throw const CaptureApiException('题目照片未通过服务端图片校验，请重新拍摄。');
+        }
         throw CaptureApiException(
           '题目照片上传失败，请重试。',
           statusCode: response.statusCode,
         );
       }
+      final decoded = jsonDecode(payload);
+      return _map(decoded);
     } on CaptureApiException {
       rethrow;
     } on SocketException {
-      throw const CaptureApiException('无法连接图片存储，请检查设备网络。');
+      throw const CaptureApiException('无法连接学习服务，请检查设备网络。');
+    } on FormatException {
+      throw const CaptureApiException('服务端返回了无法识别的结果。');
     } finally {
       client.close(force: true);
     }
@@ -432,6 +668,14 @@ class CaptureApiClient {
   static int _int(Object? value) {
     if (value is int) return value;
     throw const CaptureApiException('服务端返回了无法识别的结果。');
+  }
+
+  static List<String> _stringList(Object? value) {
+    if (value == null) return const <String>[];
+    if (value is! List) {
+      throw const CaptureApiException('服务端返回了无法识别的结果。');
+    }
+    return value.map((item) => item.toString()).toList(growable: false);
   }
 
   static OcrMode? _ocrMode(Object? value) {

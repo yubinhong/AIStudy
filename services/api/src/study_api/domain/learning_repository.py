@@ -13,18 +13,20 @@ from uuid import UUID, uuid4
 from study_api.domain.models import (
     Attempt,
     AuditEvent,
+    CompleteStudySessionRequest,
     CreateTaskRequest,
     RecordAttemptRequest,
     StartStudySessionRequest,
     StudySession,
     StudySessionStatus,
     StudyTask,
+    Subject,
     SyncBatchRequest,
     SyncBatchResult,
     SyncEventResult,
     TaskStatus,
 )
-from study_api.domain.repository import IdempotencyConflictError, InMemoryProfileRepository
+from study_api.domain.repository import IdempotencyConflictError, ProfileRepository
 
 
 class ResourceVersionConflictError(Exception):
@@ -33,6 +35,10 @@ class ResourceVersionConflictError(Exception):
 
 class ChildAssignmentError(Exception):
     """Raised when a child principal is not assigned to a task or session."""
+
+
+class SessionAlreadyCompletedError(Exception):
+    """Raised when a final session is completed again with another command."""
 
 
 @dataclass(frozen=True)
@@ -44,7 +50,7 @@ class StoredResult:
 class InMemoryLearningRepository:
     """Local/CI reference semantics, not the PostgreSQL source of truth."""
 
-    def __init__(self, profiles: InMemoryProfileRepository) -> None:
+    def __init__(self, profiles: ProfileRepository) -> None:
         self._profiles = profiles
         self._tasks: dict[UUID, StudyTask] = {}
         self._sessions: dict[UUID, StudySession] = {}
@@ -140,9 +146,72 @@ class InMemoryLearningRepository:
         self._audit(household_id, "study_session_started", session.id)
         return session, False
 
+    def create_capture_session(
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        idempotency_key: str,
+    ) -> tuple[StudySession, bool]:
+        """Create one child-owned ad-hoc math task and active capture session.
+
+        The operation is deliberately atomic from the caller's perspective and
+        idempotent so a mobile retry cannot create duplicate daily sessions.
+        """
+
+        if self._profiles.get_child(household_id, child_id) is None:
+            raise LookupError
+        payload = str(child_id)
+        key = (household_id, f"create_capture_session:{child_id}", idempotency_key)
+        existing = self._idempotency.get(key)
+        if existing is not None:
+            if existing.fingerprint != self._fingerprint(payload):
+                raise IdempotencyConflictError
+            return self._as_session(existing.value), True
+
+        now = self._now()
+        task = StudyTask(
+            id=uuid4(),
+            household_id=household_id,
+            child_id=child_id,
+            title="即时拍题",
+            subject=Subject.MATH,
+            scheduled_for=now.date(),
+            status=TaskStatus.IN_PROGRESS,
+            version=2,
+            created_at=now,
+        )
+        session = StudySession(
+            id=uuid4(),
+            household_id=household_id,
+            child_id=child_id,
+            task_id=task.id,
+            task_version=task.version,
+            status=StudySessionStatus.ACTIVE,
+            started_at=now,
+        )
+        self._tasks[task.id] = task
+        self._sessions[session.id] = session
+        self._idempotency[key] = StoredResult(self._fingerprint(payload), session)
+        self._audit(household_id, "capture_task_created", task.id)
+        self._audit(household_id, "capture_session_started", session.id)
+        return session, False
+
     def get_session(self, household_id: UUID, session_id: UUID) -> StudySession | None:
         session = self._sessions.get(session_id)
         return session if session is not None and session.household_id == household_id else None
+
+    def find_active_session(
+        self, household_id: UUID, task_id: UUID, child_id: UUID
+    ) -> StudySession | None:
+        candidates = (
+            session
+            for session in self._sessions.values()
+            if session.household_id == household_id
+            and session.task_id == task_id
+            and session.child_id == child_id
+            and session.status is StudySessionStatus.ACTIVE
+        )
+        return max(candidates, key=lambda session: (session.started_at, session.id), default=None)
 
     def record_attempt(
         self,
@@ -164,6 +233,47 @@ class InMemoryLearningRepository:
             request.answer_summary,
             idempotency_key,
         )
+
+    def complete_session(
+        self,
+        household_id: UUID,
+        session_id: UUID,
+        child_id: UUID,
+        request: CompleteStudySessionRequest,
+        idempotency_key: str,
+    ) -> tuple[StudySession, bool]:
+        session = self.get_session(household_id, session_id)
+        if session is None:
+            raise LookupError
+        if session.child_id != child_id:
+            raise ChildAssignmentError
+        payload = request.model_dump_json()
+        key = (household_id, f"complete_session:{session_id}", idempotency_key)
+        existing = self._idempotency.get(key)
+        if existing is not None:
+            if existing.fingerprint != self._fingerprint(payload):
+                raise IdempotencyConflictError
+            return self._as_session(existing.value), True
+        if session.status is StudySessionStatus.COMPLETED:
+            raise SessionAlreadyCompletedError
+        completed = session.model_copy(
+            update={
+                "status": StudySessionStatus.COMPLETED,
+                "completed_at": self._now(),
+                "outcome": request.outcome,
+            }
+        )
+        task = self._tasks[session.task_id]
+        task_status = (
+            TaskStatus.SKIPPED if request.outcome.value == "skipped" else TaskStatus.COMPLETED
+        )
+        self._tasks[task.id] = task.model_copy(
+            update={"status": task_status, "version": task.version + 1}
+        )
+        self._sessions[session.id] = completed
+        self._idempotency[key] = StoredResult(self._fingerprint(payload), completed)
+        self._audit(household_id, "study_session_completed", session.id)
+        return completed, False
 
     def sync_attempts(
         self, household_id: UUID, child_id: UUID, request: SyncBatchRequest

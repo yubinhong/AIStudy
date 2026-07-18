@@ -26,10 +26,14 @@ void main() {
             usedBaseUrl = baseUrl;
             expect(username, 'child-a');
             expect(password, 'child-password');
-            return 'configured-session';
+            return const ChildLoginResult(
+              token: 'configured-session',
+              mustChangePassword: false,
+            );
           },
-          onLoggedIn: (baseUrl, token) {
+          onLoggedIn: (baseUrl, token, mustChangePassword) {
             expect(baseUrl, 'http://192.168.1.4:8000');
+            expect(mustChangePassword, isFalse);
             savedToken = token;
           },
         ),
@@ -49,6 +53,66 @@ void main() {
     expect(store.serverBaseUrl, usedBaseUrl);
     expect(store.sessionToken, 'configured-session');
     expect(savedToken, 'configured-session');
+  });
+
+  testWidgets('restores a pending session into the first password screen', (
+    tester,
+  ) async {
+    final store = _MemoryChildAuthStore(
+      serverBaseUrl: 'http://192.168.1.4:8000',
+      sessionToken: 'pending-session',
+    );
+    await tester.pumpWidget(
+      StudyChildApp(
+        authStore: store,
+        sessionStatusAction: (baseUrl, token) async {
+          expect(baseUrl, 'http://192.168.1.4:8000');
+          expect(token, 'pending-session');
+          return true;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('先设置自己的密码'), findsOneWidget);
+    expect(find.text('API 尚未连接'), findsNothing);
+  });
+
+  testWidgets('changes the initial password and stores the rotated session', (
+    tester,
+  ) async {
+    final store = _MemoryChildAuthStore(sessionToken: 'pending-session');
+    String? rotatedToken;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChildPasswordChangeScreen(
+          baseUrl: 'http://192.168.1.4:8000',
+          token: 'pending-session',
+          store: store,
+          changeAction: (baseUrl, token, currentPassword, newPassword) async {
+            expect(baseUrl, 'http://192.168.1.4:8000');
+            expect(token, 'pending-session');
+            expect(currentPassword, 'initial-password');
+            expect(newPassword, 'new-child-password');
+            return 'rotated-session';
+          },
+          onChanged: (token) => rotatedToken = token,
+          onCancel: () {},
+        ),
+      ),
+    );
+
+    await tester.enterText(find.bySemanticsLabel('当前初始密码'), 'initial-password');
+    await tester.enterText(find.bySemanticsLabel('新密码'), 'new-child-password');
+    await tester.enterText(
+      find.bySemanticsLabel('再次输入新密码'),
+      'new-child-password',
+    );
+    await tester.tap(find.text('保存并进入学习桌'));
+    await tester.pumpAndSettle();
+
+    expect(rotatedToken, 'rotated-session');
+    expect(store.sessionToken, 'rotated-session');
   });
 
   testWidgets('shows a finite startup transition while the profile loads', (
@@ -102,6 +166,27 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Synthetic Child A'), findsOneWidget);
+  });
+
+  testWidgets('compact learning desk fits a portrait phone width', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      StudyChildApp(
+        loadChildren: () async => [
+          {'display_name': '小汤圆', 'curriculum_version': 'math-demo-2026'},
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('今天的数学小任务'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('opens OCR confirmation from the learning desk', (tester) async {
@@ -208,8 +293,13 @@ void main() {
 }
 
 class _MemoryChildAuthStore implements ChildAuthStore {
+  _MemoryChildAuthStore({
+    this.serverBaseUrl,
+    this.sessionToken = 'old-server-session',
+  });
+
   String? serverBaseUrl;
-  String? sessionToken = 'old-server-session';
+  String? sessionToken;
 
   @override
   Future<void> clearSessionToken() async => sessionToken = null;

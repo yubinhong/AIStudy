@@ -35,9 +35,6 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in infra/compose/.env}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in infra/compose/.env}
-    ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio-data:/data
     healthcheck:
@@ -67,12 +64,15 @@ services:
       - .env
     environment:
       OBJECT_STORAGE_ENDPOINT_URL: http://minio:9000
+      STUDY_API_PROFILE_REPOSITORY: postgres
       STUDY_API_LEARNING_REPOSITORY: postgres
       STUDY_API_OCR_QUEUE: postgres
       STUDY_API_OCR_RESULTS: postgres
       STUDY_API_IMAGE_ANALYSIS_REPOSITORY: postgres
       STUDY_API_AUTH_REPOSITORY: postgres
       STUDY_COOKIE_SECURE: ${STUDY_COOKIE_SECURE:-false}
+      STUDY_CAPTURE_UPLOAD_CONCURRENCY: ${STUDY_CAPTURE_UPLOAD_CONCURRENCY:-4}
+      STUDY_CAPTURE_UPLOAD_TIMEOUT_SECONDS: ${STUDY_CAPTURE_UPLOAD_TIMEOUT_SECONDS:-120}
       PADDLE_MODEL_ROOT: /opt/study/models
     ports:
       - "${API_PORT:-8000}:8000"
@@ -123,6 +123,23 @@ services:
       PADDLE_MODEL_ROOT: /opt/study/models
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  data-lifecycle-worker:
+    build:
+      context: ../../services/api
+      dockerfile: Dockerfile
+    command: ["python", "scripts/run_data_lifecycle_worker.py", "--watch"]
+    env_file:
+      - .env
+    environment:
+      OBJECT_STORAGE_ENDPOINT_URL: http://minio:9000
+      DATA_LIFECYCLE_POLL_INTERVAL_SECONDS: ${DATA_LIFECYCLE_POLL_INTERVAL_SECONDS:-300}
     depends_on:
       migrate:
         condition: service_completed_successfully

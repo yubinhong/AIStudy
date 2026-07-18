@@ -2,9 +2,9 @@
 
 ## 文档信息
 
-- 状态：`ACTIVE`（产品与目标架构已形成 v1.0 设计；P0 骨架、合成 Learning/Capture 切片和 ADR-0001～0011、0013～0017 已完成/接受；ADR-0012 已被替代；TASK-0006 代码闭环完成，PLAN-0007 认证实现进行中）
+- 状态：`ACTIVE`（基础闭环和 Ubuntu 自用部署已完成；PLAN-0012 已成对部署；PLAN-0013 API/Web 首版已实施；PLAN-0014 已开始错题/复习最小闭环，教材/三入口/建议仍在后续阶段）
 - Owner：`TBD（项目发起人确认）`
-- 最后更新：`2026-07-16`
+- 最后更新：`2026-07-18`
 - 项目仓库：本地 Git 仓库 `/Users/ybh/PycharmProjects/study`；远程地址 `TBD（项目 Owner 确认）`
 - 设计基线：`家庭AI学习助手_架构设计_v1.0.docx`
 
@@ -12,7 +12,7 @@
 
 ### 一句话说明
 
-面向小学阶段家庭、可复用现有 iPad、Windows 和手机的开源 AI 学习助手，先打通“任务 → 作答 → 分步提示 → 错题沉淀 → 复习/家长反馈”的学习闭环。
+面向小学阶段家庭、可复用现有 iPad、Windows 和手机的开源 AI 学习助手；以数学为首科，围绕“家庭教材范围 → 错题讲解 → 错题沉淀 → 到期复习 → 今日任务/家长反馈”形成可追溯闭环。
 
 ### 要解决的问题
 
@@ -38,7 +38,8 @@
 ### 项目目标
 
 - 在四类现有设备上完成清晰分工：iPad 为孩子主端，Windows Web/PWA 负责重输入与管理，两部手机作为家长伴随端或临时拍题端。
-- 首版聚焦小学数学，实现每日任务、学习会话、单题拍照、本地隐私脱敏、云端视觉结构化、1～3 级分步提示、自动错题本、复习入口和可追溯家长周报。
+- 首版聚焦小学数学：家长为孩子发布当前年级/学期/教材知识范围；孩子端提供错题讲解、复习错题、今日任务三个入口；错题讲解结合确认题目、已确认作答状态和已发布知识依据，有作答针对错步、确认空白从头讲，并形成正式错题与复习计划。
+- 今日任务区分家长安排、到期复习和系统建议；系统建议默认由家长审核，首批不自动下发 AI 新编题。
 - 采用模块化单体和 OpenAPI 契约起步，使客户端共享业务契约，并保留后续拆服务和科目插件化的空间。
 - 支持弱网/离线队列、模型可替换、过程可审计、成本可观测和儿童数据最小化。
 - 保持开源和可自托管，避免业务逻辑锁死在单一云、模型或专用硬件中。
@@ -54,10 +55,10 @@
 
 | 指标 | 基线 | 目标 | 时间窗口 | 数据来源 |
 | --- | --- | --- | --- | --- |
-| 核心学习闭环 | 尚无可运行产品 | “任务 → 作答 → 分步提示 → 错题 → 周报”核心 E2E 100% 通过 | P1 发布前 | E2E 与验收记录 |
+| 核心学习闭环 | 任务/拍题/题目确认/最小 Tutor/周报基础已运行 | “教材发布 → 错题证据 → 完整讲解 → 错题本 → 到期复习 → 今日任务”核心 E2E 100% 通过 | P1 发布前 | E2E、固定数学 eval 与验收记录 |
 | 多端覆盖 | 仅有目标设计 | iPad、Windows Web、iPhone、华为 Android 均完成职责内的弱网、横竖屏和权限回归 | P1 发布前 | 设备测试矩阵 |
 | 离线可靠性 | 尚无实现 | 断网期间会话、Attempt 和上传队列不丢失，恢复联网后可幂等同步 | P1 发布前 | 离线/同步集成测试与审计事件 |
-| AI 可控性 | 尚无实现 | 所有辅导响应满足固定 JSON Schema，记录模型、提示/策略版本、延迟和成本；低置信度结果进入人工校正 | P1 发布前及持续监控 | AI eval、结构化日志、成本指标 |
+| AI 可控性 | VerifiedQuestion/最小 Tutor Schema 已实现 | 所有辅导响应满足模式化 JSON Schema，记录模型、Prompt/Policy/Snapshot、来源、校验、延迟和成本；低置信/错版/超纲进入人工校正 | P1 发布前及持续监控 | AI eval、来源对账、结构化日志、成本指标 |
 | 家长可理解性 | 尚无实现 | 每周报告可追溯到学习会话、错因和知识点，并给出复习建议及异常说明 | P1 验收周 | 周报验收样例与数据追溯测试 |
 | 儿童数据治理 | 尚无实现 | 图片短期保存策略、家庭数据导出和删除流程均有自动化或演练记录 | P1 发布前 | 安全测试、删除/导出演练 |
 
@@ -66,9 +67,10 @@
 ### 当前范围（P0 + P1）
 
 - 仓库与 CI 基础、OpenAPI 契约、家庭账号/孩子账号/设备身份模型和可观测性。
-- 每日任务、学习会话、数学单题拍照与人工裁切、本地 PrivacySanitizer、脱敏预览/手动涂抹、单一获批云视觉 Provider 结构化与人工校正。
-- Tutor Policy 约束下的渐进式提问、提示和讲解总结。
-- 错因标签、知识点映射、错题沉淀、复习入口和家长周报。
+- 每个孩子的数学年级/学期/教材版本、家庭材料导入、章节/知识点来源审核和版本化发布。
+- 数学学科页的错题讲解、复习错题、今日任务三个入口；数学单题拍照与人工裁切、本地 PrivacySanitizer、脱敏预览/手动涂抹、单一获批云视觉 Provider 结构化与人工校正。
+- Tutor Policy 约束下的练习/复习分级提示，以及已确认 `worked/blank_confirmed` 后匹配作答状态的完整错题讲解、来源引用和确定性校验。
+- MistakeRecord、错误原因、ReviewSchedule、逐题复习、可解释任务建议和家长周报。
 - iPad/Android Flutter 子端、响应式 Web/PWA、端侧 SQLite 和离线上传队列。
 - 模型 Provider Adapter、对象存储、关系数据、缓存/队列和审计事件。
 
@@ -90,13 +92,13 @@
 
 | 层 | 选型 | 版本 | 说明 |
 | --- | --- | --- | --- |
-| 孩子/移动端 | Flutter（iOS/Android） | Flutter stable `3.44.6`（`ADR-0007` Accepted）；`image_picker 1.2.3`、`crypto 3.0.7`、`flutter_secure_storage 9.2.4` | iPad 为孩子主端；Android 不依赖 Google Play Services；首页内容在 1.2 秒有限启动过渡后方并行加载；相机/相册选择后进入本地脱敏预览，可手动涂抹并确认生成脱敏 PNG/哈希后再上传；登录前可配置并持久化服务端地址，地址变更清除旧会话；账号密码登录令牌保存在 Keychain/Android Keystore，真实设备重启验证待执行 |
-| Web/PWA | Next.js + TypeScript | Next.js `16.2.10`（`ADR-0007` Accepted） | 家长后台和 Windows 首版入口；已实现登录、强制首次改密、退出以及孩子账号创建/停用/重置 |
-| API/Worker | Python + FastAPI + 异步 Worker | Python `3.12.x`、FastAPI `0.136.3`、boto3 `1.43.46`、Pillow `12.3.0`、PaddleOCR `3.7.0`、PaddlePaddle CPU `3.3.1` | 模块化单体；当前 Capture 已实现被 ADR-0015 替代的本地完整 OCR 路线及 MinIO/授权/人工确认/生命周期安全基础，并新增上传对象实际 SHA-256 核验、Provider-neutral PrivacySanitizer 核心、OCR/规则信号、receipt-only ImageAnalysis ledger/API、offline Tutor Policy API、五份 Schema 和 synthetic eval。Paddle 在 macOS ARM64 与 Linux x86_64 安装；Linux ARM64 调试镜像因锁定版本无 aarch64 wheel 而不包含该回滚能力。目标仍为本地检测 + 用户确认 + 单一获批云视觉解析；真实视觉检测器、云视觉/Tutor Provider、临时副本删除与云视觉固定 eval 尚未实现。现有 Paddle 版本是当前代码事实，不代表后续轻量隐私模型已选定 |
-| 云端视觉/推理 | Provider Adapter + 固定 JSON Schema / Tutor Policy | 自用 NewAPI URL/key/model 通过环境注入；默认关闭 | 图片解析与 Tutor 分离；服务端只向单一自托管 Provider 发送用户确认的脱敏副本；NewAPI Adapter、ImageAnalysis worker 和 VerifiedQuestion 人工确认持久化已实现，实际实例联调仍待执行 |
-| 业务数据 | PostgreSQL + pgvector | `TBD（P0 锁定）` | PostgreSQL 是业务事实来源；目标同时保存 Account、Argon2id 密码哈希和 AuthSession 摘要；pgvector 仅用于知识检索，不替代关系数据 |
+| 孩子/移动端 | Flutter（iOS/Android） | Flutter stable `3.44.6`（`ADR-0007` Accepted）；`image_picker 1.2.3`、`crypto 3.0.7`、`flutter_secure_storage 9.2.4`、`sqflite 2.4.3` | iPad 为孩子主端；现有任务/拍题/提示和安全会话已实现。目标增加数学三入口、题目+作答区拍摄引导、作答状态确认、错题本和到期复习；当前尚未实现 |
+| Web/PWA | Next.js + TypeScript | Next.js `16.2.10`（`ADR-0007` Accepted） | 家长后台和 Windows 首版入口；登录/任务/周报已实现。目标增加统一孩子管理、每孩子课程范围、教材导入审核发布和任务建议审批 |
+| API/Worker | Python + FastAPI + 异步 Worker | Python `3.12.x`、FastAPI `0.136.3`、boto3 `1.43.46`、Pillow `12.3.0`、PaddleOCR `3.7.0`、PaddlePaddle CPU `3.3.1` | 模块化单体；现有 Profile/Learning/Capture/Identity/VerifiedQuestion/TutorTurn/Report/Export 已持久化。目标新增 Curriculum/Material/Mistake/Review/Recommendation 模块与 worker；具体 PDF 处理依赖须单独评审 |
+| 云端视觉/推理 | Provider Adapter + 固定 JSON Schema / Tutor Policy | 自用 NewAPI URL/key/model 通过环境注入 | 图片解析与 Tutor 分离；NewAPI synthetic 大图已完成真实实例联调，服务端只保存未确认 Extraction，人工确认后才生成 VerifiedQuestion；Tutor 仅按服务端 ID 读取并追加 TutorTurn，默认使用 0 元离线策略 |
+| 业务数据 | PostgreSQL + pgvector | PostgreSQL `16.10`（Compose） | PostgreSQL 是业务事实来源；现有保存 Profile/Learning/Capture/Identity/Tutor/Report/Mistake/Review。目标继续增加 CurriculumSnapshot、来源证据和 TaskRecommendation；pgvector 只做已发布知识检索，不替代关系/审批事实 |
 | 缓存/队列 | Redis | `TBD（P0 锁定）` | 不作为长期业务事实来源 |
-| 文件 | 本地 MinIO / S3 兼容 Adapter | MinIO `RELEASE.2025-09-07T16-13-09Z`；boto3 `1.43.46` | 私有 Bucket、短期预签名 URL；保留策略和清理器见 ADR-0010/0011 |
+| 文件 | 本地 MinIO / S3 兼容 Adapter | MinIO `RELEASE.2025-09-07T16-13-09Z`；boto3 `1.43.46` | 私有 Bucket；API/worker 由内部地址有界流式写入且 MinIO 不暴露 LAN，见 ADR-0018/0011。Ubuntu 已完成成对迁移 |
 | 端侧数据 | SQLite | 随 Flutter 依赖锁定 | 缓存今日任务、学习会话和上传队列 |
 | 交付/可观测性 | Docker Compose、CI、OpenTelemetry | `TBD（P0 锁定）` | CI 覆盖 lint、test、契约测试与 AI eval；模型和 Prompt/Policy 版本化 |
 
@@ -108,23 +110,31 @@
 | staging | 集成、设备、AI 评测和迁移/恢复验证 | `TBD（P0/P1 建立）` | sanitized/synthetic | CI 产物，禁止从个人工作区直接发布 |
 | production | 家庭正式使用 | `TBD（发布方案和 RUNBOOK 批准后建立）` | restricted | 仅允许已通过发布门槛的版本化产物 |
 
-当前事实：Git 位于 `master`；P0 目标目录、入口、最小测试、Compose 配置、CI、三类锁文件、Profile/Device 合成 API 以及 Learning/Capture/Account Session `0.6.0` 合同已创建。Learning/Capture/OCR/ImageAnalysis/Account/AuthSession PostgreSQL migration/事务仓储、私有 MinIO、PrivacySanitizer、ImageAnalysis queued worker、QuestionExtraction/VerifiedQuestion、NewAPI Adapter、账号密码/Argon2id/可撤销会话、Web/Flutter 登录和 Compose 是已实现的代码事实；HMAC、Demo Header、Web 免登录和静态 Token 路径已删除，Flutter 支持登录前服务端地址配置。真实视觉检测器、实际 NewAPI 成功联调、SQLite 落盘、生产 Profile/数据库与备份级联仍未完成。不得把未确认提取或环境验收项描述成已实现。
+当前事实：Git 位于 `master`；OpenAPI `0.8.0`、迁移 `0017_mistake_review`、三类锁文件和 Compose 已创建。PostgreSQL 是 Profile/Learning/Capture/Identity/Tutor/Report/Export/Mistake/Review 事实源；Flutter SQLite 保存按账号作用域隔离的待同步 Attempt；MinIO 私有对象、NewAPI Adapter、账号密码会话和 Web/Flutter 生产路径均已落代码。Ubuntu 已部署流式上传、孩子管理聚合和错题/复习最小闭环并完成 PostgreSQL/MinIO 恢复演练；synthetic Provider 请求已到达 NewAPI 但当前返回 HTTP `402`，真实视觉检测器和最终设备回归仍未完成。
+
+上传架构修订（2026-07-17）：项目 Owner 接受 ADR-0018，以 Session 鉴权的 API 有界流式上传替代 ADR-0010/0014 的 App 预签名直传。目标合同合并申请/PUT/确认并只返回已确认 Capture，移除 `upload_url`、`OBJECT_STORAGE_PUBLIC_ENDPOINT_URL` 和 MinIO `9000` LAN 暴露。API/Flutter/OpenAPI/Compose 已迁移，Ubuntu 已成对部署；最终设备回归和 Provider 额度恢复后的真实识别由 TASK-0009 跟踪。
+
+数据持久化修订（2026-07-17～18）：Profile/Device 已从进程内 synthetic 仓储迁移到 PostgreSQL；新增/编辑/删除和设备登记使用通用幂等凭据与审计，孩子账号以 `(child_id, household_id)` 复合外键绑定档案；`0017` 新增 Mistake/Review 事实和导出覆盖。Ubuntu 已前滚到 `0017` 并通过重启、恢复 smoke 和 API 健康检查；华为既有登录验证有效，最终相机回归待设备可用。
 
 现状修订（2026-07-15）：上一段中的“PrivacySanitization receipt/新 ImageAnalysis 接口未实现”是历史快照；当前已完成 `0008_image_analysis_job` receipt/API、`0009_question_extraction` 提取结果持久化、无 Provider `offline-tutor-policy.v1`、NewAPI Adapter 和可开关 ImageAnalysis worker。Web 家长学习概览和 synthetic eval 已通过质量门槛。
 
-现状修订（2026-07-16）：`0010_verified_question` 已把人工确认输入持久化为 Tutor-safe VerifiedQuestion，worker 已覆盖派生对象成功/失败清理；`0011_account_password_session` 已实现 Argon2id 账号密码、可撤销会话、首次改密、Web/Flutter 登录和 Compose password 默认。真实 NewAPI、真实视觉检测器、SQLite、完整 Compose、备份恢复和真实设备认证生命周期仍待执行。
+现状修订（2026-07-17）：`0013`～`0015` 已新增可信 TutorTurn、学习会话完成/复习、周报和 24 小时孩子数据导出；Flutter SQLite 离线队列、完整 Compose、真实 NewAPI synthetic 和备份恢复已验证。真实视觉检测器、浏览器 E2E 和完整设备生命周期仍待执行。
 
-认证实现修订（2026-07-16）：项目 Owner 接受 ADR-0017，并在 TASK-0007 明确只保留用户名/密码+可撤销会话。API 已实现 Argon2id、首次改密阻断、失败锁定、审计、Web Cookie/CSRF、Flutter 安全存储/登录前服务端地址配置和孩子账号管理；HMAC/Demo/免登录路径已删除。迁移为 `0011_account_password_session`。实际浏览器 E2E、iPad 生命周期和备份恢复仍未执行。
+认证实现修订（2026-07-17）：项目 Owner 接受 ADR-0017，并在 TASK-0007 明确只保留用户名/密码+可撤销会话。API 已实现 Argon2id、首次改密阻断、失败锁定、审计、Web Cookie/CSRF、Flutter 安全存储/登录前服务端地址配置和孩子账号管理；HMAC/Demo/免登录路径已删除。迁移为 `0011_account_password_session`。备份恢复随后已完成；浏览器 E2E 和 iPad 完整生命周期仍未执行。
+
+Web 多孩子体验修订（2026-07-18）：项目 Owner 要求创建孩子时把档案和登录账号作为一个流程，并在首页选择当前孩子。PLAN-0013/Proposed ADR-0019 已由 API/Web 首版实现：事务聚合创建、列表、删除和 `?child=` 作用域选择均保留 `Account`/`ChildProfile` 物理分表；浏览器 E2E 和双孩子实体验收仍待执行。
+
+数学产品主线修订（2026-07-18）：项目 Owner 接受 ADR-0020/PLAN-0014，以每孩子已发布教材范围为知识依据，将孩子端调整为“数学 → 错题讲解 / 复习错题 / 今日任务”。已先实现 MistakeRecord/ReviewSchedule 最小 API、迁移、Web/Flutter 调用和导出覆盖；拍题四态作答、教材 grounding、三入口和任务建议仍由 TODO-016～019 分阶段实现。
 
 ## 8. 仓库与服务边界
 
-以下为 v1.0 设计确定的结构；P0 目录已创建，但除健康端点和空壳入口外的领域能力仍未实现。
+以下为 v1.0 设计确定的结构；P0/P1 核心领域已实现到单家庭自用闭环，状态以各表格和 `TESTING.md` 为准。
 
 | 模块/服务 | 目标路径 | 责任 | Owner | 依赖 |
 | --- | --- | --- | --- | --- |
-| 孩子端 | `apps/child_flutter` | 学习会话、拍题/相册选择、渐进提示交互、SQLite 与离线队列 | `TBD` | OpenAPI SDK、`image_picker`、端侧存储 |
-| Web/PWA | `apps/web` | 家长端、内容维护、运营与 Windows 首版体验 | `TBD` | OpenAPI SDK、Web 认证 |
-| 模块化 API | `services/api` | 身份、档案、计划、任务、捕获、本地隐私脱敏、云视觉解析、辅导、错题、掌握度、报告和通知 | `TBD` | PostgreSQL、Redis、对象存储、AI Provider |
+| 孩子端 | `apps/child_flutter` | 学科/数学三入口、错题讲解、到期复习、今日任务、拍题、SQLite 与待同步 | `TBD` | OpenAPI SDK、`image_picker`、端侧存储；三入口/正式复习尚未实现 |
+| Web/PWA | `apps/web` | 家长端、统一孩子管理、多孩子工作台、教材审核发布、任务建议审批与 Windows 首版体验 | `TBD` | OpenAPI SDK、Web 认证；聚合创建/切换/教材与建议尚未实现 |
+| 模块化 API | `services/api` | 身份、档案、课程/材料、任务/推荐、捕获/视觉、分模式辅导、错题/复习、报告和通知 | `TBD` | PostgreSQL、Redis、对象存储、AI Provider；Curriculum/Mistake/Review/Recommendation 尚未实现 |
 | 跨端契约 | `packages/contracts` | OpenAPI、JSON Schema 和生成 SDK 的唯一契约来源 | `TBD` | API 与所有客户端 |
 | AI 评测 | `evals` | 固定评测集，比较质量、安全、成本和延迟 | `TBD` | 模型/Prompt/Policy 版本 |
 | 本地基础设施 | `infra/compose` | PostgreSQL、Redis、MinIO、API、家长 Web 和 worker 等本地编排 | `TBD` | Docker Compose |
@@ -139,7 +149,8 @@
 - 成本：优先复用现有设备；AI 调用必须有模型路由、成本上限和可观测性。
 - 安全：密钥、真实用户数据和学习图片不得进入代码库、日志明文、截图或测试夹具。
 - 可靠性：写接口支持幂等；Attempt/AuditEvent 采用追加写；任务状态按服务端版本合并，不得用简单最后写入覆盖学习记录。
-- AI 行为：先提问和提示，不抢先给答案；输出受 JSON Schema 和 Tutor Policy 约束；低置信度内容必须允许人工校正。
+- AI 行为：练习/复习先作答和提示；错题讲解在已确认题目和作答状态后可给完整过程，有作答时诊断错步，`blank_confirmed` 时从头讲。输出受 JSON Schema、教材来源、确定性校验和 Tutor Policy 约束；作答区缺失/不清、低置信、错版/超纲必须人工校正。
+- 内容：教材必须有家庭授权声明、版本和来源定位；解析草稿先审核发布，文档指令不进入 Prompt，Provider 只接收当前讲解所需的最小已发布片段。
 - 兼容性：P1 必须覆盖 iPad mini 6、Windows Web/PWA、iPhone 11 和不依赖 GMS 的华为 nova 9。
 - 截止时间：`TBD（当前设计未给出日期承诺）`。
 
@@ -149,14 +160,18 @@
 - `ASSUMPTION-02`：数学单题“本地自动脱敏 + 用户确认 + 云视觉结构化 + 题目确认”可在可接受隐私、延迟和成本内支持首版闭环；验证方式：用固定 synthetic 脱敏/题型集分别衡量漏检、误遮挡、Schema 成功率、人工校正、延迟和单题成本。真实数据前仍须批准 Provider 条款与法域。
 - `ASSUMPTION-03`：模块化单体能满足 P0/P1 容量；验证方式：持续采集模块延迟与负载，仅在独立扩容证据出现后提拆分 ADR。
 - `ASSUMPTION-04`：家长周报比实时监控更符合产品原则；验证方式：用可追溯样例进行家庭验收，不新增儿童实时监控。
+- `ASSUMPTION-05`：P1 先支持家庭 PDF 教材/课程资料，家长愿意审核章节/知识点后发布；验证方式：TODO-016 使用文本/扫描 synthetic PDF 测量解析成功率、校正时间和来源完整性，具体限制/处理器实现前批准。
+- `ASSUMPTION-06`：确定性复习策略比 AI 自主调度更适合首版；synthetic 基线为 1/3/7/14/30 天，错误重置，家庭试用后由 Owner 确认间隔和过关门槛。
 
 ## 10. 里程碑
 
 | 里程碑 | 结果 | 负责人 | 目标日期 | 状态 |
 | --- | --- | --- | --- | --- |
-| P0｜基础 | 建立仓库、OpenAPI、家庭/孩子/设备、CI 和可观测性；iPad 与 Windows Web 共享孩子档案 | `TBD` | `TBD` | 未开始 |
-| P1｜MVP | 交付任务、会话、拍题、分步提示、错题、周报和离线队列；四端各司其职且断网不丢 | `TBD` | `TBD` | 未开始 |
-| P2｜增强 | 交付复习调度、掌握度、科目插件、语音和 Python 游戏化模块；插件不修改核心任务/会话模型 | `TBD` | `TBD` | 候选 |
+| P0｜基础 | 建立仓库、OpenAPI、家庭/孩子/设备、锁文件、CI 草案和自用 Compose | `TBD` | `TBD` | 已完成基础实现；完整可观测性仍后置 |
+| P1A｜安全与家庭入口 | 完成 API 流式上传、统一孩子管理和多孩子选择 | `TBD` | `TBD` | PLAN-0012 已部署；PLAN-0013 API/Web 首版已部署，E2E/设备验收待完成 |
+| P1B｜教材与错题讲解 | 发布孩子教材知识范围；交付数学三入口、作答状态确认、有作答错因讲解和空白从头讲解 | `TBD` | `TBD` | PLAN-0014 M1/M2 Ready，未实施 |
+| P1C｜复习与任务 | 交付正式错题本、确定性到期复习和家长可控任务建议 | `TBD` | `TBD` | PLAN-0014 M3/M4 Planned |
+| P2｜增强 | 交付更复杂掌握度、科目插件、视频/语音和 Python 游戏化模块；插件不修改核心任务/会话模型 | `TBD` | `TBD` | 候选 |
 
 ## 11. 项目级风险
 
@@ -167,6 +182,9 @@
 | 离线同步覆盖或重复学习记录 | M | H | 追加写、幂等键、服务端版本合并、重连与并发测试 | `TBD` |
 | 四端适配导致 MVP 范围失控 | H | M | 固定设备职责；Windows 原生端后置；手机不承担长时孩子学习 | `TBD` |
 | 目标架构先于工程基线，文档与实现漂移 | H | M | P0 先建立锁文件、CI 和契约；每次里程碑刷新 `AI_CONTEXT.md` 和本文件 | `TBD` |
+| 教材解析错版、无来源或文档 Prompt 注入污染讲解 | M | H | 私有导入、来源/版本、草稿审核发布、不可变 Snapshot、固定 Prompt 边界、错版/超纲阻断和内容安全测试 | `TBD` |
+| 完整讲解错误，或未拍入/不清被误判空白 | M | H | VerifiedQuestion + 已确认作答状态门禁、四态 Schema/人工修正、Tutor 模式分离、算术/单位校验、固定 eval、家长复核与审计 | `TBD` |
+| 复习/任务推荐过量或模型错误判定掌握 | M | M | 确定性版本化 ReviewPolicy、每日上限、家长审批、追加写结果和可解释来源；AI 不直接控制到期/永久掌握 | `TBD` |
 | 第三方模型价格、能力或可用性变化 | M | M | Provider Adapter、模型路由、成本上限、降级策略和可替换评测 | `TBD` |
 
 ## 12. 相关文档

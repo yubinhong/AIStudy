@@ -1,8 +1,8 @@
 # Docker Compose 自托管部署
 
-这套 Compose 适合单家庭、自用部署，包含 PostgreSQL、Redis、MinIO、FastAPI API、家长 Web、数据库迁移一次性服务和默认启动的 NewAPI 图片分析 worker。Compose 会从同目录的 `.env` 注入服务变量，不需要在启动命令中传入 `--env-file`。它不会部署 NewAPI；NewAPI 由部署者单独提供，API 通过 OpenAI-compatible `/v1/chat/completions` 访问。
+这套 Compose 适合单家庭、自用部署，包含 PostgreSQL、Redis、私有 MinIO、FastAPI API、家长 Web、数据库迁移一次性服务、NewAPI 图片分析 worker 和数据生命周期 worker。Compose 会从同目录的 `.env` 注入服务变量，不需要在启动命令中传入 `--env-file`。它不会部署 NewAPI；NewAPI 由部署者单独提供，API 通过 OpenAI-compatible `/v1/chat/completions` 访问。
 
-当前服务端状态：API、账号密码/可撤销会话、MinIO 预签名上传、ImageAnalysis 队列、QuestionExtraction/VerifiedQuestion 持久化、家长 Web 和 NewAPI worker 已实现；真实 NewAPI 联调、真实视觉检测器、备份恢复和生产监控仍未完成。因此本文件提供的是“可启动的自用全栈部署”，不是完整产品发布证明。
+当前服务端状态：API `0.8.0`、账号密码/可撤销会话、PostgreSQL 业务事实、MinIO、ImageAnalysis/VerifiedQuestion/TutorTurn、周报/导出、家长 Web、两个 worker 和备份恢复脚本已实现；Ubuntu 已完成 NewAPI synthetic 大图和隔离恢复验收。真实自动视觉检测器、正式监控和四设备回归仍未完成，因此本文件提供的是“已验证的单家庭自用全栈部署”，不是公网或商业生产发布证明。
 
 ## 1. 前置条件
 
@@ -26,10 +26,12 @@ openssl rand -hex 32
 - 替换 `POSTGRES_PASSWORD`、`MINIO_ROOT_PASSWORD`、NewAPI key 和视觉模型配置；首次启动后必须在本机使用 `admin/admin123456` 登录并立即改密。
 - `DATABASE_URL` 必须把主机写成 `postgres`，并与 PostgreSQL 用户、密码、数据库名一致。
 - `WEB_PORT` 是家长 Web 对宿主机暴露的端口，默认 `3000`；Web 容器内部始终通过 `http://api:8000` 访问 API。
+- Capture 图片现在由 App 携带登录 Session 通过 API 的有界原始字节流上传，API 在内部校验并写入私有 MinIO。MinIO 的 S3 API 和控制台不映射到宿主机或局域网；不要配置 `OBJECT_STORAGE_PUBLIC_ENDPOINT_URL`、`MINIO_API_PORT` 或预签名上传地址。
 - Compose 只使用账号密码认证。Web 登录后会通过 HttpOnly Cookie 保存会话；不要把会话或密码写入 `.env`、客户端构建参数或日志。HMAC、Demo Header 和 Web 免登录旁路已删除。
 - 如果 NewAPI 在宿主机，使用 `http://host.docker.internal:<port>`；如果在另一台机器或另一个 Compose 网络，填写容器可访问的 URL。Adapter 会自动补齐 `/v1/chat/completions`，因此 base URL 可以是根地址或以 `/v1` 结尾。
 - 初次部署保持 `STUDY_NEWAPI_ENABLED=false`。确认 NewAPI 视觉模型、key 和响应契约后，再改为 `true`。
 - Adapter 默认以 `study-api/0.5` 作为 `User-Agent`，避免部分 Cloudflare 规则拦截 Python `urllib` 的默认特征；如前置网关要求其他值，可设置 `STUDY_NEWAPI_USER_AGENT`，但只允许 1–256 个可打印 ASCII 字符，不能包含换行或其他控制字符。
+- `STUDY_NEWAPI_MAX_IMAGE_BYTES` 默认 `600000`。更大的已确认脱敏图会在 worker 内存中去元数据、等比缩放并重编码为 JPEG 后再 base64 传输，用于避开 NewAPI/反向代理请求体上限；不要把该值调高到网关限制以上。
 
 不要把 `infra/compose/.env`、真实 API key、儿童图片或真实题目写入仓库。
 
@@ -46,12 +48,12 @@ curl http://127.0.0.1:${API_PORT:-8000}/healthz
 curl http://127.0.0.1:${WEB_PORT:-3000}/healthz
 ```
 
-首次 amd64 构建会安装 PaddleOCR 依赖并下载五份锁定模型，可能明显慢于后续启动；原生 ARM 构建会跳过该不兼容依赖和模型。Web 构建使用 Node 24.18.0 和 pnpm 11.7.0，并生成 Next.js standalone 镜像。`migrate` 只执行 `alembic upgrade head`，成功后退出；API 依赖其成功状态，Web 依赖 API 健康状态。ImageAnalysis worker 是默认服务：`STUDY_NEWAPI_ENABLED=false` 时保持安全空闲，不连接 Provider、不读取图片，也不会反复重启。迁移是前滚式的，Compose 不会自动 downgrade。
+首次 amd64 构建会安装 PaddleOCR 依赖并下载五份锁定模型，可能明显慢于后续启动；原生 ARM 构建会跳过该不兼容依赖和模型。Web 构建使用 Node 24.18.0 和 pnpm 11.7.0，并生成 Next.js standalone 镜像。`migrate` 只执行 `alembic upgrade head`，成功后退出；API 依赖其成功状态，Web 依赖 API 健康状态。ImageAnalysis worker 在 `STUDY_NEWAPI_ENABLED=false` 时安全空闲，不连接 Provider、不读取图片；DataLifecycle worker 默认每 300 秒清理到期 Capture 对象和 24 小时导出快照，只记录计数。迁移是前滚式的，Compose 不会自动 downgrade。
 
 查看日志时只看稳定状态，不要把请求体、图片、令牌或 NewAPI key 粘贴到工单或聊天中：
 
 ```bash
-docker compose -f infra/compose/compose.yml logs --tail=100 api migrate image-analysis-worker
+docker compose -f infra/compose/compose.yml logs --tail=100 api migrate image-analysis-worker data-lifecycle-worker
 ```
 
 Web 日志：
@@ -93,9 +95,20 @@ docker compose -f infra/compose/compose.yml down
 docker volume ls | grep study
 ```
 
-升级步骤：先备份 PostgreSQL 和 MinIO 数据，再拉取/切换到目标代码版本，运行 `config`，执行 `up -d --build`，确认 `migrate` 成功和 `/healthz` 正常。发生应用问题时先关闭 NewAPI 开关并停止 worker；数据库迁移优先前向修复，不对 Attempt/AuditEvent 做破坏性回滚。
+升级步骤：先备份 PostgreSQL 和 MinIO 数据，再拉取/切换到目标代码版本，运行 `config`，执行 `up -d --build`，确认 `migrate` 成功和 `/healthz` 正常。当前 head 为 `0016_child_account_uniqueness`；回退应用时保留新增表，不在正式数据上执行 downgrade。发生应用问题时先关闭 NewAPI 开关并停止 ImageAnalysis worker；数据库迁移优先前向修复，不对 Profile、Account、Attempt、TutorTurn 或 AuditEvent 做破坏性回滚。
 
-当前未提供自动备份、恢复演练、Retention worker 或生产级监控；不要把 `down -v` 当作清理儿童数据的正式删除流程，也不要把本 Compose 暴露到公网。
+### 备份与恢复验证
+
+备份脚本会暂时停止全部应用写入者，生成 PostgreSQL custom dump、MinIO quiesced 快照和 SHA-256 清单，然后自动恢复服务。默认输出到被 Git 忽略的 `infra/compose/backups/`，也可传入宿主机专用目录：
+
+```bash
+infra/compose/scripts/backup.sh /srv/study-backups
+infra/compose/scripts/verify-restore.sh /srv/study-backups/<UTC_TIMESTAMP>
+```
+
+恢复验证只在一次性隔离的 `postgres:16.10` 容器中执行，不覆盖运行中的数据库。脚本验证 MinIO 快照文件和全部摘要，但正式灾难恢复时仍需运维人员在停机窗口把验证过的快照恢复到新卷。备份包含 Restricted 数据，宿主目录必须权限最小化并另行配置加密/异机副本；仓库不保存备份或密钥。
+
+当前未提供定时备份调度或生产级监控；不要把 `down -v` 当作清理儿童数据的正式删除流程，也不要把本 Compose 暴露到公网。
 
 ## 6. 最小验收
 
@@ -106,4 +119,4 @@ curl -fsS http://127.0.0.1:${WEB_PORT:-3000}/healthz
 docker compose -f infra/compose/compose.yml logs --no-log-prefix migrate | tail -20
 ```
 
-然后使用 synthetic 图片完成一次：孩子账号密码登录/可撤销 Session → Capture 预签名上传 → 服务端对象 SHA-256 确认 → 用户确认脱敏副本 → ImageAnalysis 入队。真实儿童图片只在确认生命周期、删除和备份方案后再使用。
+然后使用 `docker compose -f infra/compose/compose.yml exec -T api python scripts/run_newapi_live_eval.py` 完成一次不含真实数据的合成大图链路；输出只能包含状态、计数、模型名和布尔门禁，不包含题目原文、对象键或密钥。设备端仍需人工验证拍照、权限、脱敏预览、弱网和重启。

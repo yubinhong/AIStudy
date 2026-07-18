@@ -1,6 +1,9 @@
+import base64
+import io
 from typing import Any
 
 import pytest
+from PIL import Image
 
 from study_api.newapi_provider import (
     NewApiConfig,
@@ -111,3 +114,43 @@ def test_newapi_provider_rejects_unsafe_user_agent(user_agent: str) -> None:
                 True, "https://newapi.local", "key", "vision-model", 5, 100_000, user_agent
             )
         )
+
+
+def test_newapi_provider_bounds_large_sanitized_image_before_base64_transport() -> None:
+    source = Image.effect_noise((1800, 1400), 96).convert("RGB")
+    source_buffer = io.BytesIO()
+    source.save(source_buffer, format="PNG")
+    source.close()
+    image_bytes = source_buffer.getvalue()
+    assert len(image_bytes) > 600_000
+
+    provider = NewApiVisionProvider(_config())
+    captured: dict[str, Any] = {}
+
+    def fake_post(payload: dict[str, Any]) -> dict[str, Any]:
+        captured.update(payload)
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            '{"subject":"math","question_text":"synthetic",'
+                            '"options":[],"formulas":[],"has_diagram":false,'
+                            '"has_handwriting":false,"question_region_count":1,'
+                            '"confidence":0.9,"needs_confirmation":true}'
+                        )
+                    }
+                }
+            ]
+        }
+
+    provider._post_json = fake_post  # type: ignore[method-assign]
+    provider.analyze_sanitized_image(
+        image_bytes, "image/png", sanitization_schema="privacy-sanitization.v1"
+    )
+
+    data_url = captured["messages"][1]["content"][1]["image_url"]["url"]
+    assert data_url.startswith("data:image/jpeg;base64,")
+    transported = base64.b64decode(data_url.split(",", maxsplit=1)[1])
+    assert len(transported) <= 600_000
+    assert transported.startswith(b"\xff\xd8\xff")

@@ -16,22 +16,25 @@ from study_api.database import database_url
 from study_api.domain.learning_repository import (
     ChildAssignmentError,
     ResourceVersionConflictError,
+    SessionAlreadyCompletedError,
 )
 from study_api.domain.models import (
     Attempt,
     AuditEvent,
+    CompleteStudySessionRequest,
     CreateTaskRequest,
     RecordAttemptRequest,
     StartStudySessionRequest,
     StudySession,
     StudySessionStatus,
     StudyTask,
+    Subject,
     SyncBatchRequest,
     SyncBatchResult,
     SyncEventResult,
     TaskStatus,
 )
-from study_api.domain.repository import IdempotencyConflictError, InMemoryProfileRepository
+from study_api.domain.repository import IdempotencyConflictError, ProfileRepository
 
 
 class LearningRepository(Protocol):
@@ -50,7 +53,15 @@ class LearningRepository(Protocol):
         idempotency_key: str,
     ) -> tuple[StudySession, bool]: ...
 
+    def create_capture_session(
+        self, household_id: UUID, child_id: UUID, idempotency_key: str
+    ) -> tuple[StudySession, bool]: ...
+
     def get_session(self, household_id: UUID, session_id: UUID) -> StudySession | None: ...
+
+    def find_active_session(
+        self, household_id: UUID, task_id: UUID, child_id: UUID
+    ) -> StudySession | None: ...
 
     def record_attempt(
         self,
@@ -61,6 +72,15 @@ class LearningRepository(Protocol):
         idempotency_key: str,
     ) -> tuple[Attempt, bool]: ...
 
+    def complete_session(
+        self,
+        household_id: UUID,
+        session_id: UUID,
+        child_id: UUID,
+        request: CompleteStudySessionRequest,
+        idempotency_key: str,
+    ) -> tuple[StudySession, bool]: ...
+
     def sync_attempts(
         self, household_id: UUID, child_id: UUID, request: SyncBatchRequest
     ) -> SyncBatchResult: ...
@@ -69,7 +89,7 @@ class LearningRepository(Protocol):
 class PostgresLearningRepository:
     """PostgreSQL learning facts; schema is managed exclusively by Alembic."""
 
-    def __init__(self, profiles: InMemoryProfileRepository, url: str | None = None) -> None:
+    def __init__(self, profiles: ProfileRepository, url: str | None = None) -> None:
         self._profiles = profiles
         self._engine = create_engine(url or database_url(), pool_pre_ping=True)
         metadata = MetaData()
@@ -124,6 +144,27 @@ class PostgresLearningRepository:
                         self._sessions.c.id == session_id,
                         self._sessions.c.household_id == household_id,
                     )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        return self._session(row) if row is not None else None
+
+    def find_active_session(
+        self, household_id: UUID, task_id: UUID, child_id: UUID
+    ) -> StudySession | None:
+        with self._engine.connect() as connection:
+            row = (
+                connection.execute(
+                    select(self._sessions)
+                    .where(
+                        self._sessions.c.household_id == household_id,
+                        self._sessions.c.task_id == task_id,
+                        self._sessions.c.child_id == child_id,
+                        self._sessions.c.status == StudySessionStatus.ACTIVE.value,
+                    )
+                    .order_by(self._sessions.c.started_at.desc(), self._sessions.c.id.desc())
+                    .limit(1)
                 )
                 .mappings()
                 .one_or_none()
@@ -214,6 +255,59 @@ class PostgresLearningRepository:
             self._audit(connection, household_id, "study_session_started", session.id)
             return session, False
 
+    def create_capture_session(
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        idempotency_key: str,
+    ) -> tuple[StudySession, bool]:
+        if self._profiles.get_child(household_id, child_id) is None:
+            raise LookupError
+        payload = str(child_id)
+        operation = f"create_capture_session:{child_id}"
+        with self._engine.begin() as connection:
+            existing = self._idempotency_result(
+                connection, household_id, operation, idempotency_key
+            )
+            if existing is not None:
+                return self._replay_session(connection, existing, payload)
+
+            now = self._now()
+            task = StudyTask(
+                id=uuid4(),
+                household_id=household_id,
+                child_id=child_id,
+                title="即时拍题",
+                subject=Subject.MATH,
+                scheduled_for=now.date(),
+                status=TaskStatus.IN_PROGRESS,
+                version=2,
+                created_at=now,
+            )
+            session = StudySession(
+                id=uuid4(),
+                household_id=household_id,
+                child_id=child_id,
+                task_id=task.id,
+                task_version=task.version,
+                status=StudySessionStatus.ACTIVE,
+                started_at=now,
+            )
+            connection.execute(insert(self._tasks).values(**task.model_dump()))
+            connection.execute(insert(self._sessions).values(**session.model_dump()))
+            self._store_idempotency(
+                connection,
+                household_id,
+                operation,
+                idempotency_key,
+                payload,
+                "session",
+                session.id,
+            )
+            self._audit(connection, household_id, "capture_task_created", task.id)
+            self._audit(connection, household_id, "capture_session_started", session.id)
+            return session, False
+
     def record_attempt(
         self,
         household_id: UUID,
@@ -232,6 +326,91 @@ class PostgresLearningRepository:
                 request.answer_summary,
                 idempotency_key,
             )
+
+    def complete_session(
+        self,
+        household_id: UUID,
+        session_id: UUID,
+        child_id: UUID,
+        request: CompleteStudySessionRequest,
+        idempotency_key: str,
+    ) -> tuple[StudySession, bool]:
+        payload = request.model_dump_json()
+        operation = f"complete_session:{session_id}"
+        with self._engine.begin() as connection:
+            existing = self._idempotency_result(
+                connection, household_id, operation, idempotency_key
+            )
+            if existing is not None:
+                return self._replay_session(connection, existing, payload)
+            row = (
+                connection.execute(
+                    select(self._sessions)
+                    .where(
+                        self._sessions.c.id == session_id,
+                        self._sessions.c.household_id == household_id,
+                    )
+                    .with_for_update()
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if row is None:
+                raise LookupError
+            session = self._session(row)
+            if session.child_id != child_id:
+                raise ChildAssignmentError
+            if session.status is StudySessionStatus.COMPLETED:
+                raise SessionAlreadyCompletedError
+            task_row = (
+                connection.execute(
+                    select(self._tasks)
+                    .where(
+                        self._tasks.c.id == session.task_id,
+                        self._tasks.c.household_id == household_id,
+                    )
+                    .with_for_update()
+                )
+                .mappings()
+                .one()
+            )
+            task = self._task(task_row)
+            completed_at = self._now()
+            connection.execute(
+                update(self._sessions)
+                .where(self._sessions.c.id == session.id)
+                .values(
+                    status=StudySessionStatus.COMPLETED.value,
+                    completed_at=completed_at,
+                    outcome=request.outcome.value,
+                )
+            )
+            task_status = (
+                TaskStatus.SKIPPED if request.outcome.value == "skipped" else TaskStatus.COMPLETED
+            )
+            connection.execute(
+                update(self._tasks)
+                .where(self._tasks.c.id == task.id)
+                .values(status=task_status.value, version=task.version + 1)
+            )
+            completed = session.model_copy(
+                update={
+                    "status": StudySessionStatus.COMPLETED,
+                    "completed_at": completed_at,
+                    "outcome": request.outcome,
+                }
+            )
+            self._store_idempotency(
+                connection,
+                household_id,
+                operation,
+                idempotency_key,
+                payload,
+                "session",
+                completed.id,
+            )
+            self._audit(connection, household_id, "study_session_completed", completed.id)
+            return completed, False
 
     def sync_attempts(
         self, household_id: UUID, child_id: UUID, request: SyncBatchRequest

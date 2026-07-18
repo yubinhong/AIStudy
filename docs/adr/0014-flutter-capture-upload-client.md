@@ -1,9 +1,11 @@
 # ADR-0014：Flutter Capture 上传客户端使用 HttpClient 与 crypto
 
-- 状态：`Accepted for P1 local/CI implementation`
+- 状态：`Superseded by ADR-0018`
 - 日期：`2026-07-14`
 - Owner：`项目 Owner（用户）`
 - 关联：`TASK-0006`、`TODO-008`、`ADR-0002`、`ADR-0010`、`ADR-0012（已被替代）`、`ADR-0013`、`ADR-0015`
+
+> 历史状态说明：本文保留 Flutter 预签名 PUT 客户端及既有真机 smoke 的实现事实。`2026-07-17` 起目标由 ADR-0018 改为 App 只向 API 进行 Session 鉴权流式上传；当前客户端尚未迁移。
 
 ## Context
 

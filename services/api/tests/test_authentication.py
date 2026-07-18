@@ -36,12 +36,12 @@ def test_household_routes_reject_removed_demo_and_unsigned_bearer_credentials() 
     assert unsigned.status_code == 401
 
 
-def test_bootstrap_requires_local_first_login_and_data_is_blocked_until_change() -> None:
+def test_bootstrap_allows_lan_first_login_and_data_is_blocked_until_change() -> None:
     app = create_app()
     service = app.state.auth_service
     bootstrap = service.login(
         LoginRequest(username="admin", password=BOOTSTRAP_PASSWORD, client="flutter"),
-        remote_host="127.0.0.1",
+        remote_host="192.168.1.9",
     )
     token = bootstrap.access_token
     assert token is not None
@@ -140,6 +140,45 @@ def test_child_account_creation_rejects_profile_from_another_household() -> None
         },
     )
     assert response.status_code == 404
+
+
+def test_duplicate_child_username_returns_conflict_without_server_error() -> None:
+    app = create_app()
+    service = app.state.auth_service
+    bootstrap = service.login(
+        LoginRequest(username="admin", password=BOOTSTRAP_PASSWORD, client="flutter"),
+        remote_host="127.0.0.1",
+    )
+    parent = service.change_password(
+        app.state.account_repository.get(bootstrap.account.id),
+        BOOTSTRAP_PASSWORD,
+        "a-secure-parent-password",
+    )
+    client = TestClient(app)
+    headers = {"Authorization": f"Bearer {parent.access_token}"}
+    body = {
+        "username": "duplicate-child",
+        "password": "child-pass-123",
+        "child_id": str(CHILD_A),
+    }
+
+    created = client.post(
+        f"/auth/households/{HOUSEHOLD_A}/accounts/children",
+        headers={**headers, "Idempotency-Key": "duplicate-child-001"},
+        json=body,
+    )
+    duplicate = client.post(
+        f"/auth/households/{HOUSEHOLD_A}/accounts/children",
+        headers={**headers, "Idempotency-Key": "duplicate-child-002"},
+        json=body,
+    )
+
+    assert created.status_code == 201
+    assert duplicate.status_code == 409
+    assert duplicate.json() == {
+        "code": "HTTP_409",
+        "message": "username already exists",
+    }
 
 
 def test_five_failed_password_attempts_lock_account() -> None:

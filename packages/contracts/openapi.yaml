@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 家庭 AI 学习助手 API
-  version: 0.6.0
+  version: 0.8.0
   description: Self-hosted Household account/session and learning contract vertical slices.
 servers:
   - url: http://localhost:8000
@@ -275,6 +275,70 @@ paths:
           $ref: '#/components/responses/InvalidRequest'
         '409':
           $ref: '#/components/responses/IdempotencyConflict'
+  /households/{household_id}/children/management:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+    get:
+      operationId: listChildManagement
+      summary: List child profiles with their bound child accounts
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      responses:
+        '200':
+          description: Child management aggregates visible to a parent.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChildManagementView'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createChildManagement
+      summary: Atomically create a child profile and its unique child account
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateChildManagementRequest'
+      responses:
+        '201':
+          description: Child profile and account created atomically.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChildManagementView'
+        '200':
+          description: Idempotent replay of an earlier aggregate create request.
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                const: 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChildManagementView'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '422':
+          $ref: '#/components/responses/InvalidRequest'
   /households/{household_id}/children/{child_id}:
     parameters:
       - $ref: '#/components/parameters/HouseholdId'
@@ -301,6 +365,35 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+    patch:
+      operationId: updateChild
+      summary: Update a child profile in the caller's household
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateChildRequest'
+      responses:
+        '200':
+          description: Updated child profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChildProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
     delete:
       operationId: deleteChild
       summary: Delete a child profile after cascading Capture object deletion
@@ -402,6 +495,14 @@ paths:
       security:
         - SessionCookie: []
         - BearerSession: []
+      parameters:
+        - name: child_id
+          in: query
+          required: false
+          description: Optional parent-side child scope for the workbench.
+          schema:
+            type: string
+            format: uuid
       responses:
         '200':
           description: Tasks visible to the parent or bound child.
@@ -501,6 +602,67 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/IdempotencyConflict'
+  /households/{household_id}/tasks/{task_id}/active-session:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - $ref: '#/components/parameters/TaskId'
+    get:
+      operationId: getActiveStudySession
+      summary: Resume the bound child's latest active session for a task
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      responses:
+        '200':
+          description: Latest active child-owned session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudySession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /households/{household_id}/capture-sessions:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+    post:
+      operationId: createCaptureSession
+      summary: Create or replay an ad-hoc photo-question session for the bound child
+      description: Atomically creates a private math task and active StudySession for photo capture. The child ID is always taken from the authenticated account and cannot be supplied by the client.
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: Capture session created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudySession'
+        '200':
+          description: Idempotent replay of an existing capture session.
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                const: 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudySession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
   /households/{household_id}/sessions/{session_id}/attempts:
     parameters:
       - $ref: '#/components/parameters/HouseholdId'
@@ -537,6 +699,40 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Attempt'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+  /households/{household_id}/sessions/{session_id}/completion:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - $ref: '#/components/parameters/SessionId'
+    post:
+      operationId: completeStudySession
+      summary: Finalize the bound child's study session with an explicit outcome
+      description: Completion is idempotent and final. A learned or needs_review outcome completes the task; skipped marks it skipped. The server never infers mastery from model output.
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteStudySessionRequest'
+      responses:
+        '200':
+          description: Final or idempotently replayed StudySession.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudySession'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -765,34 +961,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-  /households/{household_id}/sessions/{session_id}/capture-uploads:
+  /households/{household_id}/sessions/{session_id}/captures/upload:
     parameters:
       - $ref: '#/components/parameters/HouseholdId'
       - $ref: '#/components/parameters/SessionId'
     post:
-      operationId: beginCaptureUpload
-      summary: Create a pending Capture and issue one short-lived private PUT URL
-      description: The response has no separate object-key field. The signed URL is short-lived and must not be logged or persisted by clients.
+      operationId: uploadCapture
+      summary: Upload one Capture through the authenticated API
+      description: The API authorizes the Session before consuming a bounded image stream, validates the declared size/hash and decoded image, then stores the object in private MinIO. Clients never receive an object-storage URL.
       security:
         - SessionCookie: []
         - BearerSession: []
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
+        - name: X-Capture-Media-Type
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [image/jpeg, image/png]
+        - name: X-Capture-Byte-Size
+          in: header
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 8000000
+        - name: X-Capture-Content-SHA256
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 64
+            maxLength: 64
+            pattern: '^[a-f0-9]{64}$'
       requestBody:
         required: true
         content:
-          application/json:
+          application/octet-stream:
             schema:
-              $ref: '#/components/schemas/CreateCaptureRequest'
+              type: string
+              format: binary
       responses:
         '201':
-          description: Pending Capture created and a short-lived upload URL issued.
+          description: Capture bytes were stored and the Capture advanced to needs_correction.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CaptureUpload'
+                $ref: '#/components/schemas/Capture'
         '200':
-          description: Idempotent replay while the Capture upload remains pending. A replacement short-lived URL may be issued.
+          description: Idempotent upload replay.
           headers:
             Idempotency-Replayed:
               schema:
@@ -801,7 +1019,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CaptureUpload'
+                $ref: '#/components/schemas/Capture'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -810,62 +1028,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/IdempotencyConflict'
-        '503':
-          description: Private object storage is temporarily unavailable; retry with the same idempotency key.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /households/{household_id}/captures/{capture_id}/upload-confirmations:
-    parameters:
-      - $ref: '#/components/parameters/HouseholdId'
-      - name: capture_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-    post:
-      operationId: confirmCaptureUpload
-      summary: Confirm a server-verified private object before manual correction
-      description: The API verifies object media type and byte size server-side. It never accepts an object key or bytes from the client.
-      security:
-        - SessionCookie: []
-        - BearerSession: []
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ConfirmCaptureUploadRequest'
-      responses:
-        '201':
-          description: Private object verified; Capture advances to needs_correction.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Capture'
-        '200':
-          description: Idempotent upload-confirmation replay.
-          headers:
-            Idempotency-Replayed:
-              schema:
-                type: string
-                const: 'true'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Capture'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          description: Object verification, Capture state/version, or idempotency conflict.
+        '422':
+          description: The bounded image stream failed media, size, hash, or decoded-image validation.
           content:
             application/json:
               schema:
@@ -1185,7 +1349,7 @@ paths:
     post:
       operationId: createTutorHint
       summary: Return a provider-free graduated hint for a verified question
-      description: The current implementation is a deterministic zero-cost local fallback. It requires a child-bound corrected Capture and never returns a direct answer or calls a Provider.
+      description: The client submits only a server-issued VerifiedQuestion ID. The API reloads the child-owned confirmed fact, persists an append-only TutorTurn, and returns a deterministic zero-cost local hint without a direct answer or Provider call.
       security:
         - SessionCookie: []
         - BearerSession: []
@@ -1199,7 +1363,7 @@ paths:
               $ref: '#/components/schemas/StartTutorHintRequest'
       responses:
         '200':
-          description: Bounded offline hint; direct_answer is always null.
+          description: Persisted bounded offline TutorTurn; direct_answer is always null.
           content:
             application/json:
               schema:
@@ -1216,6 +1380,186 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /households/{household_id}/children/{child_id}/mistakes:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: listMistakes
+      summary: List open mistakes for a child
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - name: due_only
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Open mistake records and their deterministic review schedules.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MistakeWithSchedule'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: createMistake
+      summary: Record a manually confirmed mistake from a VerifiedQuestion
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMistakeRequest'
+      responses:
+        '201':
+          description: Mistake and first due review schedule created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MistakeWithSchedule'
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MistakeWithSchedule'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+  /households/{household_id}/children/{child_id}/mistakes/{mistake_id}/review:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: mistake_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: reviewMistake
+      summary: Record a review result and advance the deterministic schedule
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewMistakeRequest'
+      responses:
+        '200':
+          description: Updated mistake and review schedule.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MistakeWithSchedule'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+  /households/{household_id}/reports/weekly:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: query
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: week_start
+        in: query
+        required: true
+        schema:
+          type: string
+          format: date
+    get:
+      operationId: getWeeklyReport
+      summary: Read a privacy-minimized, traceable weekly learning projection
+      description: Counts only server-owned task/session/question/Tutor facts. Review items contain task and session identifiers but never question or answer text.
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      responses:
+        '200':
+          description: Weekly report for the requested child.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WeeklyReport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /households/{household_id}/children/{child_id}/exports:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: exportChildData
+      summary: Create a short-lived portable snapshot of one child's family data
+      description: Parent-only. The 24-hour PostgreSQL snapshot excludes credentials, object keys and image bytes; an identical idempotency key returns the exact same payload and child deletion cascades it.
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Portable child data snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChildDataExport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /households/{household_id}/captures/{capture_id}/ocr-results/{result_id}:
     parameters:
       - $ref: '#/components/parameters/HouseholdId'
@@ -1426,6 +1770,48 @@ components:
         child_id:
           type: string
           format: uuid
+    CreateChildManagementRequest:
+      type: object
+      additionalProperties: false
+      required: [display_name, grade, curriculum_version, subjects, username, password]
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        grade:
+          type: integer
+          minimum: 1
+          maximum: 6
+        curriculum_version:
+          type: string
+          minLength: 1
+          maxLength: 80
+        subjects:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [math]
+        username:
+          type: string
+          minLength: 3
+          maxLength: 80
+        password:
+          type: string
+          minLength: 1
+          maxLength: 128
+    ChildManagementView:
+      type: object
+      additionalProperties: false
+      required: [child, account]
+      properties:
+        child:
+          $ref: '#/components/schemas/ChildProfile'
+        account:
+          allOf:
+            - $ref: '#/components/schemas/AccountView'
+          nullable: true
     SetAccountStatusRequest:
       type: object
       additionalProperties: false
@@ -1463,7 +1849,7 @@ components:
           const: study-api
         version:
           type: string
-          const: 0.4.0
+          const: 0.8.0
     CreateChildRequest:
       type: object
       additionalProperties: false
@@ -1487,6 +1873,9 @@ components:
           items:
             type: string
             enum: [math]
+    UpdateChildRequest:
+      allOf:
+        - $ref: '#/components/schemas/CreateChildRequest'
     ChildProfile:
       type: object
       additionalProperties: false
@@ -1594,7 +1983,7 @@ components:
           format: date
         status:
           type: string
-          enum: [assigned, in_progress]
+          enum: [assigned, in_progress, completed, skipped]
         version:
           type: integer
           minimum: 1
@@ -1609,6 +1998,14 @@ components:
         expected_task_version:
           type: integer
           minimum: 1
+    CompleteStudySessionRequest:
+      type: object
+      additionalProperties: false
+      required: [outcome]
+      properties:
+        outcome:
+          type: string
+          enum: [learned, needs_review, skipped]
     StudySession:
       type: object
       additionalProperties: false
@@ -1631,10 +2028,18 @@ components:
           minimum: 1
         status:
           type: string
-          const: active
+          enum: [active, completed]
         started_at:
           type: string
           format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        outcome:
+          type: string
+          enum: [learned, needs_review, skipped]
+          nullable: true
     CreateCaptureRequest:
       type: object
       additionalProperties: false
@@ -1684,28 +2089,6 @@ components:
         created_at:
           type: string
           format: date-time
-    CaptureUpload:
-      type: object
-      additionalProperties: false
-      required: [capture, upload_url, upload_expires_at]
-      properties:
-        capture:
-          $ref: '#/components/schemas/Capture'
-        upload_url:
-          type: string
-          format: uri
-          description: Short-lived PUT URL; clients must not persist or log it.
-        upload_expires_at:
-          type: string
-          format: date-time
-    ConfirmCaptureUploadRequest:
-      type: object
-      additionalProperties: false
-      required: [expected_capture_version]
-      properties:
-        expected_capture_version:
-          type: integer
-          minimum: 1
     PrivacySanitization:
       type: object
       additionalProperties: false
@@ -1910,22 +2293,29 @@ components:
     StartTutorHintRequest:
       type: object
       additionalProperties: false
-      required: [verified_question, level, child_id]
+      required: [verified_question_id, level]
       properties:
-        verified_question:
-          $ref: '#/components/schemas/VerifiedQuestion'
+        verified_question_id:
+          type: string
+          format: uuid
         level:
           type: integer
           minimum: 1
           maximum: 3
-        child_id:
-          type: string
-          format: uuid
     TutorHintResponse:
       type: object
       additionalProperties: false
-      required: [schema_version, policy_version, provider, model, level, prompt, next_step, requires_child_response, direct_answer, cost_cents]
+      required: [id, verified_question_id, created_at, schema_version, policy_version, provider, model, level, prompt, next_step, requires_child_response, direct_answer, cost_cents]
       properties:
+        id:
+          type: string
+          format: uuid
+        verified_question_id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
         schema_version:
           type: string
           const: tutor-hint.v1
@@ -1958,6 +2348,204 @@ components:
         cost_cents:
           type: integer
           const: 0
+    CreateMistakeRequest:
+      type: object
+      additionalProperties: false
+      required: [verified_question_id, session_id, reason]
+      properties:
+        verified_question_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 80
+    ReviewMistakeRequest:
+      type: object
+      additionalProperties: false
+      required: [outcome]
+      properties:
+        outcome:
+          type: string
+          enum: [correct, needs_review, skipped]
+    MistakeRecord:
+      type: object
+      additionalProperties: false
+      required: [id, household_id, child_id, verified_question_id, session_id, reason, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        household_id:
+          type: string
+          format: uuid
+        child_id:
+          type: string
+          format: uuid
+        verified_question_id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+        status:
+          type: string
+          enum: [open, resolved]
+        created_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: [string, 'null']
+          format: date-time
+    ReviewSchedule:
+      type: object
+      additionalProperties: false
+      required: [id, household_id, child_id, mistake_id, due_at, interval_days, repetitions, last_outcome, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        household_id:
+          type: string
+          format: uuid
+        child_id:
+          type: string
+          format: uuid
+        mistake_id:
+          type: string
+          format: uuid
+        due_at:
+          type: string
+          format: date-time
+        interval_days:
+          type: integer
+          minimum: 1
+        repetitions:
+          type: integer
+          minimum: 0
+        last_outcome:
+          type: [string, 'null']
+          enum: [correct, needs_review, skipped, null]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    MistakeWithSchedule:
+      type: object
+      additionalProperties: false
+      required: [mistake, schedule]
+      properties:
+        mistake:
+          $ref: '#/components/schemas/MistakeRecord'
+        schedule:
+          $ref: '#/components/schemas/ReviewSchedule'
+    ReviewItem:
+      type: object
+      additionalProperties: false
+      required: [session_id, task_id, task_title, reason]
+      properties:
+        session_id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+        task_title:
+          type: string
+        reason:
+          type: string
+          const: child_requested_review
+    WeeklyReport:
+      type: object
+      additionalProperties: false
+      required: [child_id, week_start, week_end, tasks_assigned, tasks_completed, tasks_skipped, sessions_completed, needs_review, verified_questions, tutor_turns, completion_rate, review_items]
+      properties:
+        child_id:
+          type: string
+          format: uuid
+        week_start:
+          type: string
+          format: date
+        week_end:
+          type: string
+          format: date
+        tasks_assigned:
+          type: integer
+          minimum: 0
+        tasks_completed:
+          type: integer
+          minimum: 0
+        tasks_skipped:
+          type: integer
+          minimum: 0
+        sessions_completed:
+          type: integer
+          minimum: 0
+        needs_review:
+          type: integer
+          minimum: 0
+        verified_questions:
+          type: integer
+          minimum: 0
+        tutor_turns:
+          type: integer
+          minimum: 0
+        completion_rate:
+          type: number
+          minimum: 0
+          maximum: 1
+        review_items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewItem'
+    ChildDataExport:
+      type: object
+      additionalProperties: false
+      required: [schema_version, generated_at, child, tasks, sessions, attempts, verified_questions, tutor_turns, mistakes, review_schedules]
+      properties:
+        schema_version:
+          type: string
+          const: child-data-export.v1
+        generated_at:
+          type: string
+          format: date-time
+        child:
+          $ref: '#/components/schemas/ChildProfile'
+        tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/StudyTask'
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/StudySession'
+        attempts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attempt'
+        verified_questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/VerifiedQuestion'
+        tutor_turns:
+          type: array
+          items:
+            $ref: '#/components/schemas/TutorHintResponse'
+        mistakes:
+          type: array
+          items:
+            $ref: '#/components/schemas/MistakeRecord'
+        review_schedules:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReviewSchedule'
     OcrJobReceipt:
       type: object
       additionalProperties: false

@@ -28,6 +28,55 @@ def test_parent_can_list_only_children_in_own_household() -> None:
     assert [child["id"] for child in response.json()] == [CHILD_A]
 
 
+def test_child_can_list_and_read_only_its_bound_profile() -> None:
+    client = TestClient(create_app())
+    sibling = client.post(
+        f"/households/{HOUSEHOLD_A}/children",
+        headers={**principal(client), "Idempotency-Key": "sibling-profile-001"},
+        json={
+            "display_name": "Synthetic Sibling",
+            "grade": 3,
+            "curriculum_version": "math-demo-2026",
+            "subjects": ["math"],
+        },
+    )
+    headers = principal(client, role="child")
+
+    children = client.get(f"/households/{HOUSEHOLD_A}/children", headers=headers)
+    own = client.get(f"/households/{HOUSEHOLD_A}/children/{CHILD_A}", headers=headers)
+    other = client.get(
+        f"/households/{HOUSEHOLD_A}/children/{sibling.json()['id']}", headers=headers
+    )
+
+    assert sibling.status_code == 201
+    assert [child["id"] for child in children.json()] == [CHILD_A]
+    assert own.status_code == 200
+    assert other.status_code == 404
+
+
+def test_parent_can_update_child_profile_idempotently() -> None:
+    client = TestClient(create_app())
+    headers = {**principal(client), "Idempotency-Key": "child-update-001"}
+    payload = {
+        "display_name": "小禾",
+        "grade": 4,
+        "curriculum_version": "math-demo-2026",
+        "subjects": ["math"],
+    }
+
+    first = client.patch(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}", json=payload, headers=headers
+    )
+    replay = client.patch(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}", json=payload, headers=headers
+    )
+
+    assert first.status_code == 200
+    assert first.json()["display_name"] == "小禾"
+    assert first.json()["grade"] == 4
+    assert replay.headers["Idempotency-Replayed"] == "true"
+
+
 def test_cross_household_reads_are_not_enumerable() -> None:
     client = TestClient(create_app())
 
@@ -65,6 +114,110 @@ def test_child_creation_is_idempotent_and_detects_payload_reuse() -> None:
     assert replay.headers["Idempotency-Replayed"] == "true"
     assert replay.json() == first.json()
     assert conflict.status_code == 409
+
+
+def test_parent_can_create_child_profile_and_account_as_one_idempotent_aggregate() -> None:
+    client = TestClient(create_app())
+    payload = {
+        "display_name": "小汤圆",
+        "grade": 3,
+        "curriculum_version": "math-demo-2026",
+        "subjects": ["math"],
+        "username": "xiaotangyuan",
+        "password": "child-pass-123",
+    }
+    headers = {**principal(client), "Idempotency-Key": "child-management-001"}
+
+    first = client.post(
+        f"/households/{HOUSEHOLD_A}/children/management",
+        json=payload,
+        headers=headers,
+    )
+    replay = client.post(
+        f"/households/{HOUSEHOLD_A}/children/management",
+        json=payload,
+        headers=headers,
+    )
+    listed = client.get(
+        f"/households/{HOUSEHOLD_A}/children/management",
+        headers=principal(client),
+    )
+
+    assert first.status_code == 201
+    assert first.json()["child"]["display_name"] == "小汤圆"
+    assert first.json()["account"]["username"] == "xiaotangyuan"
+    assert replay.status_code == 200
+    assert replay.headers["Idempotency-Replayed"] == "true"
+    assert replay.json() == first.json()
+    assert any(
+        item["child"]["id"] == first.json()["child"]["id"] for item in listed.json()
+    )
+
+
+def test_child_management_requires_parent_and_keeps_profile_on_duplicate_username() -> None:
+    client = TestClient(create_app())
+    payload = {
+        "display_name": "另一个孩子",
+        "grade": 2,
+        "curriculum_version": "math-demo-2026",
+        "subjects": ["math"],
+        "username": "existing-child",
+        "password": "child-pass-123",
+    }
+    parent_headers = {**principal(client), "Idempotency-Key": "child-management-002"}
+    child_headers = principal(client, role="child")
+
+    created = client.post(
+        f"/households/{HOUSEHOLD_A}/children/management",
+        json=payload,
+        headers=parent_headers,
+    )
+    duplicate = client.post(
+        f"/households/{HOUSEHOLD_A}/children/management",
+        json={**payload, "display_name": "不应创建"},
+        headers={**principal(client), "Idempotency-Key": "child-management-003"},
+    )
+    forbidden = client.get(
+        f"/households/{HOUSEHOLD_A}/children/management",
+        headers=child_headers,
+    )
+
+    assert created.status_code == 201
+    assert duplicate.status_code == 409
+    assert forbidden.status_code == 403
+    assert all(
+        item["child"]["display_name"] != "不应创建"
+        for item in client.get(
+            f"/households/{HOUSEHOLD_A}/children/management",
+            headers=principal(client),
+        ).json()
+    )
+
+
+def test_deleting_a_child_profile_also_removes_its_child_account() -> None:
+    client = TestClient(create_app())
+    created = client.post(
+        f"/households/{HOUSEHOLD_A}/children/management",
+        headers={**principal(client), "Idempotency-Key": "child-management-delete-create"},
+        json={
+            "display_name": "待删除孩子",
+            "grade": 1,
+            "curriculum_version": "math-demo-2026",
+            "subjects": ["math"],
+            "username": "delete-child-account",
+            "password": "child-pass-123",
+        },
+    )
+    child_id = created.json()["child"]["id"]
+    deleted = client.delete(
+        f"/households/{HOUSEHOLD_A}/children/{child_id}",
+        headers={**principal(client), "Idempotency-Key": "child-management-delete"},
+    )
+    accounts = client.get(f"/auth/households/{HOUSEHOLD_A}/accounts", headers=principal(client))
+
+    assert created.status_code == 201
+    assert deleted.status_code == 204
+    assert all(account["username"] != "delete-child-account" for account in accounts.json())
 
 
 def test_only_parent_can_create_and_list_devices() -> None:

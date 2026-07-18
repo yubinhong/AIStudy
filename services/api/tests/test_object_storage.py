@@ -3,8 +3,17 @@ from hashlib import sha256
 from io import BytesIO
 
 import pytest
+from PIL import Image
 
 from study_api.object_storage import ObjectStorageConfig, ObjectStorageError, S3ObjectStorage
+
+
+def _valid_jpeg(byte_size: int = 1024) -> bytes:
+    output = BytesIO()
+    Image.new("RGB", (1, 1), color=(32, 128, 64)).save(output, format="JPEG")
+    data = output.getvalue()
+    assert len(data) < byte_size
+    return data + b"\x00" * (byte_size - len(data))
 
 
 class FakeS3Client:
@@ -24,6 +33,38 @@ class FakeS3Client:
 
     def get_object(self, Bucket: str, Key: str) -> dict[str, object]:
         return {"Body": BytesIO(self.body)}
+
+
+class MultipartFakeS3Client(FakeS3Client):
+    def __init__(self) -> None:
+        super().__init__(body=b"", object_size=0)
+        self.parts: dict[int, bytes] = {}
+        self.aborted = False
+        self.completed = False
+
+    def head_bucket(self, Bucket: str) -> None:
+        return None
+
+    def create_multipart_upload(self, **kwargs: object) -> dict[str, str]:
+        return {"UploadId": "synthetic-upload"}
+
+    def upload_part(self, *, PartNumber: int, Body: bytes, **kwargs: object) -> dict[str, str]:
+        self.parts[PartNumber] = Body
+        return {"ETag": f"etag-{PartNumber}"}
+
+    def complete_multipart_upload(
+        self, *, MultipartUpload: dict[str, object], **kwargs: object
+    ) -> None:
+        self.body = b"".join(self.parts[number] for number in sorted(self.parts))
+        self.object_size = len(self.body)
+        self.completed = True
+
+    def abort_multipart_upload(self, **kwargs: object) -> None:
+        self.aborted = True
+
+    def delete_object(self, **kwargs: object) -> None:
+        self.body = b""
+        self.object_size = 0
 
 
 def test_presigned_upload_is_bounded_to_capture_media_and_ttl() -> None:
@@ -69,12 +110,13 @@ def test_presigned_upload_rejects_unbounded_or_invalid_capture_keys(object_key: 
 
 
 def test_validate_uploaded_object_requires_matching_private_metadata() -> None:
+    client = FakeS3Client(body=_valid_jpeg())
     storage = S3ObjectStorage(
         ObjectStorageConfig("http://synthetic.local", "synthetic", "key", "secret"),
-        client=FakeS3Client(),  # type: ignore[arg-type]
+        client=client,  # type: ignore[arg-type]
     )
 
-    expected_sha256 = sha256(b"x" * 1024).hexdigest()
+    expected_sha256 = sha256(client.body).hexdigest()
     storage.validate_uploaded_object(
         "captures/synthetic/source", "image/jpeg", 1024, expected_sha256
     )
@@ -108,6 +150,35 @@ def test_read_object_rejects_an_object_larger_than_the_requested_bound() -> None
         storage.read_object("captures/synthetic/source", max_bytes=8_000_000)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("byte_size", [1024, 5 * 1024 * 1024])
+async def test_stream_capture_upload_uses_multipart_and_validates_the_completed_object(
+    byte_size: int,
+) -> None:
+    client = MultipartFakeS3Client()
+    data = _valid_jpeg(byte_size)
+    storage = S3ObjectStorage(
+        ObjectStorageConfig("http://synthetic.local", "synthetic", "key", "secret"),
+        client=client,  # type: ignore[arg-type]
+    )
+
+    async def chunks():
+        yield data[:100]
+        yield data[100:]
+
+    await storage.stream_capture_upload(
+        "captures/synthetic/source",
+        "image/jpeg",
+        len(data),
+        sha256(data).hexdigest(),
+        chunks(),
+    )
+
+    assert client.completed is True
+    assert client.aborted is False
+    assert client.body == data
+
+
 def test_object_storage_configuration_requires_environment_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -120,4 +191,43 @@ def test_object_storage_configuration_requires_environment_values(
         monkeypatch.delenv(name, raising=False)
 
     with pytest.raises(ObjectStorageError, match="configuration is incomplete"):
+        ObjectStorageConfig.from_environment()
+
+
+def test_presigned_upload_uses_public_client_but_private_reads_use_internal_client() -> None:
+    internal_client = FakeS3Client()
+    public_client = FakeS3Client()
+    storage = S3ObjectStorage(
+        ObjectStorageConfig(
+            endpoint_url="http://minio:9000",
+            bucket="synthetic",
+            access_key_id="key",
+            secret_access_key="secret",
+            public_endpoint_url="http://192.0.2.10:9000",
+        ),
+        client=internal_client,  # type: ignore[arg-type]
+        upload_client=public_client,  # type: ignore[arg-type]
+    )
+
+    storage.create_put_url("captures/synthetic", "image/jpeg", 1024)
+    storage.read_object("captures/synthetic", max_bytes=1024)
+
+    assert len(public_client.calls) == 1
+    assert internal_client.calls == []
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["minio:9000", "ftp://192.0.2.10", "http://user:secret@192.0.2.10", "http://x/?q=1"],
+)
+def test_public_object_storage_endpoint_rejects_ambiguous_urls(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    monkeypatch.setenv("OBJECT_STORAGE_ENDPOINT_URL", "http://minio:9000")
+    monkeypatch.setenv("OBJECT_STORAGE_PUBLIC_ENDPOINT_URL", value)
+    monkeypatch.setenv("CAPTURE_BUCKET", "synthetic")
+    monkeypatch.setenv("MINIO_ROOT_USER", "key")
+    monkeypatch.setenv("MINIO_ROOT_PASSWORD", "secret")
+
+    with pytest.raises(ObjectStorageError, match="public object storage endpoint is invalid"):
         ObjectStorageConfig.from_environment()

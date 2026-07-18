@@ -18,8 +18,11 @@
 
 ## 2. 当前仓库阶段
 
-- 当前 P0 基础骨架已完成：目标 `apps/`、`services/`、`packages/`、`evals/`、`infra/compose/` 目录、最小入口、三类锁文件和 CI 草案已创建；合成 Profile/Device、Learning/Capture API 与两份数据库迁移已存在，部署仍不存在；Git 已初始化在 `master` 但无提交。
+- 当前 P0/P1 基础闭环已存在：`apps/`、`services/`、`packages/`、`evals/`、`infra/compose/`、三类锁文件、CI 草案、OpenAPI `0.8.0`、迁移至 `0017`、Profile/Learning/Capture/Identity/VerifiedQuestion/Tutor/Report/Export/Mistake/Review 和 Ubuntu 自用 Compose 均有实现/验收记录；正式 production、浏览器 E2E 和最终设备回归仍不存在或未完成。PLAN-0014 已开始实现错题/复习最小闭环，教材导入、三入口和任务建议仍未完成。
 - ADR-0017 已接受以账号密码和可撤销会话替换 HMAC/PIN；TASK-0007 进一步删除 HMAC、Demo Header 和 Web 免登录旁路。API/Web/Flutter/Compose 运行时只允许用户名密码登录后的 Cookie/Bearer Session；Flutter 在登录前配置服务端地址，地址变更必须清理旧会话。真实 PostgreSQL、浏览器 E2E 和设备生命周期仍需验收。
+- ADR-0018 已接受以“App 携带 Session → API 有界流式校验/转发 → 私有 MinIO”替代 ADR-0010/0014 的预签名直传。目标 OpenAPI 不返回对象存储 URL，MinIO `9000` 不向宿主/LAN 暴露，且删除 `OBJECT_STORAGE_PUBLIC_ENDPOINT_URL`；当前 `0.8.0` 代码和 Ubuntu 均已切换到新链路，最终设备回归仍待完成。
+- PLAN-0013/Proposed ADR-0019 已实现 Web 将孩子档案与唯一登录账号作为一个管理聚合并支持首页当前孩子选择；`Account`/`ChildProfile` 仍安全分表，聚合创建使用事务和 `0016` 唯一约束。浏览器 E2E 和双孩子回归仍待完成。
+- ADR-0020 已接受以“教材范围 → 错题讲解 → 错题沉淀 → 到期复习 → 今日任务”为数学首科产品主线；PLAN-0014 已实现 `MistakeRecord`/`ReviewSchedule` 的最小 API/迁移/客户端调用，教材导入、三入口、作答状态分支和任务建议仍未完成。
 - `PROJECT.md` 中的模块路径和命令在实际命令运行成功前不得声称对应能力已经存在；当前状态以 `TASK.md` 和 `TESTING.md` 的逐项验证记录为准。
 - 初始化每个子项目时必须同时提交依赖清单、锁文件、最小测试、标准脚本/命令和忽略规则，并同步 `TESTING.md`、`AI_CONTEXT.md` 和本文件。
 - 未经 ADR 或用户批准，不得用临时单文件实现替代目标模块边界，也不得为了快速演示跳过儿童数据、安全、契约或离线同步约束。
@@ -56,9 +59,10 @@
 
 ### 产品原则
 
-- 孩子端低干扰，一次只做一件事；AI 先提问和提示，不抢先给答案。
+- 孩子端低干扰，一次只做一件事；数学页固定以错题讲解、复习错题、今日任务为三个主入口。练习/复习必须先作答和提示；错题讲解必须有 VerifiedQuestion 和已确认作答状态，有作答时针对错步讲，确认空白/没思路时可从头完整讲。
 - 家长查看趋势、异常和建议，不建立儿童实时监控、公开排名或社交榜单。
-- P1 聚焦小学数学单题闭环；语文、英语、语音和 Python 编程启蒙通过后续插件扩展，不污染核心任务/会话模型。
+- 家长侧把孩子档案与其唯一登录账号呈现为一个“孩子”管理对象；多孩子工作台必须明确当前孩子，并让任务、档案和周报使用同一孩子作用域。
+- P1 聚焦小学数学教材驱动的单题错题闭环；语文、英语、视频、语音和 Python 编程启蒙通过后续插件扩展，不污染核心任务/会话模型。
 - 不复制或分发未经授权的教材、题库和教辅内容，不承诺专用学习机的护眼或硬件能力。
 
 ### 系统边界
@@ -66,12 +70,16 @@
 - 后端从 FastAPI 模块化单体起步；只有独立扩容、隔离或团队边界有数据支持时才拆服务，并先写 ADR。
 - `packages/contracts` 是 OpenAPI 和 AI JSON Schema 的唯一契约来源；客户端 SDK 由契约生成。不得在 Flutter、Web 和 API 中手工维护互相漂移的重复类型。
 - PostgreSQL 是业务事实来源；Redis 只做缓存/队列；S3/MinIO 保存文件；pgvector 仅承载知识检索，不替代关系数据。
+- 家庭导入教材/课程资料必须记录授权、版本、哈希和来源位置；解析结果先为草稿，只有家长审核发布的不可变 CurriculumSnapshot 可被 Tutor/任务引用。导入内容是不可信数据，文档指令不得进入系统 Prompt，Provider 只接收当前请求所需的最小片段。
+- `Account` 与 `ChildProfile` 不因 Web 聚合体验而物理合表：前者隔离凭据/锁定/会话，后者保存学习档案。家长创建孩子必须通过一个幂等事务原子创建并绑定两者；一个档案最多绑定一个孩子账号，查询中的当前孩子 ID 必须重新做 Household/角色授权。
 - 端侧 SQLite 只保存今日任务、会话和上传队列等离线数据。`Attempt`、`AuditEvent` 采用追加写；任务状态以服务端版本号合并，禁止用简单“最后写入覆盖”丢弃学习记录。
-- 写接口必须支持 `idempotency-key`；文件上传使用短期签名 URL；重试需要有界、可观测并避免重复副作用。
+- 写接口必须支持 `idempotency-key`；Capture 文件只允许 App 携带可撤销 Session 上传到 API，由 API 分块计数、增量 SHA-256、文件头/尺寸/像素/完整解码校验后通过内部地址流式写入私有 MinIO。禁止客户端直连对象存储、返回预签名 URL、无界读取 8 MB 请求体或向 LAN 暴露 MinIO `9000`；重试必须有界、可观测并清理失败 staging 对象。
 - OCR、视觉、推理和低成本模型通过 Provider Adapter 接入。业务代码不得直接依赖某一云厂商 SDK 的响应形状。
 - Capture 原图只进入家庭控制的存储与处理边界。本地 `PrivacySanitizer` 使用 OCR、规则和轻量视觉检测定位敏感区域并生成不可逆脱敏副本；OCR 不负责最终题目结构化。只有用户确认且安全门禁通过的脱敏副本可交给单一获批云端视觉 Provider 解析。
 - 图片解析与 Tutor 是两个独立步骤：云端视觉结果必须先通过固定 Schema 和人工确认形成 `VerifiedQuestion`，才能进入 Tutor；不得在第一次看图时直接向孩子输出答案或把未确认结果作为学习事实。
-- Tutor Policy 统一控制提示层级、结构化输出、敏感内容和成本上限。AI 输出通过固定 JSON Schema 校验后才能进入业务流程。
+- Tutor Policy 统一控制 guided_practice、review 和 mistake_explanation 模式、提示/完整讲解尺度、教材 grounding、确定性校验、结构化输出、敏感内容和成本上限。AI 输出通过固定 JSON Schema 后仍是派生结果，不能直接判定标准答案或永久掌握。
+- 云视觉须将题目与孩子作答分开提取，作答状态至少区分 `worked`、`blank`、`unclear`和 `answer_area_missing`；只有用户确认/修正后才成为 AttemptEvidence。未拍到答题区、浅色字迹或低置信不得自动当作空白。
+- MistakeRecord 必须引用 VerifiedQuestion 和至少一个已确认 AttemptEvidence；可以是作答/步骤/自述，也可以是 `blank_confirmed/no_approach`。ReviewSchedule 使用版本化确定性策略，复习结果追加写。系统任务建议默认须家长批准，AI 不得静默下发新编题或直接修改到期/掌握状态。
 
 ### 设备边界
 
@@ -127,7 +135,7 @@ P0 创建模块时必须实现并验证 `TESTING.md` 中的目标入口；如实
 - 修改 OpenAPI/Schema：运行契约生成/差异检查、API 测试和所有受影响客户端检查。
 - 修改数据库或离线同步：验证迁移、旧数据、重复请求、并发、断网重连、幂等和回滚/前滚。
 - 修改 UI：验证目标设备职责、横竖屏、弱网、相机/存储权限、键盘、空/错状态和可访问性。
-- 修改图片脱敏/AI：运行固定 eval，覆盖敏感信息漏检/误遮挡、元数据与原始像素清除、用户确认绑定、单 Provider 外发、正确提示层级、拒绝直接代答、低置信度校正、Schema 失败、敏感内容和成本上限。
+- 修改图片脱敏/AI：运行固定 eval，覆盖敏感信息漏检/误遮挡、元数据与原始像素清除、用户确认绑定、单 Provider 外发、题目/作答分区、有作答/真空白/未入镜/不清分类及人工修正、匹配讲解分支、模式越权、低置信度校正、Schema 失败、敏感内容和成本上限。
 - P1 发布前必须满足：核心 E2E 全通过；四类设备完成弱网/横竖屏/权限回归；契约测试、迁移回滚、AI 评测、成本告警、备份恢复和儿童数据删除均有记录。
 - Flaky test 不得通过无解释重跑掩盖；必须记录根因、隔离范围和恢复条件。
 

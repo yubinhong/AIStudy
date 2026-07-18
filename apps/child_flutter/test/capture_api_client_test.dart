@@ -7,6 +7,62 @@ import 'package:image_picker/image_picker.dart';
 import 'package:study_child/capture_api_client.dart';
 
 void main() {
+  test('loads real tasks and resumes an existing active session', () async {
+    final requests = <String>[];
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    const taskId = '00000000-0000-0000-0000-000000000211';
+    const sessionId = '00000000-0000-0000-0000-000000000212';
+    final subscription = server.listen((request) async {
+      requests.add('${request.method} ${request.uri.path}');
+      expect(
+        request.headers.value(HttpHeaders.authorizationHeader),
+        'Bearer test-session-token',
+      );
+      request.response.headers.contentType = ContentType.json;
+      if (request.method == 'GET' && request.uri.path.endsWith('/tasks')) {
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..write(
+            jsonEncode([
+              {
+                'id': taskId,
+                'status': 'in_progress',
+                'version': 2,
+                'scheduled_for': '2026-07-17',
+              },
+            ]),
+          );
+      } else if (request.method == 'GET' &&
+          request.uri.path.endsWith('/tasks/$taskId/active-session')) {
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..write(jsonEncode({'id': sessionId}));
+      } else {
+        request.response.statusCode = HttpStatus.notFound;
+      }
+      await request.response.close();
+    });
+    addTearDown(() async {
+      await subscription.cancel();
+      await server.close(force: true);
+    });
+    final client = CaptureApiClient(
+      baseUrl: 'http://${server.address.host}:${server.port}',
+      householdId: '00000000-0000-0000-0000-000000000001',
+      childId: '00000000-0000-0000-0000-000000000101',
+      authorizationToken: 'test-session-token',
+    );
+
+    final tasks = await client.listTasks();
+    await client.prepareTaskSession(tasks.single);
+
+    expect(tasks.single['id'], taskId);
+    expect(requests, [
+      'GET /households/00000000-0000-0000-0000-000000000001/tasks',
+      'GET /households/00000000-0000-0000-0000-000000000001/tasks/$taskId/active-session',
+    ]);
+  });
+
   test('uploads, confirms, and enqueues an optional formula OCR job', () async {
     final requests = <String>[];
     final uploadedBytes = <int>[];
@@ -16,41 +72,15 @@ void main() {
     final serverSubscription = server.listen((request) async {
       requests.add('${request.method} ${request.uri.path}');
       if (request.method == 'POST' &&
-          request.uri.path.endsWith('/capture-uploads')) {
-        final body = jsonDecode(
-          utf8.decode(await request.expand((chunk) => chunk).toList()),
-        );
-        expect(body['media_type'], 'image/jpeg');
-        expect(body['byte_size'], 3);
+          request.uri.path.endsWith('/captures/upload')) {
+        final body = await request.expand((chunk) => chunk).toList();
+        expect(body, const [0xff, 0xd8, 0xff]);
+        expect(request.headers.value('X-Capture-Media-Type'), 'image/jpeg');
+        expect(request.headers.value('X-Capture-Byte-Size'), '3');
         expect(
           request.headers.value(HttpHeaders.authorizationHeader),
           'Bearer test-session-token',
         );
-        final response = {
-          'capture': _capture(captureId, version: 1),
-          'upload_url':
-              'http://${server.address.host}:${server.port}/signed/$captureId',
-          'upload_expires_at': '2026-07-14T16:00:00Z',
-        };
-        request.response
-          ..statusCode = HttpStatus.created
-          ..headers.contentType = ContentType.json
-          ..write(jsonEncode(response));
-        await request.response.close();
-        return;
-      }
-      if (request.method == 'PUT' && request.uri.path == '/signed/$captureId') {
-        uploadedBytes.addAll(await request.expand((chunk) => chunk).toList());
-        request.response.statusCode = HttpStatus.noContent;
-        await request.response.close();
-        return;
-      }
-      if (request.method == 'POST' &&
-          request.uri.path.endsWith('/upload-confirmations')) {
-        final body = jsonDecode(
-          utf8.decode(await request.expand((chunk) => chunk).toList()),
-        );
-        expect(body['expected_capture_version'], 1);
         request.response
           ..statusCode = HttpStatus.created
           ..headers.contentType = ContentType.json
@@ -137,11 +167,9 @@ void main() {
     expect(job.status, 'queued');
     expect(job.mode, OcrMode.formula);
     expect(job.resultId, isNull);
-    expect(uploadedBytes, const [0xff, 0xd8, 0xff]);
+    expect(uploadedBytes, isEmpty);
     expect(requests, [
-      'POST /households/00000000-0000-0000-0000-000000000001/sessions/00000000-0000-0000-0000-000000000201/capture-uploads',
-      'PUT /signed/00000000-0000-0000-0000-000000000301',
-      'POST /households/00000000-0000-0000-0000-000000000001/captures/00000000-0000-0000-0000-000000000301/upload-confirmations',
+      'POST /households/00000000-0000-0000-0000-000000000001/sessions/00000000-0000-0000-0000-000000000201/captures/upload',
       'POST /households/00000000-0000-0000-0000-000000000001/captures/00000000-0000-0000-0000-000000000301/ocr-jobs',
       'GET /households/00000000-0000-0000-0000-000000000001/captures/00000000-0000-0000-0000-000000000301/ocr-jobs/00000000-0000-0000-0000-000000000302',
     ]);
@@ -174,32 +202,35 @@ void main() {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       const captureId = '00000000-0000-0000-0000-000000000501';
       const analysisJobId = '00000000-0000-0000-0000-000000000502';
+      const sessionId = '00000000-0000-0000-0000-000000000201';
       final subscription = server.listen((request) async {
         requests.add('${request.method} ${request.uri.path}');
         if (request.method == 'POST' &&
-            request.uri.path.endsWith('/capture-uploads')) {
+            request.uri.path.endsWith('/capture-sessions')) {
+          expect(
+            request.headers.value(HttpHeaders.authorizationHeader),
+            'Bearer test-session-token',
+          );
           request.response
             ..statusCode = HttpStatus.created
             ..headers.contentType = ContentType.json
             ..write(
               jsonEncode({
-                'capture': _capture(captureId, version: 1),
-                'upload_url':
-                    'http://${server.address.host}:${server.port}/signed/$captureId',
-                'upload_expires_at': '2026-07-14T16:00:00Z',
+                'id': sessionId,
+                'household_id': '00000000-0000-0000-0000-000000000001',
+                'child_id': '00000000-0000-0000-0000-000000000101',
+                'task_id': '00000000-0000-0000-0000-000000000202',
+                'task_version': 2,
+                'status': 'active',
+                'started_at': '2026-07-17T16:00:00Z',
               }),
             );
           await request.response.close();
           return;
         }
-        if (request.method == 'PUT' &&
-            request.uri.path == '/signed/$captureId') {
-          request.response.statusCode = HttpStatus.noContent;
-          await request.response.close();
-          return;
-        }
         if (request.method == 'POST' &&
-            request.uri.path.endsWith('/upload-confirmations')) {
+            request.uri.path.endsWith('/captures/upload')) {
+          await request.drain<void>();
           request.response
             ..statusCode = HttpStatus.created
             ..headers.contentType = ContentType.json
@@ -256,7 +287,6 @@ void main() {
             baseUrl: 'http://${server.address.host}:${server.port}',
             householdId: '00000000-0000-0000-0000-000000000001',
             childId: '00000000-0000-0000-0000-000000000101',
-            sessionId: '00000000-0000-0000-0000-000000000201',
             authorizationToken: 'test-session-token',
           ).uploadAndStartImageAnalysisBytes(
             Uint8List.fromList(const [0xff, 0xd8, 0xff]),
@@ -278,11 +308,185 @@ void main() {
       expect(receipt.imageAnalysisStatus, 'blocked');
       expect(receipt.hasRemoteOcr, isFalse);
       expect(requests, [
-        'POST /households/00000000-0000-0000-0000-000000000001/sessions/00000000-0000-0000-0000-000000000201/capture-uploads',
-        'PUT /signed/$captureId',
-        'POST /households/00000000-0000-0000-0000-000000000001/captures/$captureId/upload-confirmations',
+        'POST /households/00000000-0000-0000-0000-000000000001/capture-sessions',
+        'POST /households/00000000-0000-0000-0000-000000000001/sessions/00000000-0000-0000-0000-000000000201/captures/upload',
         'POST /households/00000000-0000-0000-0000-000000000001/captures/$captureId/image-analysis-jobs',
       ]);
+    },
+  );
+
+  test('polls visual extraction and persists human verification', () async {
+    final requests = <String>[];
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    const captureId = '00000000-0000-0000-0000-000000000601';
+    const analysisJobId = '00000000-0000-0000-0000-000000000602';
+    const extractionId = '00000000-0000-0000-0000-000000000603';
+    final subscription = server.listen((request) async {
+      requests.add('${request.method} ${request.uri.path}');
+      if (request.method == 'GET' &&
+          request.uri.path.endsWith('/image-analysis-jobs/$analysisJobId')) {
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..headers.contentType = ContentType.json
+          ..write(
+            jsonEncode({
+              'id': analysisJobId,
+              'capture_id': captureId,
+              'status': 'succeeded',
+              'attempt': 1,
+              'extraction_id': extractionId,
+            }),
+          );
+        await request.response.close();
+        return;
+      }
+      if (request.method == 'GET' && request.uri.path.endsWith('/extraction')) {
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..headers.contentType = ContentType.json
+          ..write(
+            jsonEncode({
+              'id': extractionId,
+              'capture_id': captureId,
+              'extraction': {
+                'schema_version': 'question-extraction.v1',
+                'subject': 'math',
+                'question_text': 'synthetic question',
+                'options': ['A', 'B'],
+                'formulas': ['1+1'],
+                'has_diagram': false,
+                'has_handwriting': false,
+                'detected_answer': null,
+                'question_region_count': 1,
+                'confidence': 0.9,
+                'needs_confirmation': true,
+              },
+              'created_at': '2026-07-17T16:00:00Z',
+            }),
+          );
+        await request.response.close();
+        return;
+      }
+      if (request.method == 'POST' &&
+          request.uri.path.endsWith('/extraction/verify')) {
+        final body = jsonDecode(
+          utf8.decode(await request.expand((chunk) => chunk).toList()),
+        );
+        expect(body['question_text'], 'synthetic corrected question');
+        expect(body['options'], ['A', 'B']);
+        expect(body['formulas'], ['1+1']);
+        expect(body['expected_capture_version'], 2);
+        request.response
+          ..statusCode = HttpStatus.created
+          ..headers.contentType = ContentType.json
+          ..write(
+            jsonEncode({
+              'id': '00000000-0000-0000-0000-000000000604',
+              'capture_id': captureId,
+              'extraction_id': extractionId,
+              'question_text': body['question_text'],
+            }),
+          );
+        await request.response.close();
+        return;
+      }
+      request.response.statusCode = HttpStatus.notFound;
+      await request.response.close();
+    });
+    addTearDown(() async {
+      await subscription.cancel();
+      await server.close(force: true);
+    });
+
+    const receipt = CaptureUploadReceipt(
+      captureId: captureId,
+      captureVersion: 2,
+      mediaType: 'image/jpeg',
+      byteSize: 3,
+      contentSha256:
+          '0000000000000000000000000000000000000000000000000000000000000000',
+      ocrJobId: '',
+      ocrJobStatus: 'not_started',
+      imageAnalysisJobId: analysisJobId,
+      imageAnalysisStatus: 'queued',
+    );
+    final client = CaptureApiClient(
+      baseUrl: 'http://${server.address.host}:${server.port}',
+      householdId: 'household',
+      childId: 'child',
+      sessionId: 'session',
+      authorizationToken: 'test-session-token',
+    );
+
+    final record = await client.waitForQuestionExtraction(
+      receipt,
+      timeout: const Duration(seconds: 1),
+      pollInterval: const Duration(milliseconds: 1),
+    );
+    final extraction = Map<String, dynamic>.from(record!['extraction'] as Map);
+    expect(extraction['question_text'], 'synthetic question');
+    await client.verifyQuestionExtraction(
+      receipt: receipt,
+      questionText: 'synthetic corrected question',
+      extraction: extraction,
+    );
+    expect(requests, [
+      'GET /households/household/captures/$captureId/image-analysis-jobs/$analysisJobId',
+      'GET /households/household/captures/$captureId/image-analysis-jobs/$analysisJobId/extraction',
+      'POST /households/household/captures/$captureId/image-analysis-jobs/$analysisJobId/extraction/verify',
+    ]);
+  });
+
+  test(
+    'maps provider billing failures to an actionable capture message',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      const jobId = '00000000-0000-0000-0000-000000000701';
+      final subscription = server.listen((request) async {
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..headers.contentType = ContentType.json
+          ..write(
+            jsonEncode({
+              'id': jobId,
+              'capture_id': '00000000-0000-0000-0000-000000000702',
+              'status': 'failed',
+              'attempt': 1,
+              'error_code': 'provider_http_402',
+            }),
+          );
+        await request.response.close();
+      });
+      addTearDown(() async {
+        await subscription.cancel();
+        await server.close(force: true);
+      });
+      final client = CaptureApiClient(
+        baseUrl: 'http://${server.address.host}:${server.port}',
+        householdId: 'household',
+        childId: 'child',
+        authorizationToken: 'test-session-token',
+      );
+      const receipt = CaptureUploadReceipt(
+        captureId: '00000000-0000-0000-0000-000000000702',
+        captureVersion: 2,
+        mediaType: 'image/jpeg',
+        byteSize: 3,
+        contentSha256:
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        ocrJobId: '',
+        ocrJobStatus: 'not_started',
+        imageAnalysisJobId: jobId,
+      );
+
+      await expectLater(
+        client.waitForQuestionExtraction(receipt),
+        throwsA(
+          predicate<CaptureApiException>(
+            (error) => error.message.contains('NewAPI 余额或模型额度'),
+          ),
+        ),
+      );
     },
   );
 
@@ -413,6 +617,164 @@ void main() {
       'POST /households/household/captures/$captureId/ocr-results/$resultId/confirmations',
       'POST /households/household/captures/$captureId/corrections',
     ]);
+  });
+
+  test(
+    'requests a persisted Tutor hint by server-issued question id',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      const verifiedQuestionId = '00000000-0000-0000-0000-000000000701';
+      final subscription = server.listen((request) async {
+        expect(request.method, 'POST');
+        expect(request.uri.path, '/households/household/tutor/hints');
+        expect(
+          request.headers.value('Idempotency-Key'),
+          'tutor-hint-$verifiedQuestionId-2',
+        );
+        final body = jsonDecode(
+          utf8.decode(await request.expand((chunk) => chunk).toList()),
+        );
+        expect(body, {'verified_question_id': verifiedQuestionId, 'level': 2});
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..headers.contentType = ContentType.json
+          ..write(
+            jsonEncode({
+              'id': '00000000-0000-0000-0000-000000000702',
+              'verified_question_id': verifiedQuestionId,
+              'level': 2,
+              'prompt': '先说说第一步。',
+              'next_step': '只写第一步算式。',
+            }),
+          );
+        await request.response.close();
+      });
+      addTearDown(() async {
+        await subscription.cancel();
+        await server.close(force: true);
+      });
+      final client = CaptureApiClient(
+        baseUrl: 'http://${server.address.host}:${server.port}',
+        householdId: 'household',
+        childId: 'child',
+        authorizationToken: 'test-session-token',
+      );
+
+      final response = await client.createTutorHint(
+        verifiedQuestionId: verifiedQuestionId,
+        level: 2,
+      );
+      expect(response['prompt'], '先说说第一步。');
+    },
+  );
+
+  test('completes the current session with an explicit outcome', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    const sessionId = '00000000-0000-0000-0000-000000000801';
+    final subscription = server.listen((request) async {
+      expect(
+        request.uri.path,
+        '/households/household/sessions/$sessionId/completion',
+      );
+      expect(
+        request.headers.value('Idempotency-Key'),
+        'complete-session-$sessionId-needs_review',
+      );
+      final body = jsonDecode(
+        utf8.decode(await request.expand((chunk) => chunk).toList()),
+      );
+      expect(body, {'outcome': 'needs_review'});
+      request.response
+        ..statusCode = HttpStatus.ok
+        ..headers.contentType = ContentType.json
+        ..write(
+          jsonEncode({
+            'id': sessionId,
+            'status': 'completed',
+            'outcome': 'needs_review',
+          }),
+        );
+      await request.response.close();
+    });
+    addTearDown(() async {
+      await subscription.cancel();
+      await server.close(force: true);
+    });
+    final client = CaptureApiClient(
+      baseUrl: 'http://${server.address.host}:${server.port}',
+      householdId: 'household',
+      childId: 'child',
+      sessionId: sessionId,
+      authorizationToken: 'test-session-token',
+    );
+
+    final response = await client.completeCurrentSession(
+      outcome: 'needs_review',
+    );
+    expect(response['status'], 'completed');
+  });
+
+  test('loads due mistakes and submits a review result', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    const mistakeId = '00000000-0000-0000-0000-000000000901';
+    final subscription = server.listen((request) async {
+      if (request.method == 'GET') {
+        expect(
+          request.uri.path,
+          '/households/household/children/child/mistakes',
+        );
+        expect(request.uri.queryParameters['due_only'], 'true');
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..headers.contentType = ContentType.json
+          ..write(
+            jsonEncode([
+              {
+                'mistake': {'id': mistakeId},
+              },
+            ]),
+          );
+      } else {
+        expect(request.method, 'POST');
+        expect(
+          request.uri.path,
+          '/households/household/children/child/mistakes/$mistakeId/review',
+        );
+        expect(
+          request.headers.value('Idempotency-Key'),
+          'review-$mistakeId-correct',
+        );
+        final body = jsonDecode(
+          utf8.decode(await request.expand((chunk) => chunk).toList()),
+        );
+        expect(body, {'outcome': 'correct'});
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..headers.contentType = ContentType.json
+          ..write(
+            jsonEncode({
+              'mistake': {'id': mistakeId},
+            }),
+          );
+      }
+      await request.response.close();
+    });
+    addTearDown(() async {
+      await subscription.cancel();
+      await server.close(force: true);
+    });
+    final client = CaptureApiClient(
+      baseUrl: 'http://${server.address.host}:${server.port}',
+      householdId: 'household',
+      childId: 'child',
+      sessionId: 'session',
+      authorizationToken: 'test-session-token',
+    );
+
+    final due = await client.listDueMistakes();
+    final reviewed = await client.reviewMistake(mistakeId, 'correct');
+    expect(due.single['mistake'], {'id': mistakeId});
+    expect(reviewed['mistake'], {'id': mistakeId});
   });
 }
 

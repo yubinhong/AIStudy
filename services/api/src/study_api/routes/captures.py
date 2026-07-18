@@ -1,6 +1,7 @@
 """Capture metadata and manual correction routes for synthetic local/CI use."""
 
-from typing import Annotated
+import asyncio
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -38,6 +39,21 @@ from study_api.ocr_jobs import OcrJobIdempotencyConflictError, OcrJobQueue
 router = APIRouter(prefix="/households/{household_id}", tags=["captures"])
 Principal = Annotated[AuthenticatedPrincipal, Depends(get_principal)]
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=128)]
+CaptureMediaType = Annotated[
+    Literal["image/jpeg", "image/png"], Header(alias="X-Capture-Media-Type")
+]
+CaptureByteSize = Annotated[
+    int, Header(alias="X-Capture-Byte-Size", ge=1, le=8_000_000)
+]
+CaptureSha256 = Annotated[
+    str,
+    Header(
+        alias="X-Capture-Content-SHA256",
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    ),
+]
 
 
 def get_capture_repository(request: Request) -> CaptureRepository:
@@ -116,9 +132,125 @@ def create_capture(
 
 
 @router.post(
+    "/sessions/{session_id}/captures/upload",
+    response_model=Capture,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_capture_stream(
+    household_id: UUID,
+    session_id: UUID,
+    request: Request,
+    media_type: CaptureMediaType,
+    byte_size: CaptureByteSize,
+    content_sha256: CaptureSha256,
+    idempotency_key: IdempotencyKey,
+    principal: Principal,
+    repository: Repository,
+    object_storage: ObjectStorage,
+) -> JSONResponse:
+    """Receive a bounded Capture body through the authenticated API boundary."""
+
+    # Authorization deliberately happens before request.stream() is consumed.
+    require_household(principal, household_id)
+    child_id = require_bound_child(principal)
+    declared_content_length = request.headers.get("content-length")
+    if declared_content_length is not None:
+        try:
+            if int(declared_content_length) != byte_size:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="capture content length does not match declaration",
+                )
+        except ValueError as error:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="capture content length is invalid",
+            ) from error
+    metadata = CreateCaptureRequest(
+        media_type=media_type,
+        byte_size=byte_size,
+        content_sha256=content_sha256,
+    )
+    try:
+        pending, replayed = repository.begin_capture_upload(
+            household_id, session_id, child_id, metadata, idempotency_key
+        )
+        if pending.capture.status is CaptureStatus.UPLOAD_PENDING:
+            semaphore: asyncio.Semaphore = request.app.state.capture_upload_semaphore
+            if semaphore.locked():
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="capture upload capacity is temporarily unavailable",
+                )
+            await semaphore.acquire()
+            try:
+                await asyncio.wait_for(
+                    object_storage.stream_capture_upload(
+                        pending.object_key,
+                        pending.capture.media_type,
+                        pending.capture.byte_size,
+                        pending.capture.content_sha256,
+                        request.stream(),
+                    ),
+                    timeout=request.app.state.capture_upload_timeout_seconds,
+                )
+            finally:
+                semaphore.release()
+            capture, confirmed_replayed = repository.confirm_capture_upload(
+                household_id,
+                pending.capture.id,
+                child_id,
+                ConfirmCaptureUploadRequest(expected_capture_version=pending.capture.version),
+                f"stream-finalize-{idempotency_key}",
+            )
+            replayed = replayed or confirmed_replayed
+        else:
+            capture = pending.capture
+    except (LookupError, ChildAssignmentError) as error:
+        raise _not_found() from error
+    except CaptureStateError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="capture upload is not pending"
+        ) from error
+    except ResourceVersionConflictError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="capture version conflict"
+        ) from error
+    except IdempotencyConflictError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="idempotency key reused with a different payload",
+        ) from error
+    except ObjectStorageError as error:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_503_SERVICE_UNAVAILABLE
+                if error.retryable
+                else status.HTTP_422_UNPROCESSABLE_CONTENT
+            ),
+            detail=(
+                "capture upload is temporarily unavailable"
+                if error.retryable
+                else "capture image failed bounded validation"
+            ),
+        ) from error
+    except TimeoutError as error:
+        raise HTTPException(
+            status_code=status.HTTP_408_REQUEST_TIMEOUT,
+            detail="capture upload timed out; retry with the same idempotency key",
+        ) from error
+    return JSONResponse(
+        status_code=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
+        content=capture.model_dump(mode="json"),
+        headers={"Idempotency-Replayed": "true"} if replayed else {},
+    )
+
+
+@router.post(
     "/sessions/{session_id}/capture-uploads",
     response_model=CaptureUpload,
     status_code=status.HTTP_201_CREATED,
+    include_in_schema=False,
 )
 def begin_capture_upload(
     household_id: UUID,
@@ -173,6 +305,7 @@ def begin_capture_upload(
     "/captures/{capture_id}/upload-confirmations",
     response_model=Capture,
     status_code=status.HTTP_201_CREATED,
+    include_in_schema=False,
 )
 def confirm_capture_upload(
     household_id: UUID,

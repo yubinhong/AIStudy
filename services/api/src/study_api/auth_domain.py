@@ -11,11 +11,12 @@ from uuid import UUID, uuid4
 from argon2 import PasswordHasher
 from argon2.exceptions import HashingError, VerificationError, VerifyMismatchError
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import MetaData, Table, create_engine, insert, select, update
+from sqlalchemy import MetaData, Table, create_engine, delete, insert, select, update
 from sqlalchemy.engine import Engine, RowMapping
+from sqlalchemy.exc import IntegrityError
 
 from study_api.database import database_url
-from study_api.domain.models import AccountRole, AuditEvent
+from study_api.domain.models import AccountRole, AuditEvent, ChildProfile, Subject
 from study_api.domain.repository import IdempotencyConflictError
 
 DEFAULT_HOUSEHOLD_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -36,6 +37,10 @@ class AuthError(Exception):
 
 class PasswordPolicyError(ValueError):
     pass
+
+
+class DuplicateUsernameError(ValueError):
+    """The normalized username is already allocated in this household."""
 
 
 def normalize_username(value: str) -> str:
@@ -113,6 +118,22 @@ class AccountView(BaseModel):
     created_at: datetime
 
 
+class CreateChildManagementRequest(BaseModel):
+    """One parent command for a child profile and its unique login account."""
+
+    display_name: str = Field(min_length=1, max_length=80)
+    grade: int = Field(ge=1, le=6)
+    curriculum_version: str = Field(min_length=1, max_length=80)
+    subjects: list[Subject] = Field(min_length=1)
+    username: str = Field(min_length=3, max_length=80)
+    password: str = Field(min_length=1, max_length=128)
+
+
+class ChildManagementView(BaseModel):
+    child: ChildProfile
+    account: AccountView | None = None
+
+
 class LoginRequest(BaseModel):
     username: str = Field(min_length=3, max_length=80)
     password: str = Field(min_length=1, max_length=128)
@@ -179,6 +200,8 @@ class AccountRepository(Protocol):
     ) -> tuple[AccountRecord, bool]: ...
 
     def list_household(self, household_id: UUID) -> list[AccountRecord]: ...
+
+    def delete_child_account(self, household_id: UUID, child_id: UUID) -> None: ...
 
     def set_login_failure(self, account_id: UUID, now: datetime) -> None: ...
 
@@ -266,7 +289,7 @@ class InMemoryAccountRepository:
             return self.get(replay[1]), True
         normalized = normalize_username(username)
         if self.get_by_username(normalized) is not None:
-            raise ValueError("username already exists")
+            raise DuplicateUsernameError("username already exists")
         now = self._now()
         account = AccountRecord(
             id=uuid4(),
@@ -291,6 +314,19 @@ class InMemoryAccountRepository:
             (item for item in self._accounts.values() if item.household_id == household_id),
             key=lambda item: (item.created_at, item.id),
         )
+
+    def delete_child_account(self, household_id: UUID, child_id: UUID) -> None:
+        account_ids = [
+            account.id
+            for account in self.list_household(household_id)
+            if account.role is AccountRole.CHILD and account.child_id == child_id
+        ]
+        for account_id in account_ids:
+            self.revoke_account_sessions(account_id, self._now())
+            self._accounts.pop(account_id, None)
+        self._idempotency = {
+            key: value for key, value in self._idempotency.items() if value[1] not in account_ids
+        }
 
     def set_login_failure(self, account_id: UUID, now: datetime) -> None:
         account = self.get(account_id)
@@ -487,41 +523,49 @@ class PostgresAccountRepository:
             now,
             now,
         )
-        with self._engine.begin() as connection:
-            existing = (
-                connection.execute(
-                    select(self._idempotency).where(
-                        self._idempotency.c.household_id == household_id,
-                        self._idempotency.c.operation == f"create_child_account:{household_id}",
-                        self._idempotency.c.idempotency_key == idempotency_key,
-                    )
-                )
-                .mappings()
-                .one_or_none()
-            )
-            if existing is not None:
-                if existing["fingerprint"] != fingerprint:
-                    raise IdempotencyConflictError
-                row = (
+        try:
+            with self._engine.begin() as connection:
+                existing = (
                     connection.execute(
-                        select(self._accounts).where(self._accounts.c.id == existing["resource_id"])
+                        select(self._idempotency).where(
+                            self._idempotency.c.household_id == household_id,
+                            self._idempotency.c.operation == f"create_child_account:{household_id}",
+                            self._idempotency.c.idempotency_key == idempotency_key,
+                        )
                     )
                     .mappings()
-                    .one()
+                    .one_or_none()
                 )
-                return self._account(row), True
-            connection.execute(insert(self._accounts).values(**account.__dict__))
-            connection.execute(
-                insert(self._idempotency).values(
-                    household_id=household_id,
-                    operation=f"create_child_account:{household_id}",
-                    idempotency_key=idempotency_key,
-                    fingerprint=fingerprint,
-                    resource_type="account",
-                    resource_id=account.id,
-                    created_at=now,
+                if existing is not None:
+                    if existing["fingerprint"] != fingerprint:
+                        raise IdempotencyConflictError
+                    row = (
+                        connection.execute(
+                            select(self._accounts).where(
+                                self._accounts.c.id == existing["resource_id"]
+                            )
+                        )
+                        .mappings()
+                        .one()
+                    )
+                    return self._account(row), True
+                connection.execute(insert(self._accounts).values(**account.__dict__))
+                connection.execute(
+                    insert(self._idempotency).values(
+                        household_id=household_id,
+                        operation=f"create_child_account:{household_id}",
+                        idempotency_key=idempotency_key,
+                        fingerprint=fingerprint,
+                        resource_type="account",
+                        resource_id=account.id,
+                        created_at=now,
+                    )
                 )
-            )
+        except IntegrityError as error:
+            diagnostic = getattr(error.orig, "diag", None)
+            if getattr(diagnostic, "constraint_name", None) == "uq_accounts_household_username":
+                raise DuplicateUsernameError("username already exists") from error
+            raise
         return account, False
 
     def list_household(self, household_id: UUID) -> list[AccountRecord]:
@@ -532,6 +576,29 @@ class PostgresAccountRepository:
                 .order_by(self._accounts.c.created_at, self._accounts.c.id)
             ).mappings()
             return [self._account(row) for row in rows]
+
+    def delete_child_account(self, household_id: UUID, child_id: UUID) -> None:
+        with self._engine.begin() as connection:
+            account_ids = connection.scalars(
+                select(self._accounts.c.id).where(
+                    self._accounts.c.household_id == household_id,
+                    self._accounts.c.child_id == child_id,
+                    self._accounts.c.role == AccountRole.CHILD.value,
+                )
+            ).all()
+            if not account_ids:
+                return
+            connection.execute(
+                delete(self._sessions).where(self._sessions.c.account_id.in_(account_ids))
+            )
+            connection.execute(
+                delete(self._idempotency).where(
+                    self._idempotency.c.resource_id.in_(account_ids)
+                )
+            )
+            connection.execute(
+                delete(self._accounts).where(self._accounts.c.id.in_(account_ids))
+            )
 
     def set_login_failure(self, account_id: UUID, now: datetime) -> None:
         account = self.get(account_id)
@@ -665,13 +732,6 @@ class AuthService:
             self._audit(account.household_id, "auth_login_blocked", account.id, now)
             raise AuthError
         if account.locked_until is not None and account.locked_until > now:
-            self._audit(account.household_id, "auth_login_blocked", account.id, now)
-            raise AuthError
-        if (
-            account.username == BOOTSTRAP_USERNAME
-            and account.must_change_password
-            and remote_host not in {"127.0.0.1", "::1", "localhost"}
-        ):
             self._audit(account.household_id, "auth_login_blocked", account.id, now)
             raise AuthError
         if not verify_password(account.password_hash, request.password):

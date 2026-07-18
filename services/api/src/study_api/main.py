@@ -1,5 +1,6 @@
-"""P0 API entrypoint for synthetic local/CI learning vertical slices."""
+"""家庭 AI 学习助手模块化 API 入口。"""
 
+import asyncio
 import os
 
 from fastapi import FastAPI, HTTPException, Request
@@ -13,8 +14,23 @@ from study_api.auth_domain import (
     InMemoryAccountRepository,
     PostgresAccountRepository,
 )
+from study_api.child_management import (
+    ChildManagementRepository,
+    InMemoryChildManagementRepository,
+    PostgresChildManagementRepository,
+)
 from study_api.domain.capture_repository import CaptureRepository, InMemoryCaptureRepository
+from study_api.domain.insights_repository import (
+    EmptyInsightsRepository,
+    InsightsRepository,
+    PostgresInsightsRepository,
+)
 from study_api.domain.learning_repository import InMemoryLearningRepository
+from study_api.domain.mistake_repository import (
+    InMemoryMistakeRepository,
+    MistakeRepository,
+    PostgresMistakeRepository,
+)
 from study_api.domain.ocr_result_repository import (
     InMemoryOcrResultRepository,
     OcrResultRepository,
@@ -25,9 +41,15 @@ from study_api.domain.question_extraction_repository import (
     PostgresQuestionExtractionRepository,
     QuestionExtractionRepository,
 )
-from study_api.domain.repository import InMemoryProfileRepository
+from study_api.domain.repository import InMemoryProfileRepository, ProfileRepository
 from study_api.domain.sql_capture_repository import PostgresCaptureRepository
 from study_api.domain.sql_learning_repository import LearningRepository, PostgresLearningRepository
+from study_api.domain.sql_profile_repository import PostgresProfileRepository
+from study_api.domain.tutor_turn_repository import (
+    InMemoryTutorTurnRepository,
+    PostgresTutorTurnRepository,
+    TutorTurnRepository,
+)
 from study_api.domain.verified_question_repository import (
     InMemoryVerifiedQuestionRepository,
     PostgresVerifiedQuestionRepository,
@@ -50,13 +72,15 @@ from study_api.ocr_jobs import InMemoryOcrJobQueue, OcrJobQueue, PostgresOcrJobQ
 from study_api.routes.authentication import router as authentication_router
 from study_api.routes.captures import router as capture_router
 from study_api.routes.image_analysis import router as image_analysis_router
+from study_api.routes.insights import router as insights_router
 from study_api.routes.learning import router as learning_router
+from study_api.routes.mistakes import router as mistakes_router
 from study_api.routes.profiles import router as profile_router
 from study_api.routes.tutor import router as tutor_router
 
 
 def create_app(
-    repository: InMemoryProfileRepository | None = None,
+    repository: ProfileRepository | None = None,
     learning_repository: LearningRepository | None = None,
     capture_repository: CaptureRepository | None = None,
     object_storage: CaptureObjectStorage | None = None,
@@ -65,14 +89,17 @@ def create_app(
     image_analysis_repository: ImageAnalysisJobRepository | None = None,
     question_extraction_repository: QuestionExtractionRepository | None = None,
     verified_question_repository: VerifiedQuestionRepository | None = None,
+    tutor_turn_repository: TutorTurnRepository | None = None,
+    insights_repository: InsightsRepository | None = None,
+    mistake_repository: MistakeRepository | None = None,
     account_repository: AccountRepository | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="家庭 AI 学习助手 API",
         version=__version__,
-        description="Synthetic local/CI household and learning contract vertical slices.",
+        description="Household-scoped learning, capture, profile, and authentication API.",
     )
-    app.state.profile_repository = repository or InMemoryProfileRepository()
+    app.state.profile_repository = repository or _default_profile_repository()
     app.state.learning_repository = learning_repository or _default_learning_repository(
         app.state.profile_repository
     )
@@ -80,6 +107,8 @@ def create_app(
         app.state.learning_repository
     )
     app.state.object_storage = object_storage or _default_object_storage()
+    app.state.capture_upload_semaphore = asyncio.Semaphore(_capture_upload_concurrency())
+    app.state.capture_upload_timeout_seconds = _capture_upload_timeout_seconds()
     app.state.ocr_job_queue = ocr_job_queue or _default_ocr_job_queue()
     app.state.ocr_result_repository = ocr_result_repository or _default_ocr_result_repository()
     app.state.image_analysis_repository = (
@@ -91,15 +120,25 @@ def create_app(
     app.state.verified_question_repository = (
         verified_question_repository or _default_verified_question_repository()
     )
+    app.state.tutor_turn_repository = tutor_turn_repository or _default_tutor_turn_repository()
+    app.state.insights_repository = insights_repository or _default_insights_repository()
+    app.state.mistake_repository = mistake_repository or _default_mistake_repository()
     app.state.newapi_config = NewApiConfig.from_environment()
     app.state.account_repository = account_repository or _default_account_repository()
     app.state.auth_service = AuthService(app.state.account_repository)
+    app.state.child_management_repository = _default_child_management_repository(
+        app.state.profile_repository,
+        app.state.account_repository,
+        app.state.auth_service,
+    )
     app.include_router(profile_router)
     app.include_router(authentication_router)
     app.include_router(learning_router)
     app.include_router(capture_router)
     app.include_router(image_analysis_router)
     app.include_router(tutor_router)
+    app.include_router(insights_router)
+    app.include_router(mistakes_router)
 
     @app.exception_handler(HTTPException)
     async def http_error_handler(_: Request, exception: HTTPException) -> JSONResponse:
@@ -127,7 +166,45 @@ def create_app(
     return app
 
 
-def _default_learning_repository(profiles: InMemoryProfileRepository) -> LearningRepository:
+def _default_profile_repository() -> ProfileRepository:
+    if os.environ.get("STUDY_API_PROFILE_REPOSITORY") == "postgres":
+        return PostgresProfileRepository()
+    return InMemoryProfileRepository()
+
+
+def _default_child_management_repository(
+    profiles: ProfileRepository,
+    accounts: AccountRepository,
+    auth_service: AuthService,
+) -> ChildManagementRepository:
+    if isinstance(profiles, PostgresProfileRepository) and isinstance(
+        accounts, PostgresAccountRepository
+    ):
+        return PostgresChildManagementRepository(engine=profiles.engine)
+    return InMemoryChildManagementRepository(profiles, accounts, auth_service)
+
+
+def _capture_upload_concurrency() -> int:
+    try:
+        value = int(os.environ.get("STUDY_CAPTURE_UPLOAD_CONCURRENCY", "4"))
+    except ValueError as error:
+        raise RuntimeError("STUDY_CAPTURE_UPLOAD_CONCURRENCY must be an integer") from error
+    if not 1 <= value <= 32:
+        raise RuntimeError("STUDY_CAPTURE_UPLOAD_CONCURRENCY must be between 1 and 32")
+    return value
+
+
+def _capture_upload_timeout_seconds() -> float:
+    try:
+        value = float(os.environ.get("STUDY_CAPTURE_UPLOAD_TIMEOUT_SECONDS", "120"))
+    except ValueError as error:
+        raise RuntimeError("STUDY_CAPTURE_UPLOAD_TIMEOUT_SECONDS must be a number") from error
+    if not 5 <= value <= 600:
+        raise RuntimeError("STUDY_CAPTURE_UPLOAD_TIMEOUT_SECONDS must be between 5 and 600")
+    return value
+
+
+def _default_learning_repository(profiles: ProfileRepository) -> LearningRepository:
     if os.environ.get("STUDY_API_LEARNING_REPOSITORY") == "postgres":
         return PostgresLearningRepository(profiles)
     return InMemoryLearningRepository(profiles)
@@ -174,6 +251,24 @@ def _default_verified_question_repository() -> VerifiedQuestionRepository:
     if os.environ.get("STUDY_API_IMAGE_ANALYSIS_REPOSITORY") == "postgres":
         return PostgresVerifiedQuestionRepository()
     return InMemoryVerifiedQuestionRepository()
+
+
+def _default_tutor_turn_repository() -> TutorTurnRepository:
+    if os.environ.get("STUDY_API_IMAGE_ANALYSIS_REPOSITORY") == "postgres":
+        return PostgresTutorTurnRepository()
+    return InMemoryTutorTurnRepository()
+
+
+def _default_insights_repository() -> InsightsRepository:
+    if os.environ.get("STUDY_API_LEARNING_REPOSITORY") == "postgres":
+        return PostgresInsightsRepository()
+    return EmptyInsightsRepository()
+
+
+def _default_mistake_repository() -> MistakeRepository:
+    if os.environ.get("STUDY_API_LEARNING_REPOSITORY") == "postgres":
+        return PostgresMistakeRepository()
+    return InMemoryMistakeRepository()
 
 
 def _default_account_repository() -> AccountRepository:

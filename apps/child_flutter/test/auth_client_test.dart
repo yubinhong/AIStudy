@@ -53,7 +53,16 @@ void main() {
       request.response
         ..statusCode = HttpStatus.ok
         ..headers.contentType = ContentType.json
-        ..write(jsonEncode({'access_token': 'configured-server-session'}));
+        ..write(
+          jsonEncode({
+            'access_token': 'configured-server-session',
+            'account': {
+              'role': 'child',
+              'child_id': '00000000-0000-0000-0000-000000000101',
+              'must_change_password': true,
+            },
+          }),
+        );
       await request.response.close();
     });
     addTearDown(() async {
@@ -61,10 +70,73 @@ void main() {
       await server.close(force: true);
     });
 
-    final token = await ChildAuthClient(
+    final result = await ChildAuthClient(
       baseUrl: 'http://${server.address.host}:${server.port}',
     ).login('child-a', 'child-password');
 
-    expect(token, 'configured-server-session');
+    expect(result.token, 'configured-server-session');
+    expect(result.mustChangePassword, isTrue);
   });
+
+  test(
+    'reads pending password state and rotates the Flutter session',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var requestCount = 0;
+      final subscription = server.listen((request) async {
+        requestCount += 1;
+        expect(
+          request.headers.value('authorization'),
+          'Bearer pending-session',
+        );
+        request.response.headers.contentType = ContentType.json;
+        if (request.uri.path == '/auth/me') {
+          expect(request.method, 'GET');
+          request.response
+            ..statusCode = HttpStatus.ok
+            ..write(
+              jsonEncode({
+                'role': 'child',
+                'child_id': '00000000-0000-0000-0000-000000000101',
+                'must_change_password': true,
+              }),
+            );
+        } else {
+          expect(request.uri.path, '/auth/change-password');
+          expect(request.method, 'POST');
+          final body = jsonDecode(
+            utf8.decode(await request.expand((chunk) => chunk).toList()),
+          );
+          expect(body['current_password'], 'initial-password');
+          expect(body['new_password'], 'new-child-password');
+          request.response
+            ..statusCode = HttpStatus.ok
+            ..write(
+              jsonEncode({
+                'access_token': 'rotated-session',
+                'account': {'must_change_password': false},
+              }),
+            );
+        }
+        await request.response.close();
+      });
+      addTearDown(() async {
+        await subscription.cancel();
+        await server.close(force: true);
+      });
+      final client = ChildAuthClient(
+        baseUrl: 'http://${server.address.host}:${server.port}',
+      );
+
+      expect(await client.mustChangePassword('pending-session'), isTrue);
+      final token = await client.changePassword(
+        token: 'pending-session',
+        currentPassword: 'initial-password',
+        newPassword: 'new-child-password',
+      );
+
+      expect(token, 'rotated-session');
+      expect(requestCount, 2);
+    },
+  );
 }

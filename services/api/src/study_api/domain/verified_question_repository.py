@@ -29,6 +29,10 @@ class VerifiedQuestionRepository(Protocol):
         self, household_id: UUID, child_id: UUID, capture_id: UUID, extraction_id: UUID
     ) -> VerifiedQuestion: ...
 
+    def get_by_id(
+        self, household_id: UUID, child_id: UUID, verified_question_id: UUID
+    ) -> VerifiedQuestion: ...
+
 
 def _fingerprint(request: VerifyQuestionRequest, verified_by: str) -> str:
     return sha256(f"{request.model_dump_json()}:{verified_by}".encode()).hexdigest()
@@ -100,6 +104,14 @@ class InMemoryVerifiedQuestionRepository:
             or record.capture_id != capture_id
             or self._scope.get(record.id) != (household_id, child_id)
         ):
+            raise LookupError
+        return record
+
+    def get_by_id(
+        self, household_id: UUID, child_id: UUID, verified_question_id: UUID
+    ) -> VerifiedQuestion:
+        record = self._records.get(verified_question_id)
+        if record is None or self._scope.get(record.id) != (household_id, child_id):
             raise LookupError
         return record
 
@@ -234,6 +246,25 @@ class PostgresVerifiedQuestionRepository:
                         self._records.c.child_id == child_id,
                         self._records.c.capture_id == capture_id,
                         self._records.c.extraction_id == extraction_id,
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+        if row is None:
+            raise LookupError
+        return self._record(row)
+
+    def get_by_id(
+        self, household_id: UUID, child_id: UUID, verified_question_id: UUID
+    ) -> VerifiedQuestion:
+        with self._engine.connect() as connection:
+            row = (
+                connection.execute(
+                    select(self._records).where(
+                        self._records.c.id == verified_question_id,
+                        self._records.c.household_id == household_id,
+                        self._records.c.child_id == child_id,
                     )
                 )
                 .mappings()

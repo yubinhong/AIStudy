@@ -135,8 +135,6 @@ class PostgresCaptureRepository:
             )
             if existing is not None:
                 pending, _ = self._replay_pending_capture(connection, existing, payload)
-                if pending.capture.status is not CaptureStatus.UPLOAD_PENDING:
-                    raise CaptureStateError
                 return pending, True
             capture = Capture(
                 id=uuid4(),

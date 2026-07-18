@@ -4,14 +4,32 @@
 
 ## [Unreleased]
 
-尚无产品发布；已完成一次不含真实数据的 Ubuntu 自用 Compose 环境验收。
+尚无产品发布；已完成一次不含真实数据的 Ubuntu 自用 Compose 环境验收，当前运行迁移至 `0016_child_account_uniqueness`。
+
+- 2026-07-18：完成 ADR-0018 流式拍题上传的 Ubuntu 成对部署。API/Flutter 只使用 Session 上传到 API，服务端通过 boto3 multipart 写入内部私有 MinIO，宿主/LAN 不暴露 `9000`；清理远端残留公开对象存储配置。真实 NewAPI synthetic 请求已到达 Provider，但返回 HTTP `402`，客户端现显示余额/模型额度的可操作提示。
+- 2026-07-18：完成 PLAN-0013 首版孩子管理聚合。家长一次提交事务创建孩子档案和唯一绑定账号，支持聚合列表/编辑/删除、账号管理以及首页 `?child=` 选择和服务端任务过滤；新增 `0016_child_account_uniqueness`，浏览器 E2E 和双孩子设备回归仍待执行。
+
+- 项目 Owner 接受 ADR-0018：Capture 上传改为 App 携带 Session 只访问 API，API 有界流式校验并通过内部地址写入私有 MinIO；OpenAPI 已删除 `upload_url`/独立确认，Compose 已删除 `OBJECT_STORAGE_PUBLIC_ENDPOINT_URL`/`MINIO_API_PORT` 并取消 LAN `9000`，Ubuntu 已完成成对部署。
+- 项目 Owner 批准 PLAN-0013 的 Web 体验方向：创建孩子以一次事务同时创建档案和唯一绑定账号，管理页按每个孩子一张聚合卡呈现；家长首页增加当前孩子选择，并统一过滤问候、任务、档案和周报。`Account`/`ChildProfile` 仍按安全职责分表；首版代码和 Ubuntu 部署已完成，浏览器 E2E 仍待执行。
+- 项目 Owner 接受 ADR-0020/PLAN-0014：数学首科主线调整为“家长发布年级/学期/教材知识范围 → 孩子选择错题讲解/复习错题/今日任务 → 错题证据与完整讲解 → 正式错题本/到期复习 → 家长可控任务建议”。拍题目标同时包含题目和孩子解答：有作答时针对首个可验证错步讲解，答题区确认空白时记录“没有思路”并从头讲解；未拍到答题区或不清不得自动当空白。系统建议默认须家长批准。TODO-016～019 已建立，但当前教材导入、三入口、MistakeRecord/ReviewSchedule 和 TaskRecommendation 均未实现或部署。
+
+- P1 非实体设备核心闭环完成：OpenAPI `0.8.0`、迁移 `0013`～`0015` 新增服务端可信 VerifiedQuestion → TutorTurn、学习会话完成/复习状态、家长周报和 24 小时孩子数据导出快照；孩子删除会清理关联学习、Capture/OCR、视觉、Tutor 与导出数据。
+- Flutter 首页改为读取真实任务和活动会话，拍题人工确认后进入真实 Tutor；待同步 Attempt 使用按服务端/账号隔离的 SQLite 队列，同日再次拍题不会复用已完成会话。家长 Web 可创建当天任务、查看周报并下载数据导出。
+- Compose 新增数据生命周期 worker，以及 PostgreSQL custom dump + MinIO 快照备份和隔离恢复校验脚本。Ubuntu 已部署 API `0.8.0`/迁移 `0016`，新流式上传 synthetic 请求已到达 NewAPI；当前 Provider HTTP `402` 使 Extraction/人工确认/Tutor 的真实联调等待额度恢复，备份恢复校验通过。
+- Android release APK 与 iOS release 无签名构建通过。实体设备最终相机/权限/弱网/横竖屏/重启回归和自动视觉检测器仍是明确未完成项；当前自动脱敏不得宣传为绝对匿名。
 
 - TASK-0006 代码闭环完成：新增 QuestionExtraction 人工确认生成/读取 `VerifiedQuestion`、`0010_verified_question` 迁移，以及 ImageAnalysis 派生对象成功/失败清理。
 - PLAN-0007 进入实现：新增 Argon2id 账号密码、`0011_account_password_session`、可撤销会话、首次改密、Web Cookie/CSRF、Flutter 安全存储登录、家长孩子账号管理和 Compose password 认证默认配置。
 - TASK-0007 收敛认证面：删除 API HMAC/Demo Header、签发脚本、旧配置和 Web 免登录/静态 Token 回退；OpenAPI `0.6.0` 业务端点只允许 Cookie/Bearer Session，Web 受保护页统一要求登录。旧 HMAC/Demo 客户端不再兼容。
 - Flutter 登录页新增服务端地址配置与持久化；地址需为受限 HTTP(S) 根 URL，变更地址会先清除旧服务端会话。登录、孩子档案和 Capture 共用该地址。
+- 修复孩子初始账号登录后被误显示为“API 尚未连接”：Flutter 现在解析并恢复 `must_change_password`，提供首次设置新密码、会话轮换和安全存储流程；孩子档案列表/详情同时收敛为仅返回账号绑定档案。新 APK 已覆盖安装到华为 Nova 9，实机完成首次改密并读取学习桌；同时修复手机竖屏任务标题溢出。
 - 认证生命周期已接入现有 `audit_events`：记录登录成功/失败/锁定/阻断、改密、再认证失败、登出和家长账号管理操作；审计不保存用户名、密码、哈希、令牌或 Cookie。
-- NewAPI 已完成 synthetic `queued → Extraction` 联调；真实视觉检测器、浏览器 E2E、首次改密后的 Cookie/CSRF、iPad 认证生命周期、远端人工确认和备份恢复仍未执行，不作为本次代码完成声明。
+- 家长创建孩子账号不再将用户名写入 HTTP Header，支持中文用户名；页面自动绑定家庭孩子档案，多个档案可选择，无需手填 UUID。孩子档案现可新增、编辑和删除，Web 代理会以正确的 JSON Content-Type 转发新增与编辑请求，避免 API 返回 422。
+- 新增 `0012_profile_persistence` 与 PostgreSQL ProfileRepository：孩子档案和设备登记不再随 API 重启丢失；新增/编辑/删除、设备登记均事务化写入幂等凭据和审计，孩子账号以同 Household 复合外键绑定档案并在档案删除时级联撤销。Ubuntu 已完成迁移前备份、前滚和重启持久化 synthetic smoke。
+- 修复 PostgreSQL 孩子账号重复用户名被误报为 HTTP 500：仓储只将 `uq_accounts_household_username` 唯一约束转换为可处理的 409，其他数据库故障继续上抛；家长 Web 会提示管理现有账号或更换用户名。修复已部署 Ubuntu，现有账号和密码未被覆盖。
+- 修复真机拍题只进入本地演示而未上传的问题：OpenAPI `0.7.0` 新增孩子绑定的幂等即时拍题会话，Flutter 不再依赖编译期 `STUDY_CAPTURE_SESSION_ID`；识别任务会轮询到 QuestionExtraction，并将人工修改持久化为 VerifiedQuestion。MinIO 内部读写与真机预签名地址已分离，Bucket 仍私有且 App 无密钥。
+- 修复较大脱敏 PNG 调用 NewAPI 返回 HTTP 413：Provider Adapter 会对超过 600 KB 的已确认脱敏副本执行内存去元数据、等比缩放和有界 JPEG 重编码，再进行 base64 传输；不恢复遮挡像素、不落盘新副本。Nova 9 首次真实链路已到达 ImageAnalysis，原 3.09 MB 请求的 413 根因已确认并完成服务端前滚。
+- NewAPI 早期已完成 synthetic `queued → Extraction`；本轮进一步完成大图压缩、远端人工确认、TutorTurn 和备份恢复。真实视觉检测器、浏览器 E2E 与完整 iPad 生命周期仍未执行。
 
 ### Changed
 
@@ -56,3 +74,4 @@
 - 新增 OCR mode 贯穿入队到 Worker：旧客户端默认普通 text OCR，显式 `formula` 才调用公式模型；PostgreSQL Job Ledger 以 `0007_ocr_job_mode` 持久化模式，并拒绝同一幂等键切换模式。Flutter Capture 客户端同步支持可选 formula 请求。
 
 版本号、远程仓库和比较链接将在首次发布流程中建立。
+- 2026-07-18：按 ADR-0018 完成本地及 Ubuntu Capture 上传收敛：Flutter 只向 API 发送带 Session 的原始图片流，API 通过 boto3 S3 兼容 multipart 写入私有 MinIO，并进行有界大小、增量 SHA-256、完整图片解码和失败清理；OpenAPI 删除预签名/独立确认合同，Compose 取消 MinIO 宿主端口。

@@ -26,26 +26,33 @@
 | TODO-005 | 完成儿童数据法域、同意、保留、导出/删除和备份决策 | 解除真实儿童数据和 production 阻塞 | P0 | `TBD（安全/法务/产品）` | Owner 与目标法域明确 | Planned |
 | TODO-006 | 修复设计稿跨环境中文字体渲染 | 当前 LibreOffice 渲染缺字，影响后续设计稿维护/发布 | P2 | `TBD` | 确认目标阅读/发布环境 | Planned |
 | TODO-007 | 实现任务/会话/Attempt 与离线同步 | 建立学习过程和断网不丢的核心底座 | P1 | Codex（执行） | ADR-0003 Accepted | Done（TASK-0005；synthetic PostgreSQL 事务与队列边界，真实设备离线待后续） |
-| TODO-008 | 实现 Capture/本地隐私脱敏/云视觉解析/人工校正 | 支持数学单题输入，保证原图不外发并控制脱敏漏检、模型误解析和低置信度风险 | P1 | Codex（执行） | ADR-0010/0011/0015/0016 Accepted；自托管 NewAPI 已部署后才能联调 | Done（TASK-0006；人工确认生成 VerifiedQuestion、派生对象成功/失败清理、MinIO/授权/生命周期、对象实际 SHA-256、Provider-neutral Schema、本地脱敏核心/规则信号、Flutter 确认上传、固定 synthetic eval、0008/0009 receipt 与提取仓储、NewAPI Adapter 和可开关 worker 已实现；真实视觉检测器、实例联调、iPad 回归和备份演练保留为环境验收） |
-| TODO-009 | 实现 Tutor Policy、Provider Adapter 和固定 AI eval | 只消费人工确认的 VerifiedQuestion，提供分级提示并控制安全、Schema 和成本 | P1 | Codex（执行） | ADR-0015/0016；本地 NewAPI 可选，默认离线降级 | In progress（offline Tutor Policy 1～3 级提示与 synthetic eval、NewAPI 结构化 Adapter 已实现；Tutor 仍只接受人工确认的 VerifiedQuestion，真实 Tutor Provider 暂不接入） |
-| TODO-010 | 实现错题、复习和可追溯周报 | 完成孩子学习到家长反馈的闭环 | P1 | `TBD` | Session/Tutor 数据稳定 | Planned |
+| TODO-008 | 实现 Capture/本地隐私脱敏/云视觉解析/人工校正 | 支持数学单题输入，保证原图不外发并控制脱敏漏检、模型误解析和低置信度风险 | P1 | Codex（执行） | ADR-0011/0015/0016/0018 Accepted；ADR-0010 已被替代 | Done（TASK-0006/0009；人工确认、派生对象清理、MinIO/授权/生命周期、哈希门禁、固定 synthetic eval 和真实 NewAPI 合成大图联调已实现；上传传输收敛由 TODO-014/PLAN-0012 跟踪，真实视觉检测器与设备回归仍是明确风险） |
+| TODO-009 | 实现 Tutor Policy、Provider Adapter 和固定 AI eval | 只消费人工确认的 VerifiedQuestion，提供分级提示并控制安全、Schema 和成本 | P1 | Codex（执行） | ADR-0015/0016；本地 NewAPI 可选，默认离线降级 | Done（PLAN-0011；Tutor 只按服务端 VerifiedQuestion ID 读取事实，1～3 级策略、Schema、幂等和追加写 TutorTurn 已实现并通过 synthetic/集成测试；外部 Tutor Provider 仍为可选后续插件） |
+| TODO-010 | 实现错题、复习和可追溯周报 | 完成孩子学习到家长反馈的闭环 | P1 | Codex（执行） | Session/Tutor 数据稳定 | Done（PLAN-0011；会话完成结果、needs_review、TutorTurn 统计和家长周报聚合已实现；复杂知识点图谱/通知属于后续增强） |
 | TODO-011 | 恢复可复现的 uv 可执行入口 | 当前临时 uv 路径已清理，依赖锁可用但标准 `uv` 命令不可发现 | P0 | `TBD` | 确认项目级或用户级 uv 安装策略 | Planned |
 | TODO-012 | 收敛账号密码与可撤销会话认证 | 家长 Web 和孩子 Flutter 只保留用户名/密码入口，不能继续暴露 HMAC、Demo Header 或 Web 免登录旁路 | P0 | Codex（执行） | ADR-0017 Accepted；TASK-0007 / PLAN-0008 阶段 5a | Done（TASK-0007：HMAC/Demo/免登录和旧配置已删除，OpenAPI `0.6.0` 只保留 Session，Flutter 已支持登录前服务端地址配置；远端部署、浏览器和实体设备验收继续由 PLAN-0008 跟踪） |
+| TODO-013 | 锁定移动端正式 App ID 与发布签名 | 当前 Android/iOS 仍使用 Flutter `com.example` 标识，Android release 为本地自用使用 debug 签名；擅自改变会生成新 App、清空原 App 安全会话并需要 Owner 证书/keystore | P0（正式分发前） | 项目 Owner + Codex | Owner 确认 Android applicationId、iOS bundle ID、Apple Team 与 Android keystore 安全位置 | Planned |
+| TODO-014 | 将 Capture 改为 API 有界流式上传并关闭 MinIO LAN 入口 | 统一 Session/Household/孩子授权、限速、幂等、文件验证和审计；App 不再持有预签名 URL 或直连对象存储 | P0 / Security | Codex（执行中） | ADR-0018 Accepted；PLAN-0012；API/App 必须成对升级 | In Progress（API/Flutter/契约/Compose 已迁移并部署 Ubuntu；真机、断连/超时/并发现场验收和 Provider 额度恢复后的识别待完成） |
+| TODO-015 | 统一 Web 孩子管理并支持多孩子工作台切换 | 创建孩子时原子创建档案和唯一绑定账号；首页按所选孩子统一过滤任务、档案和周报，消除“两套对象”和永远取第一个孩子的问题 | P0 / Web UX | Codex（执行） | PLAN-0013；ADR-0019；发布匹配 OpenAPI/API/Web 并完成迁移验收 | In Progress（聚合创建/列表/删除、Web 单表单、唯一约束和首页孩子选择已实现并部署 Ubuntu；浏览器 E2E/双孩子回归待完成） |
+| TODO-016 | 建立孩子教材范围、材料导入与知识发布 | 让错题讲解和任务建议基于家长确认的当前年级/学期/教材，而不是模型无来源记忆 | P0 / Product Foundation | Codex（后续执行） | ADR-0020 Accepted；PLAN-0014 M1；PLAN-0013 的孩子选择/聚合边界；实现前确认 PDF 处理依赖和限制 | Ready（规划完成，代码未开始；当前只有 `curriculum_version` 字符串） |
+| TODO-017 | 重构 Flutter 数学三入口并实现错题详细讲解 | 提供“数学 → 错题讲解/复习错题/今日任务”；拍题同时解析题目和孩子作答，确认 `worked/blank/unclear/answer_area_missing`；有作答定位错步，确认空白从头讲解，并创建错题 | P0 / Core Learning | Codex（后续执行） | TODO-016；PLAN-0012 安全上传；ADR-0020；Tutor 模式/Schema/eval | Planned（等待前置；当前首页仍是今日任务 + 拍题） |
+| TODO-018 | 实现正式错题本与到期复习调度 | 将 `needs_review` 最小标记升级为 MistakeRecord、ReviewSchedule、到期/全部队列和逐题过关 | P1 / Retention | Codex（执行中） | TODO-017；ReviewPolicy v1 间隔/过关门槛确认 | In Progress（`0017`、API 到期查询/复习、Web 周报和 Flutter 客户端调用已实现；完整错题本 UI、证据追加写和 E2E 待完成） |
+| TODO-019 | 实现可解释今日任务建议 | 用到期错题、已发布教材练习和有证据的薄弱知识点提出任务，默认由家长批准 | P1 / Recommendation | Codex（后续执行） | TODO-016、TODO-018；任务来源/审批合同和每日上限 | Planned（首批不自动下发 AI 新编题） |
 
 ## Later — P2 候选，不承诺
 
-- TODO-201：掌握度与复习调度增强 — 进入条件：P1 数据质量和家庭反馈证明有价值。
+- TODO-201：掌握度与复习调度增强 — 正式 MistakeRecord/ReviewSchedule 和 ReviewPolicy v1 已提升为 TODO-018；本项仅保留更复杂的自适应掌握度算法，进入条件为 v1 家庭数据质量和反馈证明有价值。
 - TODO-202：语文/英语科目插件 — 进入条件：插件 ADR 证明不修改核心任务/会话模型。
 - TODO-203：语音交互 — 进入条件：儿童隐私、设备权限和成本评审通过。
 - TODO-204：Python 编程启蒙/受控沙箱 — 进入条件：独立安全威胁模型和 Windows 端范围批准。
 - TODO-205：服务拆分 — 进入条件：模块存在独立扩容、隔离或团队边界的测量证据。
-- TODO-206：教材/课程文档导入与任务生成 — 来源：`PRD.md` OPT-001；进入条件：当前 P1 开发完成，明确文档格式、版权、知识点映射、人工审核和生成失败回滚。
+- TODO-206：教材/课程文档导入与任务生成 — 已由 ADR-0020 提升并拆入 TODO-016/019；本项仅保留更多文件格式、跨教材迁移和高级自动生成扩展。
 - TODO-207：多题画面分割与人工选题 — 来源：`PRD.md` OPT-002；单题脱敏副本的云视觉解析已由 ADR-0015 提前接受，本项只保留整页/多题分割；进入条件：当前 P1 单题链路完成，评审多题脱敏范围、分割 Schema、人工选题、成本和 ADR-0015 增量。
-- TODO-208：答错后的视频或详细解题过程 — 来源：`PRD.md` OPT-003；进入条件：当前 P1 开发完成，视频版权/匹配、Tutor Policy、详细答案正确性和固定 eval 获批。
+- TODO-208：答错后的视频或详细解题过程 — 详细文字/图示解题过程已提升为 TODO-017；本项仅保留视频讲解，进入条件为视频版权/匹配、年龄适配、字幕/可访问性和成本获批。
 - TODO-209：任务完成后的即时家长提醒 — 来源：`PRD.md` OPT-004；进入条件：当前 P1 开发完成，订阅/免打扰、多孩子归属、去重和推送降级规则明确。
 - TODO-210：选择云端 Tutor Provider — 来源：`PRD.md` OPT-005；进入条件：当前 P1 开发完成或 Owner 明确提前推进，Provider 数据条款、预算、安全阈值和降级策略获批。
 - TODO-211：评审在线优先并取消完整离线目标 — 来源：`PRD.md` OPT-006；进入条件：当前 P1 开发完成，以新 ADR 明确替代 ADR-0003，并给出现有离线代码/数据的迁移和回滚方案。
-- TODO-212：完善一个 Household 下的多孩子体验 — 来源：`PRD.md` OPT-007；进入条件：当前 P1 开发完成，真实持久化、孩子切换、设备绑定、任务/通知/周报隔离和删除规则明确。
+- TODO-212：完善一个 Household 下的多孩子体验 — 已将当前工作台切换与账号/档案聚合提升为 `TODO-015` / `PLAN-0013`；本项仅保留后续设备绑定、通知归属等增强，进入条件为对应领域模型和规则明确。
 
 ## Blocked — 需要外部决策
 

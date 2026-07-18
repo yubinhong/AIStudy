@@ -14,7 +14,7 @@
 - 使用 Flutter 官方发布者 `flutter.dev` 的 `image_picker: 1.2.3`，提供单张相机拍摄和相册选择入口。
 - 依赖许可证为 Apache-2.0/BSD-3-Clause；实现范围仅覆盖一次选一张图片，不启用视频、多选、编辑器或第三方上传 SDK。
 - `CaptureInputScreen` 只负责取得本地 `XFile` 并将路径交给 OCR 确认页面；图片仍是本地临时输入，不写日志、不进入测试夹具、不发送外部 Provider。
-- 真实签名上传、对象确认、OCR 入队和结果读取继续通过 `ADR-0010`～`0012` 规定的 API/Provider Adapter 边界接入，不在 `image_picker` 回调中直接实现业务请求。
+- 图片选择回调不直接实现上传或 Provider 业务。历史 `0.8.0` 按 ADR-0010/0014 预签名直传；目标由 ADR-0018 改为 `CaptureApiClient` 携带 Session 只向 API 上传，API 有界流式写入私有 MinIO。OCR/ImageAnalysis 继续通过 API/Provider Adapter 边界接入。
 - iOS 声明相机和照片库用途文案；Android 继续使用插件的系统相机/Photo Picker 适配，不新增自定义权限管理。
 
 ## Alternatives and risks
