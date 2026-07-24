@@ -39,6 +39,33 @@ void main() {
     expect(await store.readSessionToken(), isNull);
   });
 
+  test('securely persists multiple child sessions without passwords', () async {
+    FlutterSecureStorage.setMockInitialValues({});
+    const store = SecureChildAuthStore();
+    const first = ChildSavedAccount(
+      username: 'child-a',
+      serverBaseUrl: 'http://192.168.1.4:8000',
+      sessionToken: 'session-a',
+    );
+    const second = ChildSavedAccount(
+      username: 'child-b',
+      serverBaseUrl: 'http://192.168.1.4:8000',
+      sessionToken: 'session-b',
+    );
+
+    await store.saveAccount(first);
+    await store.saveAccount(second);
+    final accounts = await store.readSavedAccounts();
+
+    expect(accounts.map((account) => account.username), ['child-a', 'child-b']);
+    expect(
+      accounts.every((account) => account.sessionToken.isNotEmpty),
+      isTrue,
+    );
+    await store.removeAccount(first);
+    expect((await store.readSavedAccounts()).single.username, 'child-b');
+  });
+
   test('password login uses the configured server address', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final subscription = server.listen((request) async {
@@ -76,6 +103,26 @@ void main() {
 
     expect(result.token, 'configured-server-session');
     expect(result.mustChangePassword, isTrue);
+  });
+
+  test('health check calls the configured server health endpoint', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final subscription = server.listen((request) async {
+      expect(request.method, 'GET');
+      expect(request.uri.path, '/healthz');
+      request.response
+        ..statusCode = HttpStatus.ok
+        ..write('ok');
+      await request.response.close();
+    });
+    addTearDown(() async {
+      await subscription.cancel();
+      await server.close(force: true);
+    });
+
+    await ChildAuthClient(
+      baseUrl: 'http://${server.address.host}:${server.port}',
+    ).checkHealth();
   });
 
   test(

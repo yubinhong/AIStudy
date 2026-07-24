@@ -150,6 +150,18 @@ def test_read_object_rejects_an_object_larger_than_the_requested_bound() -> None
         storage.read_object("captures/synthetic/source", max_bytes=8_000_000)
 
 
+def test_read_document_uses_the_private_curriculum_boundary() -> None:
+    client = FakeS3Client(body=b"%PDF-local", object_size=10)
+    storage = S3ObjectStorage(
+        ObjectStorageConfig("http://synthetic.local", "synthetic", "key", "secret"),
+        client=client,  # type: ignore[arg-type]
+    )
+
+    assert storage.read_document("curriculum/synthetic/source", max_bytes=1024) == b"%PDF-local"
+    with pytest.raises(ObjectStorageError, match="curriculum prefix"):
+        storage.read_document("captures/synthetic/source", max_bytes=1024)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("byte_size", [1024, 5 * 1024 * 1024])
 async def test_stream_capture_upload_uses_multipart_and_validates_the_completed_object(

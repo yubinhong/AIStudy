@@ -37,6 +37,13 @@ class TaskStatus(StrEnum):
     SKIPPED = "skipped"
 
 
+class TaskSourceType(StrEnum):
+    MANUAL = "manual"
+    MISTAKE_REVIEW = "mistake_review"
+    CURRICULUM_EXERCISE = "curriculum_exercise"
+    MIXED_PLAN = "mixed_plan"
+
+
 class StudySessionStatus(StrEnum):
     ACTIVE = "active"
     COMPLETED = "completed"
@@ -46,6 +53,15 @@ class SessionOutcome(StrEnum):
     LEARNED = "learned"
     NEEDS_REVIEW = "needs_review"
     SKIPPED = "skipped"
+
+
+class AnswerState(StrEnum):
+    """The four explicit answer-area states returned by capture review."""
+
+    WORKED = "worked"
+    BLANK = "blank"
+    UNCLEAR = "unclear"
+    ANSWER_AREA_MISSING = "answer_area_missing"
 
 
 class CaptureStatus(StrEnum):
@@ -116,6 +132,24 @@ class CreateDeviceRequest(BaseModel):
     display_name: str = Field(min_length=1, max_length=80)
 
 
+class TaskExercise(BaseModel):
+    """One source-backed question delivered as part of a task."""
+
+    model_config = ConfigDict(frozen=True)
+
+    question_text: str = Field(min_length=1, max_length=4000)
+    source_type: Literal["mistake", "curriculum"]
+    mistake_id: UUID | None = None
+    snapshot_id: UUID | None = None
+    curriculum_chunk_id: UUID | None = None
+    knowledge_point_id: UUID | None = None
+    knowledge_key: str | None = Field(default=None, max_length=80)
+    source_title: str | None = Field(default=None, max_length=160)
+    source_page: int | None = Field(default=None, ge=1)
+    visual_description: str | None = Field(default=None, max_length=1000)
+    requires_visual_context: bool = False
+
+
 class StudyTask(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -128,6 +162,12 @@ class StudyTask(BaseModel):
     status: TaskStatus
     version: int = Field(ge=1)
     created_at: datetime
+    source_type: TaskSourceType = TaskSourceType.MANUAL
+    reason: str | None = Field(default=None, max_length=500)
+    knowledge_point: str | None = Field(default=None, max_length=120)
+    knowledge_point_id: UUID | None = None
+    exercises: tuple[TaskExercise, ...] = Field(default=(), max_length=5)
+    estimated_minutes: int | None = Field(default=None, ge=1, le=120)
 
 
 class CreateTaskRequest(BaseModel):
@@ -135,6 +175,12 @@ class CreateTaskRequest(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     subject: Subject
     scheduled_for: date
+    source_type: TaskSourceType = TaskSourceType.MANUAL
+    reason: str | None = Field(default=None, max_length=500)
+    knowledge_point: str | None = Field(default=None, max_length=120)
+    knowledge_point_id: UUID | None = None
+    exercises: tuple[TaskExercise, ...] = Field(default=(), max_length=5)
+    estimated_minutes: int | None = Field(default=None, ge=1, le=120)
 
 
 class StudySession(BaseModel):
@@ -278,12 +324,16 @@ class Attempt(BaseModel):
     session_id: UUID
     sequence: int = Field(ge=1)
     answer_summary: str = Field(min_length=1, max_length=200)
+    answer_state: AnswerState = AnswerState.UNCLEAR
+    evidence_confirmed: bool = False
     recorded_at: datetime
 
 
 class RecordAttemptRequest(BaseModel):
     event_id: UUID
     answer_summary: str = Field(min_length=1, max_length=200)
+    answer_state: AnswerState = AnswerState.UNCLEAR
+    evidence_confirmed: bool = False
 
 
 class SyncEvent(BaseModel):
@@ -294,6 +344,8 @@ class SyncEvent(BaseModel):
     kind: Literal[SyncEventKind.RECORD_ATTEMPT]
     session_id: UUID
     answer_summary: str = Field(min_length=1, max_length=200)
+    answer_state: AnswerState = AnswerState.UNCLEAR
+    evidence_confirmed: bool = False
 
 
 class SyncBatchRequest(BaseModel):

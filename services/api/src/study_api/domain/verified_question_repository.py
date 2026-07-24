@@ -85,6 +85,10 @@ class InMemoryVerifiedQuestionRepository:
             has_diagram=request.has_diagram,
             has_handwriting=request.has_handwriting,
             answer_text=request.answer_text,
+            answer_state=request.answer_state,
+            answer_state_confidence=request.answer_state_confidence,
+            answer_steps=request.answer_steps,
+            evidence_confirmed=request.evidence_confirmed,
             verified_by=verified_by,  # type: ignore[arg-type]
             verified_at=datetime.now(UTC),
         )
@@ -135,6 +139,7 @@ class PostgresVerifiedQuestionRepository:
         payload = dict(row)
         payload["options"] = tuple(payload["options"])
         payload["formulas"] = tuple(payload["formulas"])
+        payload["answer_steps"] = tuple(payload["answer_steps"])
         payload.pop("household_id", None)
         payload.pop("child_id", None)
         return VerifiedQuestion.model_validate(payload)
@@ -212,6 +217,10 @@ class PostgresVerifiedQuestionRepository:
                 has_diagram=request.has_diagram,
                 has_handwriting=request.has_handwriting,
                 answer_text=request.answer_text,
+                answer_state=request.answer_state,
+                answer_state_confidence=request.answer_state_confidence,
+                answer_steps=request.answer_steps,
+                evidence_confirmed=request.evidence_confirmed,
                 verified_by=verified_by,  # type: ignore[arg-type]
                 verified_at=datetime.now(UTC),
             )

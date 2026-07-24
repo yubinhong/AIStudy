@@ -1,8 +1,19 @@
 "use client";
 
-import Link from "next/link";
+import {
+  CalendarPlus,
+  DownloadSimple,
+  Key,
+  PencilSimple,
+  Plus,
+  ShieldCheck,
+  Trash,
+  UserPlus,
+  UsersThree,
+} from "@phosphor-icons/react";
 import { FormEvent, useEffect, useState } from "react";
 
+import { AdminShell } from "@/app/components/admin-shell";
 import { createChildAccountIdempotencyKey } from "../../lib/account-request";
 
 type Account = {
@@ -32,6 +43,23 @@ function csrfToken() {
     ?.split("=")[1];
 }
 
+function writeHeaders(includeJson = false) {
+  return {
+    ...(includeJson ? { "content-type": "application/json" } : {}),
+    "Idempotency-Key": createChildAccountIdempotencyKey(),
+    ...(csrfToken()
+      ? { "X-CSRF-Token": decodeURIComponent(csrfToken()!) }
+      : {}),
+  };
+}
+
+function requestedChildId(profiles: ChildProfile[]) {
+  const requested = new URLSearchParams(window.location.search).get("child");
+  return profiles.some((profile) => profile.id === requested)
+    ? requested
+    : null;
+}
+
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [children, setChildren] = useState<ChildProfile[]>([]);
@@ -51,45 +79,46 @@ export default function AccountsPage() {
         fetch("/api/children/management", { cache: "no-store" }),
         fetch("/api/children", { cache: "no-store" }),
       ]);
-    if (accountsResponse.ok)
+    if (accountsResponse.ok) {
       setAccounts((await accountsResponse.json()) as Account[]);
+    }
     if (managementResponse.ok) {
       const aggregates = (await managementResponse.json()) as ChildManagement[];
       setManagement(aggregates);
       const childProfiles = aggregates.map((item) => item.child);
       setChildren(childProfiles);
-      setTaskChildId((current) => current || childProfiles[0]?.id || "");
+      setTaskChildId(
+        (current) =>
+          requestedChildId(childProfiles) ||
+          current ||
+          childProfiles[0]?.id ||
+          "",
+      );
     } else if (childrenResponse.ok) {
       const childProfiles = (await childrenResponse.json()) as ChildProfile[];
       setChildren(childProfiles);
-      setTaskChildId((current) => current || childProfiles[0]?.id || "");
+      setTaskChildId(
+        (current) =>
+          requestedChildId(childProfiles) ||
+          current ||
+          childProfiles[0]?.id ||
+          "",
+      );
     }
   }
 
   useEffect(() => {
-    let active = true;
     const timer = window.setTimeout(() => {
-      load().catch(() => {
-        if (active) setMessage("暂时无法加载家庭数据");
-      });
+      void load().catch(() => setMessage("暂时无法加载家庭数据"));
     }, 0);
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
+    return () => window.clearTimeout(timer);
   }, []);
 
   async function createManagement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const response = await fetch("/api/children/management", {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "Idempotency-Key": createChildAccountIdempotencyKey(),
-        ...(csrfToken()
-          ? { "X-CSRF-Token": decodeURIComponent(csrfToken()!) }
-          : {}),
-      },
+      headers: writeHeaders(true),
       body: JSON.stringify({
         display_name: profileName,
         grade: Number(profileGrade),
@@ -120,13 +149,7 @@ export default function AccountsPage() {
     });
     const response = await fetch("/api/tasks", {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "Idempotency-Key": createChildAccountIdempotencyKey(),
-        ...(csrfToken()
-          ? { "X-CSRF-Token": decodeURIComponent(csrfToken()!) }
-          : {}),
-      },
+      headers: writeHeaders(true),
       body: JSON.stringify({
         child_id: taskChildId,
         title: taskTitle,
@@ -150,13 +173,7 @@ export default function AccountsPage() {
     }
     const response = await fetch(`/api/children/${child.id}`, {
       method: "PATCH",
-      headers: {
-        "content-type": "application/json",
-        "Idempotency-Key": createChildAccountIdempotencyKey(),
-        ...(csrfToken()
-          ? { "X-CSRF-Token": decodeURIComponent(csrfToken()!) }
-          : {}),
-      },
+      headers: writeHeaders(true),
       body: JSON.stringify({
         display_name: displayName,
         grade: Number(grade),
@@ -173,16 +190,12 @@ export default function AccountsPage() {
       !window.confirm(
         `删除“${child.display_name}”的孩子档案及相关图片？此操作不能撤销。`,
       )
-    )
+    ) {
       return;
+    }
     const response = await fetch(`/api/children/${child.id}`, {
       method: "DELETE",
-      headers: {
-        "Idempotency-Key": createChildAccountIdempotencyKey(),
-        ...(csrfToken()
-          ? { "X-CSRF-Token": decodeURIComponent(csrfToken()!) }
-          : {}),
-      },
+      headers: writeHeaders(),
     });
     setMessage(response.ok ? "孩子档案已删除" : "删除孩子档案失败");
     if (response.ok) await load();
@@ -191,12 +204,7 @@ export default function AccountsPage() {
   async function exportProfile(child: ChildProfile) {
     const response = await fetch(`/api/children/${child.id}/export`, {
       method: "POST",
-      headers: {
-        "Idempotency-Key": createChildAccountIdempotencyKey(),
-        ...(csrfToken()
-          ? { "X-CSRF-Token": decodeURIComponent(csrfToken()!) }
-          : {}),
-      },
+      headers: writeHeaders(),
     });
     if (!response.ok) {
       setMessage("导出孩子数据失败，请稍后重试");
@@ -228,6 +236,7 @@ export default function AccountsPage() {
         current_password: currentPassword,
       }),
     });
+    setMessage(response.ok ? "账号状态已更新" : "账号状态更新失败");
     if (response.ok) await load();
   }
 
@@ -261,30 +270,52 @@ export default function AccountsPage() {
     setMessage(response.ok ? "密码已重置，旧会话已失效" : "密码重置失败");
   }
 
+  const currentChild =
+    children.find((child) => child.id === taskChildId) ?? children[0];
+  const parentAccounts = accounts.filter(
+    (account) => account.role === "parent",
+  );
+
   return (
-    <main className="shell">
-      <header className="topbar">
-        <Link className="brand" href="/">
-          家庭 AI 学习助手
-        </Link>
-        <Link className="text-button" href="/">
-          返回概览
-        </Link>
-      </header>
-      <section className="hero">
+    <AdminShell
+      active="accounts"
+      childOptions={children.map((child) => ({
+        id: child.id,
+        meta: `小学${child.grade}年级`,
+        name: child.display_name,
+      }))}
+      childMeta={currentChild ? `小学${currentChild.grade}年级` : "家庭成员"}
+      childName={currentChild?.display_name ?? "家庭空间"}
+      childSwitchBaseHref="/accounts"
+      selectedChildId={currentChild?.id}
+    >
+      <div className="page-header">
         <div>
-          <p className="eyebrow">家长设置</p>
-          <h1>孩子账号</h1>
-          <p className="hero-copy">账号只绑定本家庭中的一个孩子。</p>
+          <p className="page-eyebrow">孩子与账号</p>
+          <h1>家庭成员管理</h1>
+          <p>孩子档案、登录账号和今日任务都在同一个家庭范围内管理。</p>
         </div>
-      </section>
-      <section className="content-grid">
-        <article className="panel">
-          <div className="panel-heading">
+        <span className="header-stat">
+          <UsersThree size={19} /> {children.length} 个孩子
+        </span>
+      </div>
+
+      {message ? (
+        <div className="notice-banner" role="status">
+          {message}
+        </div>
+      ) : null}
+
+      <section className="management-grid">
+        <article className="dashboard-panel form-panel" id="tasks">
+          <div className="section-heading">
             <div>
               <p className="section-kicker">今日安排</p>
               <h2>创建数学任务</h2>
             </div>
+            <span className="section-icon">
+              <CalendarPlus size={22} />
+            </span>
           </div>
           <form onSubmit={createTask} className="auth-form">
             <label>
@@ -317,75 +348,116 @@ export default function AccountsPage() {
               type="submit"
               disabled={!children.length}
             >
-              安排今日任务
+              <CalendarPlus size={18} /> 安排今日任务
             </button>
           </form>
         </article>
-        <article className="panel" id="profiles">
-          <div className="panel-heading">
+
+        <article className="dashboard-panel" id="profiles">
+          <div className="section-heading">
             <div>
               <p className="section-kicker">家庭成员</p>
               <h2>孩子档案管理</h2>
             </div>
+            <span className="quiet-label">{management.length} 份档案</span>
           </div>
-          {management.map((item) => {
-            const child = item.child;
-            return (
-              <div className="task-row" key={child.id}>
-                <div className="task-details">
-                  <strong>{child.display_name}</strong>
-                  <span>
-                    小学{child.grade}年级 ·{" "}
-                    {item.account?.username ?? "账号未创建"}
+          <div className="profile-list">
+            {management.length === 0 ? (
+              <p className="muted-copy">尚未创建孩子档案。</p>
+            ) : null}
+            {management.map((item) => {
+              const child = item.child;
+              return (
+                <article className="profile-card" key={child.id}>
+                  <span className="profile-avatar" aria-hidden="true">
+                    {child.display_name.slice(0, 1)}
                   </span>
-                </div>
-                <button
-                  className="text-button"
-                  type="button"
-                  onClick={() => void editProfile(child)}
-                >
-                  编辑
-                </button>
-                <button
-                  className="text-button"
-                  type="button"
-                  onClick={() => void exportProfile(child)}
-                >
-                  导出
-                </button>
-                <button
-                  className="text-button danger-button"
-                  type="button"
-                  onClick={() => void deleteProfile(child)}
-                >
-                  删除
-                </button>
-                {item.account ? (
-                  <>
+                  <div className="profile-main">
+                    <strong>{child.display_name}</strong>
+                    <span>
+                      小学{child.grade}年级 ·{" "}
+                      {item.account?.username ?? "账号未创建"}
+                    </span>
+                  </div>
+                  <span
+                    className={
+                      item.account?.status === "active"
+                        ? "status-pill"
+                        : "status-pill amber"
+                    }
+                  >
+                    {item.account?.status === "active" ? "可登录" : "未启用"}
+                  </span>
+                  <div className="profile-actions">
                     <button
-                      className="text-button"
+                      className="icon-button"
+                      type="button"
+                      onClick={() => void editProfile(child)}
+                      aria-label={`编辑${child.display_name}`}
+                    >
+                      <PencilSimple size={17} />
+                    </button>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      onClick={() => void exportProfile(child)}
+                      aria-label={`导出${child.display_name}数据`}
+                    >
+                      <DownloadSimple size={17} />
+                    </button>
+                    {item.account ? (
+                      <button
+                        className="icon-button"
+                        type="button"
+                        onClick={() => void resetPassword(item.account!)}
+                        aria-label={`重置${item.account.username}密码`}
+                      >
+                        <Key size={17} />
+                      </button>
+                    ) : null}
+                    <button
+                      className="icon-button danger-button"
+                      type="button"
+                      onClick={() => void deleteProfile(child)}
+                      aria-label={`删除${child.display_name}`}
+                    >
+                      <Trash size={17} />
+                    </button>
+                  </div>
+                  {item.account ? (
+                    <button
+                      className="profile-toggle"
                       type="button"
                       onClick={() => void toggle(item.account!)}
                     >
+                      <ShieldCheck size={16} />
                       {item.account.status === "active"
                         ? "停用账号"
                         : "启用账号"}
                     </button>
-                    <button
-                      className="text-button"
-                      type="button"
-                      onClick={() => void resetPassword(item.account!)}
-                    >
-                      重置密码
-                    </button>
-                  </>
-                ) : null}
-              </div>
-            );
-          })}
-          <form onSubmit={createManagement} className="auth-form">
-            <p className="section-kicker">新增</p>
-            <h3>创建孩子档案与账号</h3>
+                  ) : null}
+                </article>
+              );
+            })}
+          </div>
+        </article>
+      </section>
+
+      <section className="management-grid lower-grid">
+        <article className="dashboard-panel form-panel">
+          <div className="section-heading">
+            <div>
+              <p className="section-kicker">新增成员</p>
+              <h2>创建孩子档案与账号</h2>
+            </div>
+            <span className="section-icon">
+              <UserPlus size={22} />
+            </span>
+          </div>
+          <form
+            onSubmit={createManagement}
+            className="auth-form form-two-column"
+          >
             <label>
               孩子姓名
               <input
@@ -393,6 +465,20 @@ export default function AccountsPage() {
                 onChange={(event) => setProfileName(event.target.value)}
                 required
               />
+            </label>
+            <label>
+              年级
+              <select
+                value={profileGrade}
+                onChange={(event) => setProfileGrade(event.target.value)}
+              >
+                {[1, 2, 3, 4, 5, 6].map((grade) => (
+                  <option
+                    key={grade}
+                    value={grade}
+                  >{`小学${grade}年级`}</option>
+                ))}
+              </select>
             </label>
             <label>
               孩子登录用户名
@@ -413,50 +499,43 @@ export default function AccountsPage() {
                 required
               />
             </label>
-            <label>
-              年级
-              <select
-                value={profileGrade}
-                onChange={(event) => setProfileGrade(event.target.value)}
-              >
-                {[1, 2, 3, 4, 5, 6].map((grade) => (
-                  <option
-                    key={grade}
-                    value={grade}
-                  >{`小学${grade}年级`}</option>
-                ))}
-              </select>
-            </label>
-            {message ? <p>{message}</p> : null}
-            <button className="primary-button" type="submit">
-              创建孩子档案与账号
+            <button className="primary-button form-full" type="submit">
+              <Plus size={18} /> 创建孩子档案与账号
             </button>
           </form>
         </article>
-        <article className="panel">
-          <div className="panel-heading">
+
+        <article className="dashboard-panel">
+          <div className="section-heading">
             <div>
               <p className="section-kicker">已创建</p>
-              <h2>家庭账号</h2>
+              <h2>家长账号</h2>
             </div>
+            <span className="quiet-label">{parentAccounts.length} 个账号</span>
           </div>
-          {accounts
-            .filter((account) => account.role === "parent")
-            .map((account) => (
-              <div className="task-row" key={account.id}>
+          <div className="account-list">
+            {parentAccounts.map((account) => (
+              <div className="account-row" key={account.id}>
+                <span className="account-avatar">
+                  <UsersThree size={19} />
+                </span>
                 <div className="task-details">
                   <strong>{account.username}</strong>
                   <span>
                     家长账号 · {account.status === "active" ? "启用" : "已停用"}
                   </span>
                 </div>
+                <span className="status-pill">
+                  {account.must_change_password ? "待改密" : "正常"}
+                </span>
               </div>
             ))}
-          {accounts.every((account) => account.role !== "parent") ? (
-            <p>暂无其他家长账号。</p>
-          ) : null}
+            {parentAccounts.length === 0 ? (
+              <p className="muted-copy">暂无家长账号。</p>
+            ) : null}
+          </div>
         </article>
       </section>
-    </main>
+    </AdminShell>
   );
 }

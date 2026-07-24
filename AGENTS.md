@@ -18,11 +18,11 @@
 
 ## 2. 当前仓库阶段
 
-- 当前 P0/P1 基础闭环已存在：`apps/`、`services/`、`packages/`、`evals/`、`infra/compose/`、三类锁文件、CI 草案、OpenAPI `0.8.0`、迁移至 `0017`、Profile/Learning/Capture/Identity/VerifiedQuestion/Tutor/Report/Export/Mistake/Review 和 Ubuntu 自用 Compose 均有实现/验收记录；正式 production、浏览器 E2E 和最终设备回归仍不存在或未完成。PLAN-0014 已开始实现错题/复习最小闭环，教材导入、三入口和任务建议仍未完成。
+- 当前 P0/P1 基础脚手架已存在：`apps/`、`services/`、`packages/`、`evals/`、`infra/compose/`、三类锁文件、CI 草案、本地 OpenAPI `0.11.0`、迁移至 `0025_curriculum_knowledge_map`、Profile/Learning/Capture/Identity/VerifiedQuestion/Tutor/Report/Export/Mistake/Review 和 Ubuntu 自用 Compose 均有实现/验收记录；Ubuntu 仍运行 `0.10.0`/`0024`，正式 production、浏览器 E2E 和最终设备回归仍不存在或未完成。PLAN-0018 的私有原页预览、分批多模态教材分析、整本知识图谱、家长审核和已审核知识点/具体练习推荐已在本地实现，真实 Provider/PDF/设备与远端部署仍待验收。
 - ADR-0017 已接受以账号密码和可撤销会话替换 HMAC/PIN；TASK-0007 进一步删除 HMAC、Demo Header 和 Web 免登录旁路。API/Web/Flutter/Compose 运行时只允许用户名密码登录后的 Cookie/Bearer Session；Flutter 在登录前配置服务端地址，地址变更必须清理旧会话。真实 PostgreSQL、浏览器 E2E 和设备生命周期仍需验收。
-- ADR-0018 已接受以“App 携带 Session → API 有界流式校验/转发 → 私有 MinIO”替代 ADR-0010/0014 的预签名直传。目标 OpenAPI 不返回对象存储 URL，MinIO `9000` 不向宿主/LAN 暴露，且删除 `OBJECT_STORAGE_PUBLIC_ENDPOINT_URL`；当前 `0.8.0` 代码和 Ubuntu 均已切换到新链路，最终设备回归仍待完成。
+- ADR-0018 已接受以“App 携带 Session → API 有界流式校验/转发 → 私有 MinIO”替代 ADR-0010/0014 的预签名直传。目标 OpenAPI 不返回对象存储 URL，MinIO `9000` 不向宿主/LAN 暴露，且删除 `OBJECT_STORAGE_PUBLIC_ENDPOINT_URL`；当前本地 `0.11.0` 代码和 Ubuntu `0.10.0` 均已切换到新链路，最终设备回归仍待完成。
 - PLAN-0013/Proposed ADR-0019 已实现 Web 将孩子档案与唯一登录账号作为一个管理聚合并支持首页当前孩子选择；`Account`/`ChildProfile` 仍安全分表，聚合创建使用事务和 `0016` 唯一约束。浏览器 E2E 和双孩子回归仍待完成。
-- ADR-0020 已接受以“教材范围 → 错题讲解 → 错题沉淀 → 到期复习 → 今日任务”为数学首科产品主线；PLAN-0014 已实现 `MistakeRecord`/`ReviewSchedule` 的最小 API/迁移/客户端调用，教材导入、三入口、作答状态分支和任务建议仍未完成。
+- ADR-0020/0023 已接受以“教材范围 → 多模态知识图谱 → 错题讲解 → 错题沉淀 → 到期复习 → 今日任务”为数学首科产品主线；本地已实现拍题 closeout、实际题目复习/ReviewAttempt、PDF-only 私有原页渲染、云端 L1/L2 递进和来源受限智能推荐。新推荐必须遍历全部开放错题和已批准知识图谱中的具体练习，不得再从残缺页级文字规则抽题；只把有界候选与不透明来源键交给 NewAPI。模型引用不存在来源、忽略已有错题/教材或未把到期错题排到当天时必须整体拒绝。Ubuntu 部署、真实 PDF/Provider/设备和固定质量评测仍待完成，不得把本地实现描述为已上线。
 - `PROJECT.md` 中的模块路径和命令在实际命令运行成功前不得声称对应能力已经存在；当前状态以 `TASK.md` 和 `TESTING.md` 的逐项验证记录为准。
 - 初始化每个子项目时必须同时提交依赖清单、锁文件、最小测试、标准脚本/命令和忽略规则，并同步 `TESTING.md`、`AI_CONTEXT.md` 和本文件。
 - 未经 ADR 或用户批准，不得用临时单文件实现替代目标模块边界，也不得为了快速演示跳过儿童数据、安全、契约或离线同步约束。
@@ -59,7 +59,7 @@
 
 ### 产品原则
 
-- 孩子端低干扰，一次只做一件事；数学页固定以错题讲解、复习错题、今日任务为三个主入口。练习/复习必须先作答和提示；错题讲解必须有 VerifiedQuestion 和已确认作答状态，有作答时针对错步讲，确认空白/没思路时可从头完整讲。
+- 孩子端低干扰，一次只做一件事；数学页固定以错题讲解、复习错题、今日任务为三个主入口。练习/复习必须先作答和提示；错题讲解必须有 VerifiedQuestion 和已确认作答状态，有作答时针对错步讲，确认空白/没思路时可从头完整讲。L1 必须帮助看懂题意/定位疑点，L2 必须在同一题的 L1 上增加方法或第一步脚手架，L1/L2 不得泄露最终答案或完整过程。
 - 家长查看趋势、异常和建议，不建立儿童实时监控、公开排名或社交榜单。
 - 家长侧把孩子档案与其唯一登录账号呈现为一个“孩子”管理对象；多孩子工作台必须明确当前孩子，并让任务、档案和周报使用同一孩子作用域。
 - P1 聚焦小学数学教材驱动的单题错题闭环；语文、英语、视频、语音和 Python 编程启蒙通过后续插件扩展，不污染核心任务/会话模型。
@@ -70,7 +70,7 @@
 - 后端从 FastAPI 模块化单体起步；只有独立扩容、隔离或团队边界有数据支持时才拆服务，并先写 ADR。
 - `packages/contracts` 是 OpenAPI 和 AI JSON Schema 的唯一契约来源；客户端 SDK 由契约生成。不得在 Flutter、Web 和 API 中手工维护互相漂移的重复类型。
 - PostgreSQL 是业务事实来源；Redis 只做缓存/队列；S3/MinIO 保存文件；pgvector 仅承载知识检索，不替代关系数据。
-- 家庭导入教材/课程资料必须记录授权、版本、哈希和来源位置；解析结果先为草稿，只有家长审核发布的不可变 CurriculumSnapshot 可被 Tutor/任务引用。导入内容是不可信数据，文档指令不得进入系统 Prompt，Provider 只接收当前请求所需的最小片段。
+- 家庭导入教材/课程资料必须记录授权、版本、哈希和来源位置；解析结果先为草稿，只有家长审核发布的不可变 CurriculumSnapshot 和批准的 CurriculumKnowledgeMap 可被 Tutor/任务引用。导入内容是不可信数据，文档指令不得进入系统 Prompt。清洁电子教材可在家长确认不含儿童姓名/个人批注后，由服务端把私有页图按最多 4 页一批交给单一获批 Provider；Provider 不得接收 PDF 对象、对象键或存储 URL，后续 Tutor/推荐只接收当前请求所需的最小已批准知识片段。
 - `Account` 与 `ChildProfile` 不因 Web 聚合体验而物理合表：前者隔离凭据/锁定/会话，后者保存学习档案。家长创建孩子必须通过一个幂等事务原子创建并绑定两者；一个档案最多绑定一个孩子账号，查询中的当前孩子 ID 必须重新做 Household/角色授权。
 - 端侧 SQLite 只保存今日任务、会话和上传队列等离线数据。`Attempt`、`AuditEvent` 采用追加写；任务状态以服务端版本号合并，禁止用简单“最后写入覆盖”丢弃学习记录。
 - 写接口必须支持 `idempotency-key`；Capture 文件只允许 App 携带可撤销 Session 上传到 API，由 API 分块计数、增量 SHA-256、文件头/尺寸/像素/完整解码校验后通过内部地址流式写入私有 MinIO。禁止客户端直连对象存储、返回预签名 URL、无界读取 8 MB 请求体或向 LAN 暴露 MinIO `9000`；重试必须有界、可观测并清理失败 staging 对象。
@@ -79,7 +79,7 @@
 - 图片解析与 Tutor 是两个独立步骤：云端视觉结果必须先通过固定 Schema 和人工确认形成 `VerifiedQuestion`，才能进入 Tutor；不得在第一次看图时直接向孩子输出答案或把未确认结果作为学习事实。
 - Tutor Policy 统一控制 guided_practice、review 和 mistake_explanation 模式、提示/完整讲解尺度、教材 grounding、确定性校验、结构化输出、敏感内容和成本上限。AI 输出通过固定 JSON Schema 后仍是派生结果，不能直接判定标准答案或永久掌握。
 - 云视觉须将题目与孩子作答分开提取，作答状态至少区分 `worked`、`blank`、`unclear`和 `answer_area_missing`；只有用户确认/修正后才成为 AttemptEvidence。未拍到答题区、浅色字迹或低置信不得自动当作空白。
-- MistakeRecord 必须引用 VerifiedQuestion 和至少一个已确认 AttemptEvidence；可以是作答/步骤/自述，也可以是 `blank_confirmed/no_approach`。ReviewSchedule 使用版本化确定性策略，复习结果追加写。系统任务建议默认须家长批准，AI 不得静默下发新编题或直接修改到期/掌握状态。
+- MistakeRecord 必须引用 VerifiedQuestion 和至少一个已确认 AttemptEvidence；可以是作答/步骤/自述，也可以是 `answer_state=blank` 且 `evidence_confirmed=true` 的 no_approach。ReviewSchedule 使用版本化确定性策略，复习结果追加写。系统任务建议默认须家长批准，AI 不得静默下发新编题或直接修改到期/掌握状态。
 
 ### 设备边界
 
@@ -95,7 +95,7 @@
 - 真实密钥、令牌、个人数据、儿童图片和生产数据库内容不得进入代码、提交、日志、截图、Prompt、评测集或测试夹具。
 - 外部输入在信任边界验证：包括图片类型/大小、OCR 文本、URL、OpenAPI 参数、AI JSON、导入内容和设备同步事件。
 - 图片外发采用“App 单题裁剪 → 服务端清除元数据并自动脱敏 → 用户预览/手动涂抹并确认”三层门禁。自动脱敏不得宣传为绝对匿名；低置信度、大面积真实人脸、身份证信息或无法安全裁剪时必须阻断外发。
-- 原图、MinIO URL、对象键和敏感 OCR 文本不得发送给云 Provider。单次图片解析只允许一个获批 Provider；不得因失败自动把同一图片广播给多个 Provider。
+- Capture 原图、MinIO URL、对象键和敏感 OCR 文本不得发送给云 Provider；单题解析只允许外发确认后的脱敏副本。教材分析只允许外发已声明无个人信息的页级派生图，并按 ADR-0023 有界分批。单次处理只允许一个获批 Provider；不得因失败自动把同一图片广播给多个 Provider。
 - AI 调用必须记录稳定事件名及结构化字段：模型/Provider、模型版本、Prompt/Policy 版本、输入输出摘要或不可逆指纹、Schema 版本、延迟、token/成本、置信度和结果状态；不得记录原始敏感内容。
 - 低置信度识别或推理先要求用户校正。未经验证的模型回答不得直接作为标准答案、知识点结论或掌握度事实入库。
 - 模型、Prompt、Tutor Policy 或路由变化必须运行固定 AI 评测集，比较质量、安全、延迟和成本，并保留可回滚版本。

@@ -1,59 +1,30 @@
-# Design QA — Flutter 第 1/2/3 张原型
+# Design QA — 家长 Web 后台方案 1（顶层孩子切换修正）
 
-- source visual truth:
-  - 第 1 张学习桌：`/Users/ybh/.codex/generated_images/019f5518-914e-7c22-aa74-c6721ef513e8/exec-2fd78472-a834-45ca-b405-3c00589143ce.png`
-  - 第 2 张 OCR 确认：`/Users/ybh/.codex/generated_images/019f5518-914e-7c22-aa74-c6721ef513e8/exec-ec7ae090-1e15-45de-8620-b3df0fffbe96.png`
-  - 第 3 张思考提示：`/Users/ybh/.codex/generated_images/019f5518-914e-7c22-aa74-c6721ef513e8/exec-a7562f3a-58d1-4099-8aa0-fd8b24b5e8a8.png`
-- implementation evidence:
-  - 修复前实体 iPad 照片：`/Users/ybh/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/yubinhong1990_ffc1/temp/RWTemp/2026-07/2f3418e050839363944a0b90a0e5b81e.jpg`
-  - 修复后第 3 张实体 iPad 照片：`/Users/ybh/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/yubinhong1990_ffc1/temp/RWTemp/2026-07/ed6808f5f129391a7ad63d51bd50a2e0.jpg`
-  - 模拟器 portrait smoke：`/tmp/study-ui-qa/.qa-ipad-mini-learning.png`
-- 修复后实体 iPad：Flutter 已横屏运行，但 Flutter screenshot 对实体设备不支持
-- 拍题输入页：相机入口已由用户在实体 iPad 上完成拍照、权限和“已选择题目照片”回归；相册选择仍待手工回归
-- intended viewport: `1194 × 834` landscape tablet
-- intended states: synthetic child `小禾` learning desk; OCR confirmation with synthetic worksheet photo and editable candidate text; fraction practice with thinking and hint actions
+## 目标与证据
 
-The iPad mini simulator rendered the learning desk successfully at `1488 × 2266` portrait. The screenshot was used for a smoke check, but it is not an equivalent comparison viewport.
+- 用户修正参考：`/var/folders/hp/0hqc981j2hl6ghsfnk5cwtqc0000gn/T/codex-clipboard-d1301a60-73b0-4ce1-aa48-c2398300bc77.png`（2428 × 1610，按 2× 像素对应 1214 × 805 视口）
+- 实现截图：`/Users/ybh/PycharmProjects/study/design-implementation-top-level-child-switch.png`（1214 × 805）
+- 同尺寸同屏比较：`/private/tmp/study-design-comparison-child-switch.png`（左参考、右实现）
+- 页面状态：合成家庭会话；2 个孩子、3 个今日任务、2 道待复习错题、5 条逐题学习记录。
 
-## Findings
+## 比较结论
 
-- [P1] Exact visual comparison remains blocked because the physical iPad can run the app but Flutter does not support screenshot capture for that device.
-  Evidence: `flutter run -d 00008110-0011356E0E41801E --dart-define=STUDY_API_URL=http://192.168.100.158:8000` built, installed, and launched successfully; `devicectl device info displays` reports landscape bounds `2266 × 1488`; `flutter screenshot` returns `Screenshot not supported for 余斌宏的iPad`. The simulator screenshot was captured successfully but measures `1488 × 2266` portrait, not the target landscape viewport.
-  Impact: exact typography, spacing, asset crop, and responsive behavior cannot be verified against the source image in this environment.
-  Fix: use Xcode's connected-device screen viewer or a manually captured iPad screenshot, then compare the landscape app state at `1194 × 834` (or normalize the physical `2266 × 1488` capture). No signing or Apple account changes were made by the agent.
+- 布局：孩子切换已从页面标题区移入所有页面共用顶栏；侧栏仅保留家长工作台、教材与任务、孩子管理三个顶层目的地，不再重复工作台内的今日任务、待复习、最近学习和学习周报。
+- 视觉：使用白色工作区、极浅灰绿画布、深绿正文、细边框和低阴影；卡片圆角和密度与参考方向一致，无营销式 Hero 或装饰插画。
+- 字体与间距：标题、区块标题、辅助说明和表格信息建立四级层次；长题目截断并可展开查看，未发现挤压或横向溢出。
+- 图标：导航、状态、操作和上传入口统一使用 Phosphor 图标，没有文本符号、Emoji、自绘 SVG 或 CSS 图案替代。
+- 数据与状态：所有学习统计来自 API 数据；空态、未确认作答、待复习、账号停用、上传禁用和推荐审批均有独立状态。
+- 交互：验证了顶栏下拉显示两个孩子、点击后 URL 写入 `?child=`、刷新后工作台标题和跨页导航保持所选孩子；教材页异步加载后仍显示同一孩子。开发浏览器无应用错误。
+- 响应式：1280 × 720 保持侧栏双列后台；736 × 729 切换为横向导航和单列内容；620px 以下 CSS 继续收敛表格列和表单为单列。
+- 可访问性：表单有 label，图标按钮有 aria-label，状态消息使用 role=status，焦点样式可见，并遵循 reduced-motion。
 
-## Fidelity review from the supplied device photo
+## 修正记录
 
-- Typography: hierarchy and Chinese copy are readable; `Synthetic Child A` is expected synthetic API data rather than the visual source's `小禾`.
-- Spacing and layout rhythm: the supplied photo was portrait and therefore showed the compact stacked layout. The app now locks iOS to landscape; post-fix device metadata confirms `landscapeLeft` at `2266 × 1488`.
-- Colors and tokens: mint/green primary actions, warm background, border, and coral secondary action are consistent with the source direction; the camera exposure makes exact color sampling unreliable.
-- Image and asset fidelity: avatar and fraction illustration render with the intended crop and no placeholder asset is visible; the camera photo introduces glare and moiré that prevent pixel-level review.
-- Copy and content: task title, progress, `继续学习`, `拍题`, and `稍后再做` are visible and usable; synthetic child naming is a data-fixture difference only.
-- Third-screen interaction visibility: both hint buttons and `暂时跳过` remain visible on the landscape iPad photo; no P1/P2 overflow is evident in the supplied frame.
+- 图表图例改为 Recharts 原生 Legend，避免用 CSS 图形模拟图标。
+- 教材页上传区、账号操作区和全站导航统一真实图标与可点击控件。
+- 保留原有鉴权与真实 API 路由；视觉验收使用独立本地合成 API，没有新增免登录或演示数据旁路。
+- 教材上传状态改为诚实边界：文档正文未解析时显示“待解析 · 尚未使用”并禁止发布；已发布结构化小节仅声明进入任务推荐，不再暗示 Tutor 已使用教材正文。
 
-## Implementation Checklist
+## 最终结果
 
-- [x] Implement first learning-desk screen in Flutter.
-- [x] Implement second OCR confirmation screen with candidate text editing and confirmation state.
-- [x] Implement third thinking-practice screen with two hint levels and thought-sharing state.
-- [x] Add generated avatar and fraction illustration assets.
-- [x] Add the synthetic worksheet photo asset and make `拍题` open the OCR flow.
-- [x] Add a camera/gallery input page; selected local images enter the existing OCR confirmation screen without external upload.
-- [x] Make `继续学习`, `拍题`, `稍后再做`, candidate editing, and confirmation interactive.
-- [x] Lock iOS child app to landscape for the iPad primary-device boundary.
-- [x] Run Flutter analyze and 6 Flutter widget/unit tests.
-- [x] Capture a simulator smoke screenshot of the rendered learning desk.
-- [ ] Capture both rendered screens at the source landscape viewport.
-- [ ] Compare source and implementation, then resolve P0/P1/P2 drift.
-
-## Comparison History
-
-- Pass 1: supplied device photo showed the app in portrait, which differed from the landscape iPad product boundary. Fix applied in `apps/child_flutter/lib/main.dart` with iOS landscape orientation preferences.
-- Pass 2: hot restart on the physical iPad succeeded; `devicectl device info displays` confirmed `2266 × 1488` and `landscapeLeft`. Exact post-fix screenshot comparison remains unavailable because Flutter reports screenshot unsupported for the physical device.
-- Pass 3: third thinking-practice screen added and covered by widget interaction tests; physical-device visual comparison remains blocked by the same screenshot capture limitation.
-- Pass 4: supplied landscape iPad photo shows the third screen with the equation, thinking panel, both hint actions, and skip action visible; camera framing/glare prevents exact pixel comparison.
-- Pass 5: `image_picker 1.2.3` capture input was added and the physical iPad debug app was fully rebuilt and reinstalled; the user confirmed camera permission, capture, and the “已选择题目照片” state. Gallery permission/error recovery and signed upload/OCR client wiring remain pending.
-
-## Final Result
-
-final result: blocked
+final result: passed

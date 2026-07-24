@@ -4,17 +4,24 @@
   "title": "TutorHintResponse",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "policy_version", "provider", "model", "level", "prompt", "next_step", "requires_child_response", "direct_answer", "cost_cents"],
+  "required": ["schema_version", "policy_version", "provider", "model", "level", "prompt", "next_step", "requires_child_response", "direct_answer", "solution_steps", "verification", "cost_cents", "hint_goal", "revealed_elements", "child_action", "answer_exposure"],
   "properties": {
     "schema_version": {"const": "tutor-hint.v1"},
-    "policy_version": {"const": "offline-tutor-policy.v1"},
-    "provider": {"const": "local-policy"},
-    "model": {"const": "rules-v1"},
+    "policy_version": {"type": "string", "minLength": 1, "maxLength": 80},
+    "provider": {"type": "string", "minLength": 1, "maxLength": 80},
+    "model": {"type": "string", "minLength": 1, "maxLength": 120},
     "level": {"type": "integer", "minimum": 1, "maximum": 3},
     "prompt": {"type": "string", "minLength": 1, "maxLength": 500},
     "next_step": {"type": "string", "minLength": 1, "maxLength": 500},
-    "requires_child_response": {"const": true},
-    "direct_answer": {"type": "null"},
-    "cost_cents": {"const": 0}
+    "requires_child_response": {"type": "boolean"},
+    "direct_answer": {"type": ["string", "null"], "maxLength": 1000},
+    "solution_steps": {"type": "array", "maxItems": 12, "items": {"type": "string", "minLength": 1, "maxLength": 1000}},
+    "verification": {"type": ["string", "null"], "maxLength": 1000},
+    "cost_cents": {"type": "integer", "minimum": 0},
+    "hint_goal": {"type": "string", "minLength": 1, "maxLength": 80},
+    "builds_on_turn_id": {"type": ["string", "null"], "format": "uuid"},
+    "revealed_elements": {"type": "array", "maxItems": 8, "items": {"type": "string", "minLength": 1, "maxLength": 80}},
+    "child_action": {"type": "string", "minLength": 1, "maxLength": 300},
+    "answer_exposure": {"type": "string", "enum": ["none", "partial", "full"]}
   }
 }

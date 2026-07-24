@@ -99,6 +99,26 @@ export async function loadWeeklyReport(
   }
 }
 
+export async function loadLearningDetails(childId: string): Promise<unknown[]> {
+  try {
+    const cookieStore = await cookies();
+    const session = cookieStore.get("study_session");
+    if (!session) return [];
+    const response = await fetch(
+      `${apiBaseUrl}/households/${householdId}/children/${encodeURIComponent(childId)}/learning-details?limit=20`,
+      {
+        headers: { Cookie: `study_session=${session.value}` },
+        cache: "no-store",
+      },
+    );
+    if (!response.ok) return [];
+    const payload: unknown = await response.json();
+    return Array.isArray(payload) ? payload : [];
+  } catch {
+    return [];
+  }
+}
+
 export function readString(record: unknown, key: string): string | null {
   if (typeof record !== "object" || record === null || !(key in record))
     return null;

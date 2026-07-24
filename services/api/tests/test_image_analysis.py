@@ -227,3 +227,14 @@ def test_parent_can_confirm_extraction_and_replay_without_mutating_candidate(mon
     )
     assert read.status_code == 200
     assert read.json()["question_text"] == "3/4 + 1/8 = ?"
+
+    hint = client.post(
+        f"/households/{HOUSEHOLD_A}/tutor/hints",
+        headers={
+            **_principal(client, role="child", child_id=CHILD_A),
+            "Idempotency-Key": "verified-visual-question-hint-001",
+        },
+        json={"verified_question_id": first.json()["id"], "level": 1},
+    )
+    assert hint.status_code == 200
+    assert hint.json()["verified_question_id"] == first.json()["id"]

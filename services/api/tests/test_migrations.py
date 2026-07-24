@@ -38,6 +38,13 @@ def test_learning_schema_is_at_head_in_local_postgresql() -> None:
         "child_profiles",
         "devices",
         "tutor_turns",
+        "review_attempts",
+        "material_parse_jobs",
+        "curriculum_chunks",
+        "curriculum_page_assets",
+        "curriculum_page_analyses",
+        "curriculum_knowledge_maps",
+        "curriculum_knowledge_points",
         "child_data_exports",
     } <= set(tables)
     assert {
@@ -97,6 +104,9 @@ def test_learning_schema_is_at_head_in_local_postgresql() -> None:
         "question_text",
         "options",
         "formulas",
+        "answer_state",
+        "answer_state_confidence",
+        "answer_steps",
         "confidence",
         "needs_confirmation",
     } <= extraction_columns
@@ -112,6 +122,10 @@ def test_learning_schema_is_at_head_in_local_postgresql() -> None:
         "question_text",
         "options",
         "formulas",
+        "answer_state",
+        "answer_state_confidence",
+        "answer_steps",
+        "evidence_confirmed",
         "verified_by",
         "verified_at",
     } <= verified_columns
@@ -161,13 +175,81 @@ def test_learning_schema_is_at_head_in_local_postgresql() -> None:
         "model",
         "prompt",
         "next_step",
+        "solution_steps",
+        "final_answer",
+        "verification",
+        "requires_child_response",
         "cost_cents",
         "created_at",
+        "curriculum_sources",
+        "hint_goal",
+        "builds_on_turn_id",
+        "revealed_elements",
+        "child_action",
+        "answer_exposure",
     } <= tutor_turn_columns
+    review_attempt_columns = {
+        column["name"] for column in inspect(engine).get_columns("review_attempts")
+    }
+    assert {
+        "household_id",
+        "child_id",
+        "mistake_id",
+        "verified_question_id",
+        "answer_summary",
+        "submitted_answer",
+        "evidence_confirmed",
+        "outcome",
+        "policy_version",
+    } <= review_attempt_columns
+    parse_job_columns = {
+        column["name"] for column in inspect(engine).get_columns("material_parse_jobs")
+    }
+    assert {
+        "material_id",
+        "snapshot_id",
+        "status",
+        "attempt",
+        "parser_version",
+        "error_code",
+    } <= parse_job_columns
+    chunk_columns = {column["name"] for column in inspect(engine).get_columns("curriculum_chunks")}
+    assert {
+        "material_id",
+        "snapshot_id",
+        "page_number",
+        "text",
+        "text_sha256",
+        "confidence",
+        "parser_version",
+    } <= chunk_columns
     study_session_columns = {
         column["name"] for column in inspect(engine).get_columns("study_sessions")
     }
     assert {"completed_at", "outcome"} <= study_session_columns
+    task_columns = {column["name"] for column in inspect(engine).get_columns("study_tasks")}
+    assert {
+        "source_type",
+        "reason",
+        "knowledge_point",
+        "exercises",
+        "estimated_minutes",
+    } <= task_columns
+    recommendation_columns = {
+        column["name"] for column in inspect(engine).get_columns("task_recommendations")
+    }
+    assert {
+        "source_type",
+        "source_key",
+        "curriculum_chunk_id",
+        "knowledge_point",
+        "exercises",
+        "estimated_minutes",
+        "scheduled_for",
+        "strategy_version",
+        "provider",
+        "model",
+    } <= recommendation_columns
     export_columns = {
         column["name"] for column in inspect(engine).get_columns("child_data_exports")
     }

@@ -5,6 +5,7 @@ object keys, or presigned URLs, and it does not make buckets public.
 """
 
 import asyncio
+import io
 import os
 from collections.abc import AsyncIterable
 from dataclasses import dataclass
@@ -16,6 +17,9 @@ from urllib.parse import urlsplit
 import boto3  # type: ignore[import-untyped]
 from botocore.client import BaseClient  # type: ignore[import-untyped]
 from botocore.exceptions import ClientError  # type: ignore[import-untyped]
+from PIL import Image, UnidentifiedImageError
+
+from study_api.curriculum_limits import MAX_DOCUMENT_BYTES
 
 
 class ObjectStorageError(Exception):
@@ -45,9 +49,26 @@ class CaptureObjectStorage(Protocol):
 
     def read_object(self, object_key: str, max_bytes: int) -> bytes: ...
 
+    def read_document(self, object_key: str, max_bytes: int) -> bytes: ...
+
+    def write_curriculum_preview(
+        self, object_key: str, data: bytes, media_type: str = "image/jpeg"
+    ) -> None: ...
+
+    def read_curriculum_preview(self, object_key: str, max_bytes: int = 2_097_152) -> bytes: ...
+
     def delete_object(self, object_key: str) -> None: ...
 
     async def stream_capture_upload(
+        self,
+        object_key: str,
+        content_type: str,
+        byte_size: int,
+        content_sha256: str,
+        chunks: AsyncIterable[bytes],
+    ) -> None: ...
+
+    async def stream_document_upload(
         self,
         object_key: str,
         content_type: str,
@@ -76,10 +97,31 @@ class UnavailableObjectStorage:
     def read_object(self, object_key: str, max_bytes: int) -> bytes:
         raise ObjectStorageError("object storage is not configured")
 
+    def read_document(self, object_key: str, max_bytes: int) -> bytes:
+        raise ObjectStorageError("object storage is not configured")
+
+    def write_curriculum_preview(
+        self, object_key: str, data: bytes, media_type: str = "image/jpeg"
+    ) -> None:
+        raise ObjectStorageError("object storage is not configured")
+
+    def read_curriculum_preview(self, object_key: str, max_bytes: int = 2_097_152) -> bytes:
+        raise ObjectStorageError("object storage is not configured")
+
     def delete_object(self, object_key: str) -> None:
         raise ObjectStorageError("object storage is not configured")
 
     async def stream_capture_upload(
+        self,
+        object_key: str,
+        content_type: str,
+        byte_size: int,
+        content_sha256: str,
+        chunks: AsyncIterable[bytes],
+    ) -> None:
+        raise ObjectStorageError("object storage is not configured")
+
+    async def stream_document_upload(
         self,
         object_key: str,
         content_type: str,
@@ -362,6 +404,116 @@ class S3ObjectStorage:
                 await asyncio.to_thread(self._delete_best_effort, object_key)
             raise ObjectStorageError("capture stream could not be stored") from error
 
+    async def stream_document_upload(
+        self,
+        object_key: str,
+        content_type: str,
+        byte_size: int,
+        content_sha256: str,
+        chunks: AsyncIterable[bytes],
+    ) -> None:
+        """Store one bounded private curriculum document without exposing S3 credentials."""
+
+        allowed_types = {"application/pdf"}
+        if not object_key.startswith("curriculum/") or object_key == "curriculum/":
+            raise ObjectStorageError("curriculum object key must use the curriculum prefix")
+        if content_type not in allowed_types:
+            raise ObjectStorageError("unsupported_material_format")
+        if not 1 <= byte_size <= MAX_DOCUMENT_BYTES:
+            raise ObjectStorageError("curriculum document byte size is not allowed")
+
+        part_size = 5 * 1024 * 1024
+        upload_id: str | None = None
+        completed = False
+        parts: list[dict[str, object]] = []
+        buffer = bytearray()
+        total = 0
+        digest = sha256()
+
+        def create_upload() -> str:
+            response = self._client.create_multipart_upload(
+                Bucket=self._config.bucket,
+                Key=object_key,
+                ContentType=content_type,
+            )
+            resolved = response.get("UploadId")
+            if not isinstance(resolved, str) or not resolved:
+                raise ObjectStorageError("object storage did not create a curriculum upload")
+            return resolved
+
+        def upload_part(part_number: int, data: bytes) -> dict[str, object]:
+            response = self._client.upload_part(
+                Bucket=self._config.bucket,
+                Key=object_key,
+                UploadId=upload_id,
+                PartNumber=part_number,
+                Body=data,
+            )
+            etag = response.get("ETag")
+            if not isinstance(etag, str) or not etag:
+                raise ObjectStorageError("object storage did not acknowledge a curriculum part")
+            return {"PartNumber": part_number, "ETag": etag}
+
+        try:
+            await asyncio.to_thread(self.ensure_bucket)
+            upload_id = await asyncio.to_thread(create_upload)
+            part_number = 1
+            async for chunk in chunks:
+                if not isinstance(chunk, bytes):
+                    raise ObjectStorageError("curriculum request body chunk is invalid")
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > byte_size or total > MAX_DOCUMENT_BYTES:
+                    raise ObjectStorageError("curriculum request exceeds the allowed size")
+                digest.update(chunk)
+                buffer.extend(chunk)
+                while len(buffer) >= part_size:
+                    part = bytes(buffer[:part_size])
+                    del buffer[:part_size]
+                    parts.append(await asyncio.to_thread(upload_part, part_number, part))
+                    part_number += 1
+            if total != byte_size or (not buffer and not parts):
+                raise ObjectStorageError("curriculum request size does not match declaration")
+            if buffer:
+                parts.append(await asyncio.to_thread(upload_part, part_number, bytes(buffer)))
+            if digest.hexdigest() != content_sha256:
+                raise ObjectStorageError("curriculum request hash does not match declaration")
+            await asyncio.to_thread(
+                self._client.complete_multipart_upload,
+                Bucket=self._config.bucket,
+                Key=object_key,
+                UploadId=upload_id,
+                MultipartUpload={"Parts": parts},
+            )
+            completed = True
+        except asyncio.CancelledError:
+            if upload_id is not None:
+                await asyncio.to_thread(self._abort_multipart, object_key, upload_id)
+            if completed:
+                await asyncio.to_thread(self._delete_best_effort, object_key)
+            raise
+        except ObjectStorageError:
+            if upload_id is not None:
+                await asyncio.to_thread(self._abort_multipart, object_key, upload_id)
+            if completed:
+                await asyncio.to_thread(self._delete_best_effort, object_key)
+            raise
+        except (ClientError, OSError, TypeError, ValueError) as error:
+            if upload_id is not None:
+                await asyncio.to_thread(self._abort_multipart, object_key, upload_id)
+            if completed:
+                await asyncio.to_thread(self._delete_best_effort, object_key)
+            raise ObjectStorageError(
+                "curriculum document could not be stored", retryable=True
+            ) from error
+        except Exception as error:  # noqa: BLE001 -- disconnect/cancellation-adjacent stream errors
+            if upload_id is not None:
+                await asyncio.to_thread(self._abort_multipart, object_key, upload_id)
+            if completed:
+                await asyncio.to_thread(self._delete_best_effort, object_key)
+            raise ObjectStorageError("curriculum document could not be stored") from error
+
     def _abort_multipart(self, object_key: str, upload_id: str) -> None:
         try:
             self._client.abort_multipart_upload(
@@ -386,24 +538,101 @@ class S3ObjectStorage:
             raise ObjectStorageError("capture object key must use the captures prefix")
         if not 1 <= max_bytes <= 8_000_000:
             raise ObjectStorageError("capture read limit is not allowed")
+        return self._read_bounded_object(
+            object_key,
+            max_bytes,
+            limit_error="capture object exceeds the bounded read limit",
+            unavailable_error="capture object could not be read",
+        )
+
+    def read_document(self, object_key: str, max_bytes: int) -> bytes:
+        """Read a bounded private curriculum document for the local parser worker."""
+
+        if not object_key.startswith("curriculum/") or object_key == "curriculum/":
+            raise ObjectStorageError("curriculum object key must use the curriculum prefix")
+        if not 1 <= max_bytes <= MAX_DOCUMENT_BYTES:
+            raise ObjectStorageError("curriculum read limit is not allowed")
+        return self._read_bounded_object(
+            object_key,
+            max_bytes,
+            limit_error="curriculum document exceeds the bounded read limit",
+            unavailable_error="curriculum document could not be read",
+        )
+
+    def write_curriculum_preview(
+        self, object_key: str, data: bytes, media_type: str = "image/jpeg"
+    ) -> None:
+        """Store a server-generated private page image without exposing an object URL."""
+
+        _validate_curriculum_preview_key(object_key)
+        if media_type != "image/jpeg":
+            raise ObjectStorageError("curriculum preview media type is not allowed")
+        if not 1 <= len(data) <= 2_097_152 or not data.startswith(b"\xff\xd8\xff"):
+            raise ObjectStorageError("curriculum preview image is invalid")
+        try:
+            with Image.open(io.BytesIO(data)) as image:
+                image.verify()
+            with Image.open(io.BytesIO(data)) as image:
+                if (
+                    image.format != "JPEG"
+                    or image.width < 1
+                    or image.height < 1
+                    or image.width > 4000
+                    or image.height > 4000
+                ):
+                    raise ObjectStorageError("curriculum preview dimensions are invalid")
+            self.ensure_bucket()
+            self._client.put_object(
+                Bucket=self._config.bucket,
+                Key=object_key,
+                Body=data,
+                ContentType=media_type,
+                Metadata={"sha256": sha256(data).hexdigest()},
+            )
+        except ObjectStorageError:
+            raise
+        except (ClientError, OSError, TypeError, ValueError, UnidentifiedImageError) as error:
+            raise ObjectStorageError(
+                "curriculum preview could not be stored", retryable=True
+            ) from error
+
+    def read_curriculum_preview(self, object_key: str, max_bytes: int = 2_097_152) -> bytes:
+        _validate_curriculum_preview_key(object_key)
+        if not 1 <= max_bytes <= 2_097_152:
+            raise ObjectStorageError("curriculum preview read limit is not allowed")
+        return self._read_bounded_object(
+            object_key,
+            max_bytes,
+            limit_error="curriculum preview exceeds the bounded read limit",
+            unavailable_error="curriculum preview could not be read",
+        )
+
+    def _read_bounded_object(
+        self,
+        object_key: str,
+        max_bytes: int,
+        *,
+        limit_error: str,
+        unavailable_error: str,
+    ) -> bytes:
         body: object | None = None
         try:
             metadata = self._client.head_object(Bucket=self._config.bucket, Key=object_key)
             actual_size = metadata.get("ContentLength")
             if not isinstance(actual_size, int) or not 1 <= actual_size <= max_bytes:
-                raise ObjectStorageError("capture object exceeds the bounded read limit")
+                raise ObjectStorageError(limit_error)
             response = self._client.get_object(Bucket=self._config.bucket, Key=object_key)
             body = response.get("Body")
             if body is None:
                 raise ObjectStorageError("capture object body is unavailable")
             data = body.read(max_bytes + 1)  # type: ignore[union-attr]
             if not isinstance(data, bytes) or len(data) > max_bytes:
-                raise ObjectStorageError("capture object exceeds the bounded read limit")
+                raise ObjectStorageError(limit_error)
             return data
         except ObjectStorageError:
             raise
         except (ClientError, OSError, TypeError, ValueError) as error:
-            raise ObjectStorageError("capture object could not be read", retryable=True) from error
+            raise ObjectStorageError(unavailable_error, retryable=True) from error
         finally:
             if body is not None:
                 close = getattr(body, "close", None)
@@ -411,9 +640,27 @@ class S3ObjectStorage:
                     close()
 
     def delete_object(self, object_key: str) -> None:
+        if not (
+            object_key.startswith("captures/")
+            or object_key.startswith("curriculum/")
+            or object_key.startswith("curriculum-previews/")
+        ):
+            raise ObjectStorageError("object key prefix is not allowed")
         try:
             self._client.delete_object(Bucket=self._config.bucket, Key=object_key)
         except ClientError as error:
             raise ObjectStorageError(
                 "capture object could not be deleted", retryable=True
             ) from error
+
+
+def _validate_curriculum_preview_key(object_key: str) -> None:
+    if (
+        not object_key.startswith("curriculum-previews/")
+        or object_key == "curriculum-previews/"
+        or ".." in object_key
+        or "\\" in object_key
+    ):
+        raise ObjectStorageError(
+            "curriculum preview object key must use the curriculum-previews prefix"
+        )

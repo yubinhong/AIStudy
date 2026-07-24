@@ -19,6 +19,7 @@ from study_api.domain.learning_repository import (
     SessionAlreadyCompletedError,
 )
 from study_api.domain.models import (
+    AnswerState,
     Attempt,
     AuditEvent,
     CompleteStudySessionRequest,
@@ -193,8 +194,14 @@ class PostgresLearningRepository:
                 status=TaskStatus.ASSIGNED,
                 version=1,
                 created_at=self._now(),
+                source_type=request.source_type,
+                reason=request.reason,
+                knowledge_point=request.knowledge_point,
+                knowledge_point_id=request.knowledge_point_id,
+                exercises=request.exercises,
+                estimated_minutes=request.estimated_minutes,
             )
-            connection.execute(insert(self._tasks).values(**task.model_dump()))
+            connection.execute(insert(self._tasks).values(**self._task_values(task)))
             self._store_idempotency(
                 connection, household_id, "create_task", idempotency_key, payload, "task", task.id
             )
@@ -293,7 +300,7 @@ class PostgresLearningRepository:
                 status=StudySessionStatus.ACTIVE,
                 started_at=now,
             )
-            connection.execute(insert(self._tasks).values(**task.model_dump()))
+            connection.execute(insert(self._tasks).values(**self._task_values(task)))
             connection.execute(insert(self._sessions).values(**session.model_dump()))
             self._store_idempotency(
                 connection,
@@ -307,6 +314,15 @@ class PostgresLearningRepository:
             self._audit(connection, household_id, "capture_task_created", task.id)
             self._audit(connection, household_id, "capture_session_started", session.id)
             return session, False
+
+    @staticmethod
+    def _task_values(task: StudyTask) -> dict:
+        values = task.model_dump(exclude={"exercises"})
+        values["source_type"] = task.source_type.value
+        values["status"] = task.status.value
+        values["subject"] = task.subject.value
+        values["exercises"] = [exercise.model_dump(mode="json") for exercise in task.exercises]
+        return values
 
     def record_attempt(
         self,
@@ -324,6 +340,8 @@ class PostgresLearningRepository:
                 child_id,
                 request.event_id,
                 request.answer_summary,
+                request.answer_state,
+                request.evidence_confirmed,
                 idempotency_key,
             )
 
@@ -428,6 +446,8 @@ class PostgresLearningRepository:
                     child_id,
                     event.event_id,
                     event.answer_summary,
+                    event.answer_state,
+                    event.evidence_confirmed,
                     event.idempotency_key,
                 )
             results: list[SyncEventResult] = []
@@ -439,6 +459,8 @@ class PostgresLearningRepository:
                     child_id,
                     event.event_id,
                     event.answer_summary,
+                    event.answer_state,
+                    event.evidence_confirmed,
                     event.idempotency_key,
                 )
                 results.append(
@@ -458,6 +480,8 @@ class PostgresLearningRepository:
         child_id: UUID,
         event_id: UUID,
         answer_summary: str,
+        answer_state: AnswerState,
+        evidence_confirmed: bool,
         idempotency_key: str,
     ) -> tuple[Attempt, bool]:
         self._preflight_attempt(
@@ -467,13 +491,17 @@ class PostgresLearningRepository:
             child_id,
             event_id,
             answer_summary,
+            answer_state,
+            evidence_confirmed,
             idempotency_key,
         )
         operation = f"record_attempt:{session_id}"
         existing = self._idempotency_result(connection, household_id, operation, idempotency_key)
         if existing is not None:
             return self._replay_attempt(
-                connection, existing, f"{session_id}:{event_id}:{answer_summary}"
+                connection,
+                existing,
+                f"{session_id}:{event_id}:{answer_summary}:{answer_state}:{evidence_confirmed}",
             )
         event_row = (
             connection.execute(select(self._attempts).where(self._attempts.c.event_id == event_id))
@@ -487,7 +515,7 @@ class PostgresLearningRepository:
                 household_id,
                 operation,
                 idempotency_key,
-                f"{session_id}:{event_id}:{answer_summary}",
+                f"{session_id}:{event_id}:{answer_summary}:{answer_state}:{evidence_confirmed}",
                 "attempt",
                 attempt.id,
             )
@@ -509,10 +537,12 @@ class PostgresLearningRepository:
             session_id=session_id,
             sequence=sequence,
             answer_summary=answer_summary,
+            answer_state=answer_state,
+            evidence_confirmed=evidence_confirmed,
             recorded_at=self._now(),
         )
         connection.execute(insert(self._attempts).values(**attempt.model_dump()))
-        payload = f"{session_id}:{event_id}:{answer_summary}"
+        payload = f"{session_id}:{event_id}:{answer_summary}:{answer_state}:{evidence_confirmed}"
         self._store_idempotency(
             connection, household_id, operation, idempotency_key, payload, "attempt", attempt.id
         )
@@ -527,10 +557,12 @@ class PostgresLearningRepository:
         child_id: UUID,
         event_id: UUID,
         answer_summary: str,
+        answer_state: AnswerState,
+        evidence_confirmed: bool,
         idempotency_key: str,
     ) -> None:
         self._session_for_child(connection, household_id, session_id, child_id)
-        payload = f"{session_id}:{event_id}:{answer_summary}"
+        payload = f"{session_id}:{event_id}:{answer_summary}:{answer_state}:{evidence_confirmed}"
         existing = self._idempotency_result(
             connection, household_id, f"record_attempt:{session_id}", idempotency_key
         )
@@ -543,7 +575,12 @@ class PostgresLearningRepository:
         )
         if event_row is not None:
             attempt = self._attempt(event_row)
-            if attempt.session_id != session_id or attempt.answer_summary != answer_summary:
+            if (
+                attempt.session_id != session_id
+                or attempt.answer_summary != answer_summary
+                or attempt.answer_state is not answer_state
+                or attempt.evidence_confirmed != evidence_confirmed
+            ):
                 raise IdempotencyConflictError
 
     def _session_for_child(

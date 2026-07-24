@@ -11,6 +11,7 @@ from hashlib import sha256
 from uuid import UUID, uuid4
 
 from study_api.domain.models import (
+    AnswerState,
     Attempt,
     AuditEvent,
     CompleteStudySessionRequest,
@@ -102,6 +103,12 @@ class InMemoryLearningRepository:
                 status=TaskStatus.ASSIGNED,
                 version=1,
                 created_at=self._now(),
+                source_type=request.source_type,
+                reason=request.reason,
+                knowledge_point=request.knowledge_point,
+                knowledge_point_id=request.knowledge_point_id,
+                exercises=request.exercises,
+                estimated_minutes=request.estimated_minutes,
             ),
             self._tasks,
         )
@@ -231,6 +238,8 @@ class InMemoryLearningRepository:
             session,
             request.event_id,
             request.answer_summary,
+            request.answer_state,
+            request.evidence_confirmed,
             idempotency_key,
         )
 
@@ -278,19 +287,41 @@ class InMemoryLearningRepository:
     def sync_attempts(
         self, household_id: UUID, child_id: UUID, request: SyncBatchRequest
     ) -> SyncBatchResult:
-        prepared: list[tuple[StudySession, UUID, str, str]] = []
+        prepared: list[tuple[StudySession, UUID, str, AnswerState, bool, str]] = []
         for event in request.events:
             session = self.get_session(household_id, event.session_id)
             if session is None:
                 raise LookupError
             if session.child_id != child_id:
                 raise ChildAssignmentError
-            prepared.append((session, event.event_id, event.answer_summary, event.idempotency_key))
+            prepared.append(
+                (
+                    session,
+                    event.event_id,
+                    event.answer_summary,
+                    event.answer_state,
+                    event.evidence_confirmed,
+                    event.idempotency_key,
+                )
+            )
         self._preflight_attempts(household_id, prepared)
         results: list[SyncEventResult] = []
-        for session, event_id, answer_summary, idempotency_key in prepared:
+        for (
+            session,
+            event_id,
+            answer_summary,
+            answer_state,
+            evidence_confirmed,
+            idempotency_key,
+        ) in prepared:
             attempt, replayed = self._append_attempt(
-                household_id, session, event_id, answer_summary, idempotency_key
+                household_id,
+                session,
+                event_id,
+                answer_summary,
+                answer_state,
+                evidence_confirmed,
+                idempotency_key,
             )
             results.append(
                 SyncEventResult(
@@ -300,14 +331,25 @@ class InMemoryLearningRepository:
         return SyncBatchResult(results=results)
 
     def _preflight_attempts(
-        self, household_id: UUID, prepared: list[tuple[StudySession, UUID, str, str]]
+        self,
+        household_id: UUID,
+        prepared: list[tuple[StudySession, UUID, str, AnswerState, bool, str]],
     ) -> None:
         seen_events: set[UUID] = set()
-        for session, event_id, answer_summary, idempotency_key in prepared:
+        for (
+            session,
+            event_id,
+            answer_summary,
+            answer_state,
+            evidence_confirmed,
+            idempotency_key,
+        ) in prepared:
             if event_id in seen_events:
                 raise IdempotencyConflictError
             seen_events.add(event_id)
-            payload = f"{session.id}:{event_id}:{answer_summary}"
+            payload = (
+                f"{session.id}:{event_id}:{answer_summary}:{answer_state}:{evidence_confirmed}"
+            )
             key = (household_id, f"record_attempt:{session.id}", idempotency_key)
             existing = self._idempotency.get(key)
             event_attempt = self._event_attempts.get(event_id)
@@ -316,6 +358,8 @@ class InMemoryLearningRepository:
             if event_attempt is not None and (
                 event_attempt.session_id != session.id
                 or event_attempt.answer_summary != answer_summary
+                or event_attempt.answer_state is not answer_state
+                or event_attempt.evidence_confirmed != evidence_confirmed
             ):
                 raise IdempotencyConflictError
 
@@ -325,9 +369,11 @@ class InMemoryLearningRepository:
         session: StudySession,
         event_id: UUID,
         answer_summary: str,
+        answer_state: AnswerState,
+        evidence_confirmed: bool,
         idempotency_key: str,
     ) -> tuple[Attempt, bool]:
-        payload = f"{session.id}:{event_id}:{answer_summary}"
+        payload = f"{session.id}:{event_id}:{answer_summary}:{answer_state}:{evidence_confirmed}"
         key = (household_id, f"record_attempt:{session.id}", idempotency_key)
         existing = self._idempotency.get(key)
         if existing is not None:
@@ -351,6 +397,8 @@ class InMemoryLearningRepository:
             session_id=session.id,
             sequence=sequence,
             answer_summary=answer_summary,
+            answer_state=answer_state,
+            evidence_confirmed=evidence_confirmed,
             recorded_at=self._now(),
         )
         self._attempts[session.id].append(attempt)

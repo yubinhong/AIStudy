@@ -1,0 +1,589 @@
+from collections.abc import AsyncIterable
+from datetime import UTC, datetime
+from hashlib import sha256
+from uuid import UUID
+
+import pytest
+from auth_helpers import session_headers
+from fastapi.testclient import TestClient
+
+from study_api.curriculum_analysis_jobs import InMemoryCurriculumKnowledgeRepository
+from study_api.curriculum_limits import MAX_DOCUMENT_BYTES
+from study_api.domain.curriculum_knowledge import (
+    CurriculumKnowledgeExercise,
+    CurriculumKnowledgeMap,
+    CurriculumKnowledgePoint,
+    KnowledgeMapStatus,
+)
+from study_api.domain.curriculum_repository import (
+    CurriculumChunk,
+    InMemoryCurriculumRepository,
+)
+from study_api.main import create_app
+from study_api.newapi_provider import NewApiConfig, NewApiVisionProvider
+from study_api.recommendation_engine import (
+    ProviderRecommendationItem,
+    ProviderRecommendationPlan,
+)
+
+HOUSEHOLD_A = "00000000-0000-0000-0000-000000000001"
+CHILD_A = "00000000-0000-0000-0000-000000000101"
+
+
+class MemoryDocumentStorage:
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+
+    async def stream_document_upload(
+        self,
+        object_key: str,
+        content_type: str,
+        byte_size: int,
+        content_sha256: str,
+        chunks: AsyncIterable[bytes],
+    ) -> None:
+        del content_type
+        data = b"".join([chunk async for chunk in chunks])
+        assert len(data) == byte_size
+        assert sha256(data).hexdigest() == content_sha256
+        self.objects[object_key] = data
+
+    def delete_object(self, object_key: str) -> None:
+        self.objects.pop(object_key, None)
+
+
+class CurriculumWithChunks(InMemoryCurriculumRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.chunks: list[CurriculumChunk] = []
+
+    def list_chunks(
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        snapshot_id: UUID,
+    ) -> list[CurriculumChunk]:
+        return [
+            chunk
+            for chunk in self.chunks
+            if chunk.household_id == household_id
+            and chunk.child_id == child_id
+            and chunk.snapshot_id == snapshot_id
+        ]
+
+    def list_review_chunks(
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        snapshot_id: UUID,
+    ) -> list[CurriculumChunk]:
+        return self.list_chunks(household_id, child_id, snapshot_id)
+
+
+def test_parent_uploads_multiple_curriculum_documents_into_private_drafts() -> None:
+    storage = MemoryDocumentStorage()
+    client = TestClient(create_app(object_storage=storage))
+    parent = session_headers(client)
+    response = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/imports/files",
+        headers={**parent, "Idempotency-Key": "curriculum-files-1"},
+        data={
+            "authorization_statement": "家庭已取得本地自用材料授权",
+            "grade": "3",
+            "textbook_version": "人教版-三年级上册",
+            "term": "上学期",
+        },
+        files=[
+            ("files", ("数学.pdf", b"%PDF-local", "application/pdf")),
+            (
+                "files",
+                (
+                    "练习册.pdf",
+                    b"%PDF-local-workbook",
+                    "application/pdf",
+                ),
+            ),
+        ],
+    )
+
+    assert response.status_code == 201
+    results = response.json()
+    assert [item["material"]["filename"] for item in results] == ["数学.pdf", "练习册.pdf"]
+    assert [item["material"]["status"] for item in results] == ["uploaded", "uploaded"]
+    assert all("object_key" not in item["material"] for item in results)
+    assert len(storage.objects) == 2
+
+
+def test_parent_reads_page_scoped_parsing_output_for_review() -> None:
+    curriculum_repository = CurriculumWithChunks()
+    client = TestClient(create_app(curriculum_repository=curriculum_repository))
+    parent = session_headers(client)
+    imported = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/imports",
+        headers={**parent, "Idempotency-Key": "curriculum-preview-import"},
+        json={
+            "filename": "math.json",
+            "media_type": "application/json",
+            "byte_size": 128,
+            "content_sha256": "c" * 64,
+            "authorization_statement": "家庭自用授权",
+            "grade": 3,
+            "textbook_version": "人教版-三年级上册",
+            "term": "上学期",
+            "sections": [
+                {
+                    "title": "待审核页",
+                    "chapter": "第 1 页",
+                    "learning_objectives": ["理解题意"],
+                }
+            ],
+        },
+    )
+    material = imported.json()["material"]
+    snapshot = imported.json()["snapshot"]
+    curriculum_repository.chunks.append(
+        CurriculumChunk(
+            id=UUID("00000000-0000-0000-0000-000000000411"),
+            household_id=UUID(HOUSEHOLD_A),
+            child_id=UUID(CHILD_A),
+            material_id=UUID(material["id"]),
+            snapshot_id=UUID(snapshot["id"]),
+            page_number=1,
+            chunk_index=0,
+            title="第一单元 认识数字",
+            text="数一数。图中有几个苹果？",
+            confidence=0.95,
+            parser_version="test",
+            created_at=datetime.now(UTC),
+        )
+    )
+
+    preview = client.get(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/snapshots/{snapshot['id']}/pages",
+        headers=parent,
+    )
+
+    assert preview.status_code == 200
+    assert preview.json() == [
+        {
+            "page_number": 1,
+            "title": "第一单元 认识数字",
+            "text": "数一数。图中有几个苹果？",
+            "confidence": 0.95,
+            "image_available": False,
+            "image_path": None,
+        }
+    ]
+    child_preview = client.get(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/snapshots/{snapshot['id']}/pages",
+        headers=session_headers(client, role="child", household_id=HOUSEHOLD_A, child_id=CHILD_A),
+    )
+    assert child_preview.status_code == 403
+
+
+def test_curriculum_file_upload_rejects_unsupported_format_before_storage() -> None:
+    storage = MemoryDocumentStorage()
+    client = TestClient(create_app(object_storage=storage))
+    response = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/imports/files",
+        headers={**session_headers(client), "Idempotency-Key": "curriculum-files-2"},
+        data={
+            "authorization_statement": "家庭自用授权",
+            "grade": "3",
+            "textbook_version": "本地版",
+            "term": "上学期",
+        },
+        files=[("files", ("教材.txt", b"not a supported document", "text/plain"))],
+    )
+
+    assert response.status_code == 422
+    assert response.json()["message"] == "unsupported_material_format"
+    assert storage.objects == {}
+
+
+def test_mixed_batch_rejects_before_writing_any_pdf() -> None:
+    storage = MemoryDocumentStorage()
+    client = TestClient(create_app(object_storage=storage))
+    response = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/imports/files",
+        headers={**session_headers(client), "Idempotency-Key": "curriculum-files-mixed"},
+        data={
+            "authorization_statement": "家庭自用授权",
+            "grade": "3",
+            "textbook_version": "本地版",
+            "term": "上学期",
+        },
+        files=[
+            ("files", ("数学.pdf", b"%PDF-local", "application/pdf")),
+            ("files", ("练习册.docx", b"PK-local-docx", "application/octet-stream")),
+        ],
+    )
+
+    assert response.status_code == 422
+    assert response.json()["message"] == "unsupported_material_format"
+    assert storage.objects == {}
+
+
+def test_uploaded_document_cannot_be_published_before_text_is_parsed() -> None:
+    storage = MemoryDocumentStorage()
+    client = TestClient(create_app(object_storage=storage))
+    parent = session_headers(client)
+    uploaded = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/imports/files",
+        headers={**parent, "Idempotency-Key": "curriculum-files-pending-parse"},
+        data={
+            "authorization_statement": "家庭自用授权",
+            "grade": "3",
+            "textbook_version": "本地教材",
+            "term": "上学期",
+        },
+        files=[("files", ("数学.pdf", b"%PDF-local", "application/pdf"))],
+    )
+    snapshot_id = uploaded.json()[0]["snapshot"]["id"]
+
+    published = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/snapshots/{snapshot_id}/publish",
+        headers={**parent, "Idempotency-Key": "curriculum-publish-before-parse"},
+    )
+
+    assert published.status_code == 409
+    assert published.json()["message"] == ("curriculum document must be parsed before publication")
+
+
+def test_parent_can_delete_uploaded_material_and_private_document() -> None:
+    storage = MemoryDocumentStorage()
+    client = TestClient(create_app(object_storage=storage))
+    parent = session_headers(client)
+    uploaded = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/imports/files",
+        headers={**parent, "Idempotency-Key": "curriculum-files-delete"},
+        data={
+            "authorization_statement": "家庭自用授权",
+            "grade": "3",
+            "textbook_version": "待删除教材",
+            "term": "上学期",
+        },
+        files=[("files", ("数学.pdf", b"%PDF-local", "application/pdf"))],
+    )
+    assert uploaded.status_code == 201
+    snapshot_id = uploaded.json()[0]["snapshot"]["id"]
+    assert len(storage.objects) == 1
+
+    deleted = client.delete(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/snapshots/{snapshot_id}",
+        headers={**parent, "Idempotency-Key": "curriculum-delete-1"},
+    )
+    assert deleted.status_code == 204
+    assert storage.objects == {}
+    assert (
+        client.get(
+            f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum",
+            headers=parent,
+        ).json()
+        == []
+    )
+
+    replay = client.delete(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/snapshots/{snapshot_id}",
+        headers={**parent, "Idempotency-Key": "curriculum-delete-1"},
+    )
+    assert replay.status_code == 204
+    assert replay.headers["idempotency-replayed"] == "true"
+
+
+def test_curriculum_import_accepts_the_product_50_mib_boundary() -> None:
+    client = TestClient(create_app())
+    parent = session_headers(client)
+    response = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/imports",
+        headers={**parent, "Idempotency-Key": "curriculum-50-mib"},
+        json={
+            "filename": "边界.pdf",
+            "media_type": "application/pdf",
+            "byte_size": MAX_DOCUMENT_BYTES,
+            "content_sha256": "c" * 64,
+            "authorization_statement": "家庭自用授权",
+            "grade": 3,
+            "textbook_version": "边界教材",
+            "term": "上学期",
+            "sections": [
+                {
+                    "title": "边界小节",
+                    "chapter": "第一单元",
+                    "learning_objectives": ["理解边界"],
+                }
+            ],
+        },
+    )
+    assert response.status_code == 201
+
+
+def test_parent_imports_draft_and_publishes_only_after_review() -> None:
+    client = TestClient(create_app())
+    parent = session_headers(client)
+    payload = {
+        "filename": "小学数学三年级上册.pdf",
+        "media_type": "application/pdf",
+        "byte_size": 1024,
+        "content_sha256": "a" * 64,
+        "authorization_statement": "家庭已取得本地自用材料授权",
+        "grade": 3,
+        "textbook_version": "人教版-三年级上册",
+        "term": "上学期",
+        "sections": [
+            {
+                "title": "分数的初步认识",
+                "chapter": "第五单元",
+                "learning_objectives": ["认识几分之一", "比较简单分数"],
+            }
+        ],
+    }
+    imported = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/imports",
+        headers={**parent, "Idempotency-Key": "curriculum-import-1"},
+        json=payload,
+    )
+    assert imported.status_code == 201
+    snapshot = imported.json()["snapshot"]
+    assert snapshot["status"] == "draft"
+    child_view = client.get(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum",
+        headers=session_headers(client, role="child", household_id=HOUSEHOLD_A, child_id=CHILD_A),
+    )
+    assert child_view.status_code == 200
+    assert child_view.json() == []
+
+    published = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/snapshots/{snapshot['id']}/publish",
+        headers={**parent, "Idempotency-Key": "curriculum-publish-1"},
+    )
+    assert published.status_code == 200
+    assert published.json()["status"] == "published"
+    child_view = client.get(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum",
+        headers=session_headers(client, role="child", household_id=HOUSEHOLD_A, child_id=CHILD_A),
+    )
+    assert [item["id"] for item in child_view.json()] == [snapshot["id"]]
+
+
+def test_manifest_import_rejects_non_pdf_document_media_types() -> None:
+    client = TestClient(create_app())
+    parent = session_headers(client)
+    payload = {
+        "filename": "小学数学.docx",
+        "media_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "byte_size": 1024,
+        "content_sha256": "b" * 64,
+        "authorization_statement": "家庭自用授权",
+        "grade": 3,
+        "textbook_version": "本地版",
+        "term": "上学期",
+        "sections": [
+            {
+                "title": "待解析",
+                "chapter": "待解析文档",
+                "learning_objectives": ["等待解析"],
+            }
+        ],
+    }
+    response = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/imports",
+        headers={**parent, "Idempotency-Key": "curriculum-manifest-docx"},
+        json=payload,
+    )
+
+    assert response.status_code == 422
+
+
+def test_recommendation_requires_parent_approval_before_creating_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    curriculum_repository = CurriculumWithChunks()
+    knowledge_repository = InMemoryCurriculumKnowledgeRepository()
+    app = create_app(
+        curriculum_repository=curriculum_repository,
+        curriculum_knowledge_repository=knowledge_repository,
+    )
+    app.state.newapi_config = NewApiConfig(
+        True,
+        "http://newapi.local",
+        "key",
+        "math-model",
+        5,
+        100_000,
+    )
+    client = TestClient(app)
+    parent = session_headers(client)
+    curriculum = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/imports",
+        headers={**parent, "Idempotency-Key": "recommendation-curriculum-import"},
+        json={
+            "filename": "math.json",
+            "media_type": "application/json",
+            "byte_size": 128,
+            "content_sha256": "b" * 64,
+            "authorization_statement": "家庭自用授权",
+            "grade": 3,
+            "textbook_version": "人教版-三年级上册",
+            "term": "上学期",
+            "sections": [
+                {
+                    "title": "分数",
+                    "chapter": "第五单元",
+                    "learning_objectives": ["认识分数"],
+                }
+            ],
+        },
+    )
+    snapshot_id = curriculum.json()["snapshot"]["id"]
+    curriculum_repository.chunks.append(
+        CurriculumChunk(
+            id=UUID("00000000-0000-0000-0000-000000000401"),
+            household_id=UUID(HOUSEHOLD_A),
+            child_id=UUID(CHILD_A),
+            material_id=UUID(curriculum.json()["material"]["id"]),
+            snapshot_id=UUID(snapshot_id),
+            page_number=86,
+            chunk_index=0,
+            title="分数",
+            text="做一做\n把一个圆平均分成8份，涂出其中3份，涂色部分是几分之几？",
+            confidence=0.95,
+            parser_version="test",
+            created_at=datetime.now(UTC),
+        )
+    )
+    assert (
+        client.post(
+            f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/snapshots/{snapshot_id}/publish",
+            headers={**parent, "Idempotency-Key": "recommendation-curriculum-publish"},
+        ).status_code
+        == 200
+    )
+    now = datetime.now(UTC)
+    knowledge_map_id = UUID("00000000-0000-0000-0000-000000000901")
+    point = CurriculumKnowledgePoint(
+        id=UUID("00000000-0000-0000-0000-000000000902"),
+        household_id=UUID(HOUSEHOLD_A),
+        child_id=UUID(CHILD_A),
+        material_id=UUID(curriculum.json()["material"]["id"]),
+        snapshot_id=UUID(snapshot_id),
+        knowledge_map_id=knowledge_map_id,
+        knowledge_key="kp-fractions",
+        order_index=0,
+        chapter_title="第五单元",
+        section_title="分数",
+        title="分数的认识与比较",
+        summary="理解平均分和几分之几。",
+        learning_objectives=("能用分数表示平均分后的部分",),
+        prerequisites=(),
+        page_numbers=(86,),
+        exercises=(
+            CurriculumKnowledgeExercise(
+                source_key="page:86:observation:0:exercise:0",
+                page_number=86,
+                question_text="把一个圆平均分成8份，涂出其中3份，涂色部分是几分之几？",
+                visual_description="圆平均分成八份，其中三份涂色",
+                requires_visual_context=True,
+                difficulty="basic",
+                confidence=0.95,
+            ),
+        ),
+        confidence=0.95,
+        status="approved",
+        created_at=now,
+        updated_at=now,
+    )
+    knowledge_repository.save_for_testing(
+        CurriculumKnowledgeMap(
+            id=knowledge_map_id,
+            household_id=UUID(HOUSEHOLD_A),
+            child_id=UUID(CHILD_A),
+            material_id=UUID(curriculum.json()["material"]["id"]),
+            snapshot_id=UUID(snapshot_id),
+            status=KnowledgeMapStatus.APPROVED,
+            attempt=1,
+            book_summary="分数单元",
+            page_count=1,
+            analyzed_page_count=1,
+            provider="newapi",
+            model="math-model",
+            schema_version="curriculum-book-analysis.v1",
+            prompt_version="curriculum-book-consolidation.v1",
+            created_at=now,
+            updated_at=now,
+            reviewed_at=now,
+            knowledge_points=(point,),
+        )
+    )
+
+    def plan_from_sources(
+        _provider: NewApiVisionProvider, *, sources
+    ) -> ProviderRecommendationPlan:
+        assert sources[0].source_page == 86
+        return ProviderRecommendationPlan(
+            items=(
+                ProviderRecommendationItem(
+                    source_keys=(sources[0].source_key,),
+                    title="分数第86页巩固",
+                    reason="从已发布教材第86页练习一道分数题。",
+                    knowledge_point="分数的认识与比较",
+                    scheduled_offset_days=1,
+                    estimated_minutes=10,
+                ),
+            )
+        )
+
+    monkeypatch.setattr(
+        NewApiVisionProvider,
+        "create_recommendation_plan",
+        plan_from_sources,
+    )
+    generated = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/task-recommendations",
+        headers={**parent, "Idempotency-Key": "recommendation-generate-1"},
+        json={"child_id": CHILD_A},
+    )
+    assert generated.status_code == 200
+    recommendation = generated.json()[0]
+    assert recommendation["status"] == "pending"
+    assert recommendation["task_id"] is None
+    assert recommendation["snapshot_id"] == snapshot_id
+    assert recommendation["title"] == "分数第86页巩固"
+    assert recommendation["scheduled_for"] > datetime.now(UTC).date().isoformat()
+    assert recommendation["estimated_minutes"] == 10
+    assert recommendation["exercises"][0]["source_page"] == 86
+    assert "涂色部分是几分之几" in recommendation["exercises"][0]["question_text"]
+
+    before = client.get(
+        f"/households/{HOUSEHOLD_A}/tasks?child_id={CHILD_A}",
+        headers=parent,
+    ).json()
+    approved = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/task-recommendations/{recommendation['id']}/decision",
+        headers={**parent, "Idempotency-Key": "recommendation-decide-1"},
+        json={"decision": "approve"},
+    )
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "approved"
+    assert approved.json()["task_id"] is not None
+    after = client.get(
+        f"/households/{HOUSEHOLD_A}/tasks?child_id={CHILD_A}",
+        headers=parent,
+    ).json()
+    assert len(after) == len(before) + 1
+    task = next(item for item in after if item["id"] == approved.json()["task_id"])
+    assert task["source_type"] == "curriculum_exercise"
+    assert task["exercises"][0]["source_page"] == 86
+    replayed = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/task-recommendations/{recommendation['id']}/decision",
+        headers={**parent, "Idempotency-Key": "recommendation-decide-1"},
+        json={"decision": "approve"},
+    )
+    assert replayed.status_code == 200
+    assert replayed.json()["task_id"] == approved.json()["task_id"]
+    assert len(
+        client.get(
+            f"/households/{HOUSEHOLD_A}/tasks?child_id={CHILD_A}",
+            headers=parent,
+        ).json()
+    ) == len(after)

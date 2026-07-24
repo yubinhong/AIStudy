@@ -1,6 +1,6 @@
 # DECISIONS.md
 
-> 决策索引。完整决策使用 `docs/adr/NNNN-title.md`；项目 Owner（用户）已于 2026-07-13 批准 ADR-0001～0012、于 2026-07-14 批准 ADR-0013～0014、于 2026-07-15 批准 ADR-0015～0017、于 2026-07-17 批准 ADR-0018，并于 2026-07-18 批准 ADR-0020；ADR-0019 仍为 Proposed。ADR-0012 的默认本地完整 OCR 路线已被 ADR-0015 替代；ADR-0017 替代 ADR-0005 的 PIN/设备凭证默认认证方式和 ADR-0016 的 HMAC 家庭认证部分；ADR-0018 替代 ADR-0010/0014 的客户端预签名直传路线并继承其私有 MinIO/S3 Adapter 边界。每份 ADR 内保留的真实数据、法域和生产前置条件仍然有效。
+> 决策索引。完整决策使用 `docs/adr/NNNN-title.md`；项目 Owner（用户）已于 2026-07-13 批准 ADR-0001～0012、于 2026-07-14 批准 ADR-0013～0014、于 2026-07-15 批准 ADR-0015～0017、于 2026-07-17 批准 ADR-0018，并于 2026-07-18 批准 ADR-0020、于 2026-07-23 批准 ADR-0021～0023；ADR-0019 仍为 Proposed。ADR-0012 的默认本地完整 OCR 路线已被 ADR-0015 替代；ADR-0017 替代 ADR-0005 的 PIN/设备凭证默认认证方式和 ADR-0016 的 HMAC 家庭认证部分；ADR-0018 替代 ADR-0010/0014 的客户端预签名直传路线并继承其私有 MinIO/S3 Adapter 边界。
 
 ## 决策原则
 
@@ -32,8 +32,11 @@
 | [ADR-0015](docs/adr/0015-local-privacy-sanitization-and-cloud-vision-parsing.md) | 原图留在家庭边界，本地 OCR/规则/视觉只生成不可逆脱敏副本；用户确认后由单一获批云端视觉 Provider 结构化解析 | 本地脱敏回执、哈希门禁、Provider-neutral Schema 和可开关 worker 已实现；人工确认持久化、临时副本删除、实际 Provider 联调和固定视觉 eval 仍待完成 |
 | [ADR-0016](docs/adr/0016-self-hosted-auth-and-newapi-provider.md) | HMAC 家庭认证与 NewAPI OpenAI-compatible Adapter | HMAC 认证已被 ADR-0017 替代；NewAPI 默认关闭、单 Provider、脱敏副本和 Adapter 边界继续有效 |
 | [ADR-0017](docs/adr/0017-self-hosted-password-accounts-and-sessions.md) | 自用 PostgreSQL 账号密码、一次性默认管理员、家长创建孩子账号和可撤销会话 | 已批准并完成 API/Web/Flutter/Compose 代码切换；2026-07-16 批准删除全部 HMAC/Demo 运行时兼容，Flutter 改为登录前配置服务端地址；环境验收仍未全部完成 |
-| [ADR-0018](docs/adr/0018-api-streaming-capture-upload.md) | App 只携带 Session 向 API 上传；API 有界流式校验并通过内部地址写入私有 MinIO | 已批准、尚未实现；当前 `0.8.0` 仍是预签名直传，按 PLAN-0012 迁移后关闭 MinIO `9000` LAN 暴露并删除公开端点配置 |
-| [ADR-0020](docs/adr/0020-curriculum-grounded-mistake-learning-loop.md) | 数学首科采用“教材范围 → 错题讲解 → 错题沉淀 → 到期复习 → 今日任务”主线 | 已批准、尚未实现；详细过程要求 VerifiedQuestion + 已确认作答状态，有作答诊断错步、确认空白从头讲，复习/任务按确定性策略与家长控制推进，见 PLAN-0014 |
+| [ADR-0018](docs/adr/0018-api-streaming-capture-upload.md) | App 只携带 Session 向 API 上传；API 有界流式校验并通过内部地址写入私有 MinIO | 已批准并已在本地/Ubuntu 流式链路实现；MinIO `9000` LAN 暴露已删除，最终断连/超限/真机回归仍待完成 |
+| [ADR-0020](docs/adr/0020-curriculum-grounded-mistake-learning-loop.md) | 数学首科采用“教材范围 → 错题讲解 → 错题沉淀 → 到期复习 → 今日任务”主线 | 已批准并完成代码收口；closeout、ReviewAttempt、PDF 解析/grounding 和 Tutor 递进已实现，真实部署与发布门槛仍按 PLAN-0016 验收 |
+| [ADR-0021](docs/adr/0021-local-curriculum-document-parsing-pipeline.md) | 首版教材只接受 PDF；本地有界解析 worker 生成页级草稿，家长发布后才用于 Tutor/推荐 | 已接受并实现 `pdfplumber==0.11.7`/`pdfminer-six==20250506`、0021～0023 迁移、解析 worker 和 Tutor 来源/递进字段；真实部署、扫描 PDF 与发布门槛仍有效 |
+| [ADR-0022](docs/adr/0022-cloud-tutor-and-source-bound-recommendation-planning.md) | L1/L2 使用受约束云端 Tutor；推荐由本地全教材/错题分析后交给云端做来源受限的 7 日规划 | 只发送已确认题目和有界教材候选；模型只能选择服务端 source key，家长批准后才创建正式 Task |
+| [ADR-0023](docs/adr/0023-multimodal-curriculum-knowledge-map.md) | 私有 PDF 渲染原页预览，NewAPI 分批多模态理解并形成可审核知识图谱，再结合错题规划任务 | 原 PDF/预览留在私有 MinIO；Provider 只收有界页批次，知识图谱与任务均须家长批准，模型不能伪造来源页或教材题 |
 
 ## Proposed ADR
 

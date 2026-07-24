@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -27,8 +28,14 @@ typedef ChildPasswordChangeAction =
     );
 typedef ChildSessionStatusAction =
     Future<bool> Function(String baseUrl, String token);
+typedef ChildServiceHealthAction = Future<void> Function(String baseUrl);
 typedef ChildLoggedIn =
-    void Function(String baseUrl, String token, bool mustChangePassword);
+    void Function(
+      String baseUrl,
+      String token,
+      bool mustChangePassword,
+      String username,
+    );
 
 Future<List<Map<String, dynamic>>> loadChildrenWithToken(
   String baseUrl,
@@ -53,6 +60,16 @@ Future<List<Map<String, dynamic>>> loadChildrenWithToken(
       throw const ChildAuthException('服务端返回了无法识别的档案数据。');
     }
     return payload.whereType<Map>().map(Map<String, dynamic>.from).toList();
+  } on ChildAuthException {
+    rethrow;
+  } on Object catch (error, stackTrace) {
+    logChildNetworkFailure(
+      operation: 'load_children',
+      baseUrl: baseUrl,
+      error: error,
+      stackTrace: stackTrace,
+    );
+    throw const ChildAuthException('暂时无法连接学习服务。');
   } finally {
     client.close(force: true);
   }
@@ -139,6 +156,7 @@ class _ChildAuthGateState extends State<ChildAuthGate> {
   late final ChildAuthStore _store;
   String _serverBaseUrl = defaultServerBaseUrl;
   String? _token;
+  String? _username;
   bool _mustChangePassword = false;
   bool _loading = true;
 
@@ -152,6 +170,7 @@ class _ChildAuthGateState extends State<ChildAuthGate> {
   Future<void> _restore() async {
     String serverBaseUrl = defaultServerBaseUrl;
     String? token;
+    String? username;
     var mustChangePassword = false;
     try {
       final savedServerBaseUrl = await _store.readServerBaseUrl();
@@ -160,6 +179,13 @@ class _ChildAuthGateState extends State<ChildAuthGate> {
       }
       token = await _store.readSessionToken();
       if (token != null && token.isNotEmpty) {
+        final accounts = await _store.readSavedAccounts();
+        for (final account in accounts) {
+          if (account.sessionToken == token) {
+            username = account.username;
+            break;
+          }
+        }
         try {
           mustChangePassword =
               await (widget.sessionStatusAction ?? _sessionStatusWithClient)(
@@ -183,6 +209,7 @@ class _ChildAuthGateState extends State<ChildAuthGate> {
     setState(() {
       _serverBaseUrl = serverBaseUrl;
       _token = token;
+      _username = username;
       _mustChangePassword = mustChangePassword;
       _loading = false;
     });
@@ -193,8 +220,66 @@ class _ChildAuthGateState extends State<ChildAuthGate> {
     if (!mounted) return;
     setState(() {
       _token = null;
+      _username = null;
       _mustChangePassword = false;
     });
+  }
+
+  Future<void> _logout() async {
+    await _store.clearSessionToken();
+    if (!mounted) return;
+    setState(() {
+      _token = null;
+      _username = null;
+      _mustChangePassword = false;
+    });
+  }
+
+  Future<void> _addAccount() async {
+    await _store.clearSessionToken();
+    if (!mounted) return;
+    setState(() {
+      _token = null;
+      _username = null;
+      _mustChangePassword = false;
+    });
+  }
+
+  Future<void> _switchAccount(ChildSavedAccount account) async {
+    await _store.saveServerBaseUrl(account.serverBaseUrl);
+    await _store.writeSessionToken(account.sessionToken);
+    if (!mounted) return;
+    setState(() {
+      _serverBaseUrl = account.serverBaseUrl;
+      _token = account.sessionToken;
+      _username = account.username;
+      _mustChangePassword = false;
+    });
+  }
+
+  Future<void> _replaceSavedSession(String oldToken, String newToken) async {
+    final accounts = await _store.readSavedAccounts();
+    for (final account in accounts) {
+      if (account.sessionToken == oldToken) {
+        await _store.saveAccount(
+          ChildSavedAccount(
+            username: account.username,
+            serverBaseUrl: account.serverBaseUrl,
+            sessionToken: newToken,
+          ),
+        );
+        break;
+      }
+    }
+  }
+
+  void _passwordChanged(String newToken) {
+    final oldToken = _token;
+    setState(() {
+      _token = newToken;
+      _mustChangePassword = false;
+    });
+    if (oldToken != null) unawaited(_replaceSavedSession(oldToken, newToken));
   }
 
   Future<bool> _sessionStatusWithClient(String baseUrl, String token) =>
@@ -213,10 +298,7 @@ class _ChildAuthGateState extends State<ChildAuthGate> {
           token: token,
           store: _store,
           changeAction: widget.passwordChangeAction,
-          onChanged: (newToken) => setState(() {
-            _token = newToken;
-            _mustChangePassword = false;
-          }),
+          onChanged: _passwordChanged,
           onCancel: _changeServer,
         );
       }
@@ -225,7 +307,19 @@ class _ChildAuthGateState extends State<ChildAuthGate> {
           loadChildren: () => loadChildrenWithToken(_serverBaseUrl, token),
           baseUrl: _serverBaseUrl,
           authorizationToken: token,
-          onChangeServer: _changeServer,
+          username: _username,
+          onOpenAccount: () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => ChildAccountScreen(
+                store: _store,
+                currentToken: token,
+                onAddAccount: _addAccount,
+                onLogout: _logout,
+                onSwitchAccount: _switchAccount,
+              ),
+            ),
+          ),
+          onLogout: _logout,
         ),
       );
     }
@@ -233,11 +327,13 @@ class _ChildAuthGateState extends State<ChildAuthGate> {
       initialServerBaseUrl: _serverBaseUrl,
       store: _store,
       loginAction: widget.loginAction,
-      onLoggedIn: (baseUrl, newToken, mustChangePassword) => setState(() {
-        _serverBaseUrl = baseUrl;
-        _token = newToken;
-        _mustChangePassword = mustChangePassword;
-      }),
+      onLoggedIn: (baseUrl, newToken, mustChangePassword, username) =>
+          setState(() {
+            _serverBaseUrl = baseUrl;
+            _token = newToken;
+            _username = username;
+            _mustChangePassword = mustChangePassword;
+          }),
     );
   }
 }
@@ -249,12 +345,14 @@ class ChildLoginScreen extends StatefulWidget {
     required this.store,
     required this.onLoggedIn,
     this.loginAction,
+    this.healthAction,
   });
 
   final String initialServerBaseUrl;
   final ChildAuthStore store;
   final ChildLoggedIn onLoggedIn;
   final ChildLoginAction? loginAction;
+  final ChildServiceHealthAction? healthAction;
 
   @override
   State<ChildLoginScreen> createState() => _ChildLoginScreenState();
@@ -265,12 +363,16 @@ class _ChildLoginScreenState extends State<ChildLoginScreen> {
   final _username = TextEditingController();
   final _password = TextEditingController();
   bool _pending = false;
+  bool _checkingService = false;
   String? _error;
+  String? _serviceStatus;
+  bool _serviceAvailable = false;
 
   @override
   void initState() {
     super.initState();
     _serverBaseUrl = TextEditingController(text: widget.initialServerBaseUrl);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkService());
   }
 
   @override
@@ -294,8 +396,24 @@ class _ChildLoginScreenState extends State<ChildLoginScreen> {
         _password.text,
       );
       await widget.store.writeSessionToken(result.token);
+      await widget.store.saveAccount(
+        ChildSavedAccount(
+          username: result.username?.isNotEmpty == true
+              ? result.username!
+              : _username.text.trim(),
+          serverBaseUrl: baseUrl,
+          sessionToken: result.token,
+        ),
+      );
       if (mounted) {
-        widget.onLoggedIn(baseUrl, result.token, result.mustChangePassword);
+        widget.onLoggedIn(
+          baseUrl,
+          result.token,
+          result.mustChangePassword,
+          result.username?.isNotEmpty == true
+              ? result.username!
+              : _username.text.trim(),
+        );
       }
     } on ChildAuthException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -306,6 +424,34 @@ class _ChildLoginScreenState extends State<ChildLoginScreen> {
     }
   }
 
+  Future<void> _checkService() async {
+    if (_checkingService) return;
+    setState(() {
+      _checkingService = true;
+      _serviceStatus = '正在检测学习服务…';
+      _serviceAvailable = false;
+    });
+    try {
+      final baseUrl = normalizeServerBaseUrl(_serverBaseUrl.text);
+      await (widget.healthAction ?? _healthWithClient)(baseUrl);
+      if (mounted) {
+        setState(() {
+          _serviceStatus = '学习服务已连接';
+          _serviceAvailable = true;
+        });
+      }
+    } on ChildAuthException catch (error) {
+      if (mounted) setState(() => _serviceStatus = error.message);
+    } on Object {
+      if (mounted) setState(() => _serviceStatus = '学习服务检测失败，请重试。');
+    } finally {
+      if (mounted) setState(() => _checkingService = false);
+    }
+  }
+
+  Future<void> _healthWithClient(String baseUrl) =>
+      ChildAuthClient(baseUrl: baseUrl).checkHealth();
+
   Future<ChildLoginResult> _loginWithClient(
     String baseUrl,
     String username,
@@ -315,58 +461,92 @@ class _ChildLoginScreenState extends State<ChildLoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Card(
-            margin: const EdgeInsets.all(24),
-            child: Padding(
-              padding: const EdgeInsets.all(28),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    '登录学习桌',
-                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Card(
+                margin: EdgeInsets.zero,
+                child: Padding(
+                  padding: const EdgeInsets.all(28),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        '登录学习桌',
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text('使用家长创建的孩子账号登录。'),
+                      const SizedBox(height: 20),
+                      TextField(
+                        key: const ValueKey('server-base-url'),
+                        controller: _serverBaseUrl,
+                        keyboardType: TextInputType.url,
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        decoration: const InputDecoration(
+                          labelText: '服务端地址',
+                          helperText: '例如 http://192.168.1.4:8000',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(
+                            _serviceAvailable
+                                ? Icons.check_circle_outline
+                                : Icons.info_outline,
+                            size: 18,
+                            color: _serviceAvailable ? _mint : _muted,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _serviceStatus ?? '尚未检测学习服务',
+                              style: TextStyle(
+                                color: _serviceAvailable ? _deepGreen : _muted,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _checkingService ? null : _checkService,
+                            child: const Text('重新检测'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _username,
+                        decoration: const InputDecoration(labelText: '用户名'),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: _password,
+                        obscureText: true,
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        decoration: const InputDecoration(labelText: '密码'),
+                      ),
+                      if (_error != null) ...[
+                        const SizedBox(height: 12),
+                        Text(_error!, style: const TextStyle(color: _coral)),
+                      ],
+                      const SizedBox(height: 20),
+                      FilledButton(
+                        onPressed: _pending ? null : _login,
+                        child: Text(_pending ? '登录中…' : '登录'),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  const Text('使用家长创建的孩子账号登录。'),
-                  const SizedBox(height: 20),
-                  TextField(
-                    key: const ValueKey('server-base-url'),
-                    controller: _serverBaseUrl,
-                    keyboardType: TextInputType.url,
-                    autocorrect: false,
-                    enableSuggestions: false,
-                    decoration: const InputDecoration(
-                      labelText: '服务端地址',
-                      helperText: '例如 http://192.168.1.4:8000',
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _username,
-                    decoration: const InputDecoration(labelText: '用户名'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _password,
-                    obscureText: true,
-                    autocorrect: false,
-                    enableSuggestions: false,
-                    decoration: const InputDecoration(labelText: '密码'),
-                  ),
-                  if (_error != null) ...[
-                    const SizedBox(height: 12),
-                    Text(_error!, style: const TextStyle(color: _coral)),
-                  ],
-                  const SizedBox(height: 20),
-                  FilledButton(
-                    onPressed: _pending ? null : _login,
-                    child: Text(_pending ? '登录中…' : '登录'),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -545,13 +725,17 @@ class ChildProfileScreen extends StatefulWidget {
     required this.loadChildren,
     this.baseUrl = defaultServerBaseUrl,
     this.authorizationToken,
-    this.onChangeServer,
+    this.username,
+    this.onOpenAccount,
+    this.onLogout,
   });
 
   final ChildrenLoader loadChildren;
   final String baseUrl;
   final String? authorizationToken;
-  final VoidCallback? onChangeServer;
+  final String? username;
+  final VoidCallback? onOpenAccount;
+  final VoidCallback? onLogout;
 
   @override
   State<ChildProfileScreen> createState() => _ChildProfileScreenState();
@@ -574,10 +758,11 @@ class _ChildProfileScreenState extends State<ChildProfileScreen> {
       appBar: AppBar(
         title: const Text('家庭 AI 学习助手'),
         actions: [
-          if (widget.onChangeServer != null)
-            TextButton(
-              onPressed: widget.onChangeServer,
-              child: const Text('更换服务端'),
+          if (widget.onOpenAccount != null)
+            IconButton(
+              onPressed: widget.onOpenAccount,
+              tooltip: '账号',
+              icon: const Icon(Icons.account_circle_outlined),
             ),
         ],
       ),
@@ -593,7 +778,7 @@ class _ChildProfileScreenState extends State<ChildProfileScreen> {
                   ? '登录状态已失效，请返回登录后重试。'
                   : '暂时无法连接学习服务，请检查网络后重试。',
               onRetry: _retry,
-              onChangeServer: widget.onChangeServer,
+              onChangeServer: widget.onLogout,
             );
           }
           final children = snapshot.data ?? const <Map<String, dynamic>>[];
@@ -602,11 +787,12 @@ class _ChildProfileScreenState extends State<ChildProfileScreen> {
             return _UnavailableScreen(
               message: '当前账号没有绑定孩子档案，请先在家长端完成绑定。',
               onRetry: _retry,
-              onChangeServer: widget.onChangeServer,
+              onChangeServer: widget.onLogout,
             );
           }
           return LearningDeskScreen(
             displayName: child['display_name']?.toString() ?? '小禾',
+            username: widget.username,
             curriculumVersion:
                 child['curriculum_version']?.toString() ?? '数学练习',
             captureClient: _buildCaptureClient(child),
@@ -627,6 +813,152 @@ class _ChildProfileScreenState extends State<ChildProfileScreen> {
       householdId: defaultHouseholdId,
       childId: childId,
       authorizationToken: token,
+      accountUsername: widget.username,
+    );
+  }
+}
+
+class ChildAccountScreen extends StatefulWidget {
+  const ChildAccountScreen({
+    super.key,
+    required this.store,
+    required this.currentToken,
+    required this.onAddAccount,
+    required this.onLogout,
+    required this.onSwitchAccount,
+  });
+
+  final ChildAuthStore store;
+  final String currentToken;
+  final Future<void> Function() onAddAccount;
+  final Future<void> Function() onLogout;
+  final Future<void> Function(ChildSavedAccount account) onSwitchAccount;
+
+  @override
+  State<ChildAccountScreen> createState() => _ChildAccountScreenState();
+}
+
+class _ChildAccountScreenState extends State<ChildAccountScreen> {
+  late Future<List<ChildSavedAccount>> _accounts;
+  bool _pending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _accounts = widget.store.readSavedAccounts();
+  }
+
+  Future<void> _run(Future<void> Function() action, {bool close = true}) async {
+    if (_pending) return;
+    setState(() => _pending = true);
+    try {
+      await action();
+      if (close && mounted) Navigator.of(context).pop();
+    } on Object catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('账号操作失败，请稍后重试（${error.runtimeType}）。')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _pending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('账号')),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(24),
+          children: [
+            Card(
+              child: ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: _lightMint,
+                  child: Icon(Icons.person_outline, color: _deepGreen),
+                ),
+                title: const Text('当前账号'),
+                subtitle: FutureBuilder<List<ChildSavedAccount>>(
+                  future: _accounts,
+                  builder: (context, snapshot) {
+                    ChildSavedAccount? current;
+                    for (final account in snapshot.data ?? const []) {
+                      if (account.sessionToken == widget.currentToken) {
+                        current = account;
+                        break;
+                      }
+                    }
+                    return Text(current?.username ?? '孩子账号');
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text('切换账号', style: _titleStyle(24)),
+            const SizedBox(height: 10),
+            FutureBuilder<List<ChildSavedAccount>>(
+              future: _accounts,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                final accounts = snapshot.data ?? const <ChildSavedAccount>[];
+                if (accounts.isEmpty) {
+                  return const Text('暂无其他已登录账号。');
+                }
+                return Column(
+                  children: accounts
+                      .map((account) {
+                        final current =
+                            account.sessionToken == widget.currentToken;
+                        return Card(
+                          child: ListTile(
+                            leading: Icon(
+                              current
+                                  ? Icons.check_circle
+                                  : Icons.person_outline,
+                              color: current ? _mint : _muted,
+                            ),
+                            title: Text(account.username),
+                            subtitle: Text(current ? '正在使用' : '已保存登录状态'),
+                            trailing: current
+                                ? null
+                                : TextButton(
+                                    onPressed: _pending
+                                        ? null
+                                        : () => _run(
+                                            () =>
+                                                widget.onSwitchAccount(account),
+                                          ),
+                                    child: const Text('切换'),
+                                  ),
+                          ),
+                        );
+                      })
+                      .toList(growable: false),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: _pending ? null : () => _run(widget.onAddAccount),
+              icon: const Icon(Icons.person_add_alt_1),
+              label: const Text('添加账号'),
+            ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _pending ? null : () => _run(widget.onLogout),
+              icon: const Icon(Icons.logout),
+              label: const Text('注销当前账号'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -640,16 +972,31 @@ const _border = Color(0xFFD9E9DE);
 const _muted = Color(0xFF6C7872);
 const _coral = Color(0xFFF17968);
 
+String _initialQuestionPrompt(String questionText) {
+  if (const ['飞走', '离开', '用掉', '吃掉', '卖出', '拿走'].any(questionText.contains)) {
+    return '题目里有原来的数量和减少的数量。\n每次飞走后，数量发生了什么变化？';
+  }
+  if (const ['多多少', '少多少', '相差', '差多少'].any(questionText.contains)) {
+    return '这道题在比较两个数量。\n先找出谁多、谁少，再想怎样求相差。';
+  }
+  if (questionText.contains('/') || questionText.contains('分母')) {
+    return '两个分母一样吗？如果不一样，\n可以先做什么？';
+  }
+  return '先找出题目已经告诉我们的数量，\n再说一说最后要解决什么问题。';
+}
+
 class LearningDeskScreen extends StatefulWidget {
   const LearningDeskScreen({
     super.key,
     required this.displayName,
     required this.curriculumVersion,
+    this.username,
     this.captureClient,
   });
 
   final String displayName;
   final String curriculumVersion;
+  final String? username;
   final CaptureApiClient? captureClient;
 
   @override
@@ -680,12 +1027,23 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
         .toList(growable: false);
   }
 
-  void _reloadTasks() => setState(() => _tasks = _loadTasks());
+  void _reloadTasks() {
+    setState(() {
+      _tasks = _loadTasks();
+    });
+  }
 
   void _openPreviewLearning() {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (context) => const TutorHintScreen()),
+      MaterialPageRoute<void>(
+        builder: (context) => TutorHintScreen(displayName: _practiceName),
+      ),
     );
+  }
+
+  String get _practiceName {
+    final username = widget.username?.trim();
+    return username == null || username.isEmpty ? widget.displayName : username;
   }
 
   Future<void> _openCaptureFlow() async {
@@ -751,6 +1109,8 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
                   children: [
                     _buildHeader(compact),
                     SizedBox(height: compact ? 22 : 28),
+                    _buildMathEntryStrip(compact),
+                    SizedBox(height: compact ? 18 : 24),
                     _buildTaskArea(compact),
                     const SizedBox(height: 16),
                     TextButton(
@@ -764,6 +1124,55 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
             },
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildMathEntryStrip(bool compact) {
+    final client = widget.captureClient;
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(compact ? 14 : 18),
+      decoration: BoxDecoration(
+        color: _surface,
+        border: Border.all(color: _border),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _MathEntryButton(
+              icon: Icons.psychology_outlined,
+              label: '错题讲解',
+              caption: '拍题后分步思考',
+              onPressed: _openCaptureFlow,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _MathEntryButton(
+              icon: Icons.replay_rounded,
+              label: '复习错题',
+              caption: '到期或提前复习',
+              onPressed: client == null
+                  ? null
+                  : () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => DueMistakesScreen(client: client),
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _MathEntryButton(
+              icon: Icons.today_outlined,
+              label: '今日任务',
+              caption: '按今天的安排学习',
+              onPressed: _reloadTasks,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -847,7 +1256,14 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
             onPressed: _openCaptureFlow,
           );
         }
-        return _buildTaskSurface(compact, tasks.first);
+        return Column(
+          children: [
+            for (var index = 0; index < tasks.length; index++) ...[
+              if (index > 0) const SizedBox(height: 16),
+              _buildTaskSurface(compact, tasks[index]),
+            ],
+          ],
+        );
       },
     );
   }
@@ -908,6 +1324,15 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
   }
 
   Widget _buildWideTaskBody(Map<String, dynamic>? task) {
+    if (task != null) {
+      return Column(
+        children: [
+          _buildTaskDetails(task),
+          const SizedBox(height: 30),
+          _buildActions(task),
+        ],
+      );
+    }
     return Column(
       children: [
         Row(
@@ -925,6 +1350,15 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
   }
 
   Widget _buildCompactTaskBody(Map<String, dynamic>? task) {
+    if (task != null) {
+      return Column(
+        children: [
+          _buildTaskDetails(task),
+          const SizedBox(height: 28),
+          _buildActions(task),
+        ],
+      );
+    }
     return Column(
       children: [
         _FractionIllustration(height: 180),
@@ -940,6 +1374,16 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
     final isPreview = task == null;
     final title = task?['title']?.toString() ?? '分数的加法';
     final status = task?['status'] == 'in_progress' ? '进行中' : '待开始';
+    final knowledgePoint = task?['knowledge_point']?.toString();
+    final reason = task?['reason']?.toString();
+    final estimatedMinutes = task?['estimated_minutes'];
+    final exercises = task?['exercises'] is List
+        ? List<Map<String, dynamic>>.from(
+            (task!['exercises'] as List).map(
+              (item) => Map<String, dynamic>.from(item as Map),
+            ),
+          )
+        : const <Map<String, dynamic>>[];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -948,9 +1392,28 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
         Text(
           isPreview
               ? '学习目标：理解同分母分数加法的算理，\n能正确计算并解决简单问题。'
-              : '数学任务 · $status\n先拍下题目，确认识别结果后再开始思考。',
+              : [
+                  '数学任务 · $status',
+                  if (estimatedMinutes is num)
+                    '预计 ${estimatedMinutes.toInt()} 分钟',
+                  if (exercises.isNotEmpty) '共 ${exercises.length} 题',
+                  if (knowledgePoint != null && knowledgePoint.isNotEmpty)
+                    '知识点：$knowledgePoint',
+                  if (reason != null && reason.isNotEmpty) reason,
+                ].join('\n'),
           style: const TextStyle(color: _muted, fontSize: 18, height: 1.55),
         ),
+        if (!isPreview && exercises.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          for (var index = 0; index < exercises.length; index++) ...[
+            _TaskExerciseCard(
+              exercise: exercises[index],
+              index: index,
+              client: widget.captureClient,
+            ),
+            if (index < exercises.length - 1) const SizedBox(height: 10),
+          ],
+        ],
         const SizedBox(height: 24),
         if (isPreview)
           RichText(
@@ -1027,6 +1490,381 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
   }
 }
 
+class _TaskExerciseCard extends StatelessWidget {
+  const _TaskExerciseCard({
+    required this.exercise,
+    required this.index,
+    required this.client,
+  });
+
+  final Map<String, dynamic> exercise;
+  final int index;
+  final CaptureApiClient? client;
+
+  Future<void> _showOriginalPage(
+    BuildContext context,
+    String snapshotId,
+    int pageNumber,
+  ) {
+    final pageClient = client;
+    if (pageClient == null) return Future<void>.value();
+    return showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        insetPadding: const EdgeInsets.all(24),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1000, maxHeight: 760),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '教材第 $pageNumber 页原图',
+                        style: _titleStyle(24),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      tooltip: '关闭',
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: FutureBuilder<Uint8List>(
+                    future: pageClient.loadCurriculumPageImage(
+                      snapshotId,
+                      pageNumber,
+                    ),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState != ConnectionState.done) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (snapshot.hasError || snapshot.data == null) {
+                        return const Center(
+                          child: Text(
+                            '暂时无法打开教材原页，请检查网络后重试。',
+                            style: TextStyle(color: _muted, fontSize: 18),
+                          ),
+                        );
+                      }
+                      return InteractiveViewer(
+                        minScale: 0.8,
+                        maxScale: 4,
+                        child: Image.memory(
+                          snapshot.data!,
+                          fit: BoxFit.contain,
+                          gaplessPlayback: true,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isMistake = exercise['source_type'] == 'mistake';
+    final title = exercise['source_title']?.toString();
+    final page = exercise['source_page'];
+    final visualDescription = exercise['visual_description']?.toString();
+    final requiresVisualContext = exercise['requires_visual_context'] == true;
+    final snapshotId = exercise['snapshot_id']?.toString();
+    final sourceLabel = isMistake
+        ? '过往错题'
+        : [
+            title == null || title.isEmpty ? '教材练习' : title,
+            if (page is num) '第 ${page.toInt()} 页',
+          ].join(' · ');
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: _lightMint.withValues(alpha: 0.58),
+        border: Border.all(color: _border),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '第 ${index + 1} 题 · $sourceLabel',
+            style: const TextStyle(
+              color: _mint,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            exercise['question_text']?.toString() ?? '题目内容暂不可用',
+            style: const TextStyle(
+              color: _deepGreen,
+              fontSize: 22,
+              height: 1.45,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (visualDescription != null &&
+              visualDescription.trim().isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              '图形信息：$visualDescription',
+              style: const TextStyle(color: _muted, fontSize: 17, height: 1.45),
+            ),
+          ],
+          if (requiresVisualContext && page is num) ...[
+            const SizedBox(height: 8),
+            Text(
+              '这道题依赖教材图片，请打开第 ${page.toInt()} 页原图一起看。',
+              style: const TextStyle(
+                color: _mint,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+          if (client != null &&
+              snapshotId != null &&
+              snapshotId.isNotEmpty &&
+              page is num) ...[
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: () =>
+                  _showOriginalPage(context, snapshotId, page.toInt()),
+              icon: const Icon(Icons.image_outlined),
+              label: Text('查看教材第 ${page.toInt()} 页原图'),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _MathEntryButton extends StatelessWidget {
+  const _MathEntryButton({
+    required this.icon,
+    required this.label,
+    required this.caption,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final String caption;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        foregroundColor: _deepGreen,
+        side: const BorderSide(color: _border),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: _mint, size: 26),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  caption,
+                  style: const TextStyle(color: _muted, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class DueMistakesScreen extends StatefulWidget {
+  const DueMistakesScreen({super.key, required this.client});
+
+  final CaptureApiClient client;
+
+  @override
+  State<DueMistakesScreen> createState() => _DueMistakesScreenState();
+}
+
+class _DueMistakesScreenState extends State<DueMistakesScreen> {
+  late Future<List<Map<String, dynamic>>> _mistakes;
+  final Map<String, TextEditingController> _answers = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _mistakes = widget.client.listReviewMistakes();
+  }
+
+  void _reload() =>
+      setState(() => _mistakes = widget.client.listReviewMistakes());
+
+  @override
+  void dispose() {
+    for (final controller in _answers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> _review(String id, String outcome) async {
+    final answer = _answers[id]?.text.trim() ?? '';
+    if (answer.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请先写下这次的答案或思路，再提交复习结果。')));
+      return;
+    }
+    try {
+      await widget.client.reviewMistake(
+        id,
+        outcome,
+        answerSummary: answer,
+        submittedAnswer: answer,
+        evidenceConfirmed: true,
+      );
+      if (mounted) _reload();
+    } on CaptureApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('复习错题')),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: _mistakes,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('暂时无法读取复习内容：${snapshot.error}'));
+          }
+          final items = snapshot.data ?? const [];
+          if (items.isEmpty) {
+            return const Center(child: Text('还没有可复习的错题。'));
+          }
+          final showingEarly = items.every((item) {
+            final schedule = item['schedule'];
+            if (schedule is! Map) return false;
+            final dueAt = DateTime.tryParse(
+              schedule['due_at']?.toString() ?? '',
+            );
+            return dueAt != null && dueAt.isAfter(DateTime.now());
+          });
+          return ListView.separated(
+            padding: const EdgeInsets.all(24),
+            itemCount: items.length + (showingEarly ? 1 : 0),
+            separatorBuilder: (_, _) => const SizedBox(height: 14),
+            itemBuilder: (context, index) {
+              if (showingEarly && index == 0) {
+                return const Card(
+                  color: _lightMint,
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text('今天暂无到期错题，下面列出全部错题，可以提前复习。'),
+                  ),
+                );
+              }
+              final item = items[index - (showingEarly ? 1 : 0)];
+              final mistake = item['mistake'] is Map
+                  ? Map<String, dynamic>.from(item['mistake'] as Map)
+                  : const <String, dynamic>{};
+              final id = mistake['id']?.toString() ?? '';
+              final question = item['question'] is Map
+                  ? Map<String, dynamic>.from(item['question'] as Map)
+                  : const <String, dynamic>{};
+              final controller = _answers.putIfAbsent(
+                id,
+                TextEditingController.new,
+              );
+              return Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('错题复习', style: _titleStyle(22)),
+                      const SizedBox(height: 8),
+                      Text(
+                        question['question_text']?.toString() ?? '请回忆这道题的题目内容',
+                        style: const TextStyle(fontSize: 22, height: 1.4),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(mistake['reason']?.toString() ?? '再检查一次思路'),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: controller,
+                        minLines: 2,
+                        maxLines: 5,
+                        decoration: const InputDecoration(
+                          labelText: '重新作答或写出思路',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          OutlinedButton(
+                            onPressed: id.isEmpty
+                                ? null
+                                : () => _review(id, 'correct'),
+                            child: const Text('这次会了'),
+                          ),
+                          TextButton(
+                            onPressed: id.isEmpty
+                                ? null
+                                : () => _review(id, 'needs_review'),
+                            child: const Text('还要再想想'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
 class CaptureInputScreen extends StatefulWidget {
   const CaptureInputScreen({super.key, this.captureClient});
 
@@ -1057,46 +1895,27 @@ class _CaptureInputScreenState extends State<CaptureInputScreen> {
             ),
           );
       if (!mounted || sanitized == null) return;
-      CaptureUploadReceipt? uploadReceipt;
-      if (widget.captureClient != null) {
-        try {
-          uploadReceipt = await widget.captureClient!
-              .uploadAndStartImageAnalysisBytes(
-                sanitized.bytes,
-                sanitization: {
-                  'schema_version': 'privacy-sanitization.v1',
-                  'sanitizer_version': 'flutter-local-manual-v1',
-                  'safe_to_upload': true,
-                  'requires_confirmation': true,
-                  'sensitive_types': const <String>[],
-                  'region_count': sanitized.maskCount,
-                  'face_detected': false,
-                  'qr_detected': false,
-                  'barcode_detected': false,
-                  'blocked_reasons': const <String>[],
-                },
-              );
-        } on CaptureApiException catch (error) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(error.message),
-              behavior: SnackBarBehavior.floating,
+      final sanitization = _sanitizationMetadata(sanitized);
+      if (widget.captureClient == null) {
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (context) => OcrConfirmationScreen(
+              imageBytes: sanitized.bytes,
+              sanitization: sanitization,
             ),
-          );
-          return;
-        }
-      }
-      if (!mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (context) => OcrConfirmationScreen(
-            imageBytes: sanitized.bytes,
-            uploadReceipt: uploadReceipt,
-            captureClient: widget.captureClient,
           ),
-        ),
-      );
+        );
+      } else if (mounted) {
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (context) => CaptureUploadProgressScreen(
+              imageBytes: sanitized.bytes,
+              sanitization: sanitization,
+              captureClient: widget.captureClient!,
+            ),
+          ),
+        );
+      }
     } on PlatformException {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1205,6 +2024,160 @@ class _CaptureInputScreenState extends State<CaptureInputScreen> {
   }
 }
 
+Map<String, dynamic> _sanitizationMetadata(SanitizedImageSelection selection) =>
+    {
+      'schema_version': 'privacy-sanitization.v1',
+      'sanitizer_version': 'flutter-local-manual-v1',
+      'safe_to_upload': true,
+      'requires_confirmation': true,
+      'sensitive_types': const <String>[],
+      'region_count': selection.maskCount,
+      'face_detected': false,
+      'qr_detected': false,
+      'barcode_detected': false,
+      'blocked_reasons': const <String>[],
+    };
+
+typedef CaptureUploadAction = Future<CaptureUploadReceipt> Function();
+
+class CaptureUploadProgressScreen extends StatefulWidget {
+  const CaptureUploadProgressScreen({
+    super.key,
+    required this.imageBytes,
+    required this.sanitization,
+    required this.captureClient,
+    this.uploadAction,
+  });
+
+  final Uint8List imageBytes;
+  final Map<String, dynamic> sanitization;
+  final CaptureApiClient captureClient;
+  final CaptureUploadAction? uploadAction;
+
+  @override
+  State<CaptureUploadProgressScreen> createState() =>
+      _CaptureUploadProgressScreenState();
+}
+
+class _CaptureUploadProgressScreenState
+    extends State<CaptureUploadProgressScreen> {
+  bool _pending = true;
+  CaptureApiException? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    Future<void>.microtask(_upload);
+  }
+
+  Future<void> _upload() async {
+    if (_pending == false) setState(() => _pending = true);
+    setState(() => _error = null);
+    try {
+      final receipt =
+          await (widget.uploadAction ??
+              () => widget.captureClient.uploadAndStartImageAnalysisBytes(
+                widget.imageBytes,
+                sanitization: widget.sanitization,
+              ))();
+      if (!mounted) return;
+      await Navigator.of(context).pushReplacement(
+        MaterialPageRoute<void>(
+          builder: (_) => OcrConfirmationScreen(
+            imageBytes: widget.imageBytes,
+            uploadReceipt: receipt,
+            sanitization: widget.sanitization,
+            captureClient: widget.captureClient,
+          ),
+        ),
+      );
+    } on CaptureApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _pending = false;
+        _error = error;
+      });
+    } on Object {
+      if (!mounted) return;
+      setState(() {
+        _pending = false;
+        _error = const CaptureApiException('照片上传失败，请检查网络后重试。');
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: Column(
+                children: [
+                  Text('正在处理题目照片', style: _titleStyle(30)),
+                  const SizedBox(height: 12),
+                  const Text(
+                    '请保持当前页面，完成后会自动进入题目确认。',
+                    style: TextStyle(color: _muted, fontSize: 17),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    height: 260,
+                    width: double.infinity,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(22),
+                      child: Image.memory(
+                        widget.imageBytes,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  if (_pending) ...[
+                    const CircularProgressIndicator(color: _mint),
+                    const SizedBox(height: 16),
+                    const Text(
+                      '照片已完成脱敏，正在安全上传并启动识别……',
+                      style: TextStyle(color: _deepGreen, fontSize: 18),
+                      textAlign: TextAlign.center,
+                    ),
+                  ] else ...[
+                    const Icon(
+                      Icons.cloud_off_outlined,
+                      color: _coral,
+                      size: 42,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _error?.message ?? '上传失败，请重试。',
+                      style: const TextStyle(color: _coral, fontSize: 17),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 18),
+                    FilledButton.icon(
+                      onPressed: _upload,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('重新上传'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('返回拍题'),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CaptureChoiceButton extends StatelessWidget {
   const _CaptureChoiceButton({
     required this.icon,
@@ -1240,12 +2213,16 @@ class TutorHintScreen extends StatefulWidget {
     this.questionText = '3/4 + 1/8 = ?',
     this.verifiedQuestionId,
     this.captureClient,
+    this.answerState = 'unclear',
+    this.evidenceConfirmed = false,
   });
 
   final String displayName;
   final String questionText;
   final String? verifiedQuestionId;
   final CaptureApiClient? captureClient;
+  final String answerState;
+  final bool evidenceConfirmed;
 
   @override
   State<TutorHintScreen> createState() => _TutorHintScreenState();
@@ -1257,10 +2234,26 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
   bool _hintLoading = false;
   String? _serverPrompt;
   String? _serverNextStep;
+  String? _childAction;
+  List<String> _solutionSteps = const [];
+  String? _finalAnswer;
+  String? _verification;
   String? _hintError;
   bool _completionSaving = false;
   bool _completed = false;
   String? _completionMessage;
+  late final String _answerState;
+  late final bool _evidenceConfirmed;
+
+  @override
+  void initState() {
+    super.initState();
+    _answerState = widget.answerState;
+    _evidenceConfirmed = widget.evidenceConfirmed;
+    if (widget.captureClient != null && widget.verifiedQuestionId != null) {
+      Future<void>.microtask(_showHint);
+    }
+  }
 
   void _shareThought() {
     setState(() => _thoughtStarted = true);
@@ -1292,12 +2285,25 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
       final response = await client.createTutorHint(
         verifiedQuestionId: verifiedQuestionId,
         level: nextLevel,
+        mode: const {'worked', 'blank'}.contains(_answerState)
+            ? 'mistake_explanation'
+            : 'guided_practice',
+        answerState: _answerState,
+        evidenceConfirmed: _evidenceConfirmed,
       );
       if (!mounted) return;
       setState(() {
         _hintLevel = nextLevel;
         _serverPrompt = response['prompt']?.toString();
         _serverNextStep = response['next_step']?.toString();
+        _childAction = response['child_action']?.toString();
+        _solutionSteps =
+            (response['solution_steps'] as List?)
+                ?.map((item) => item.toString())
+                .toList(growable: false) ??
+            const [];
+        _finalAnswer = response['direct_answer']?.toString();
+        _verification = response['verification']?.toString();
         _hintLoading = false;
       });
     } on CaptureApiException catch (error) {
@@ -1324,6 +2330,13 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
       _hintError = null;
     });
     try {
+      if (_answerState != 'unclear') {
+        await client.recordAttempt(
+          answerSummary: '孩子已确认本题作答状态',
+          answerState: _answerState,
+          evidenceConfirmed: _evidenceConfirmed,
+        );
+      }
       await client.completeCurrentSession(outcome: outcome);
       if (!mounted) return;
       setState(() {
@@ -1407,21 +2420,12 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
             ),
           ),
           const SizedBox(width: 18),
-          RichText(
-            text: const TextSpan(
-              style: TextStyle(color: _deepGreen, fontSize: 22),
-              children: [
-                TextSpan(text: '第 '),
-                TextSpan(
-                  text: '2',
-                  style: TextStyle(
-                    color: _mint,
-                    fontSize: 30,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                TextSpan(text: ' 题 / 4 题'),
-              ],
+          const Text(
+            '本次第 1 题',
+            style: TextStyle(
+              color: _deepGreen,
+              fontSize: 22,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -1516,7 +2520,7 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
 
   Widget _buildHintCard({required bool compact}) {
     final fallbackPrompt = switch (_hintLevel) {
-      0 => '两个分母一样吗？如果不一样，\n可以先做什么？',
+      0 => _initialQuestionPrompt(widget.questionText),
       1 => '先说一说：题目告诉了我们什么？\n最后要找什么？',
       2 => '把 4 和 8 变成同一个分母，\n你准备先写哪一步？',
       _ => '完成算式后检查一下：\n答案真的回答了题目吗？',
@@ -1537,6 +2541,8 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildPracticeTabs(),
+          const SizedBox(height: 18),
+          _buildAnswerStatePicker(),
           SizedBox(height: compact ? 28 : 58),
           Row(
             children: [
@@ -1561,7 +2567,10 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
           ),
           SizedBox(height: compact ? 26 : 40),
           Text(
-            _thoughtStarted ? '你准备先从哪一步开始？' : (_serverPrompt ?? fallbackPrompt),
+            _thoughtStarted
+                ? '你准备先从哪一步开始？'
+                : (_serverPrompt ??
+                      (_hintLoading ? '正在根据这道题准备第一步提示……' : fallbackPrompt)),
             style: TextStyle(
               color: _deepGreen,
               fontSize: compact ? 21 : 25,
@@ -1574,6 +2583,80 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
             Text(
               _serverNextStep!,
               style: const TextStyle(color: _muted, fontSize: 17, height: 1.45),
+            ),
+          ],
+          if (_childAction != null && !_thoughtStarted) ...[
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.edit_note_rounded, color: _mint, size: 24),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _childAction!,
+                    style: const TextStyle(
+                      color: _deepGreen,
+                      fontSize: 17,
+                      height: 1.45,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (_solutionSteps.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: _surface,
+                border: Border.all(color: const Color(0xFFB5DCC9)),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('完整解答', style: _titleStyle(24)),
+                  const SizedBox(height: 14),
+                  for (var index = 0; index < _solutionSteps.length; index++)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Text(
+                        '${index + 1}. ${_solutionSteps[index]}',
+                        style: const TextStyle(
+                          color: _deepGreen,
+                          fontSize: 18,
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+                  if (_finalAnswer != null) ...[
+                    const Divider(height: 24),
+                    Text(
+                      '答案：$_finalAnswer',
+                      style: const TextStyle(
+                        color: _deepGreen,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                  if (_verification != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      '验算：$_verification',
+                      style: const TextStyle(
+                        color: _muted,
+                        fontSize: 17,
+                        height: 1.45,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ],
           if (_hintError != null) ...[
@@ -1593,12 +2676,26 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
           ),
           const SizedBox(height: 18),
           _HintActionButton(
-            icon: Icons.search_rounded,
-            label: _hintLoading ? '正在准备提示……' : '再给一点提示',
-            onPressed: _showHint,
-            background: const Color(0xFFFFFBF0),
-            borderColor: const Color(0xFFFFD979),
-            iconColor: const Color(0xFFD89E00),
+            icon: _solutionSteps.isNotEmpty
+                ? Icons.home_outlined
+                : Icons.search_rounded,
+            label: _hintLoading
+                ? '正在准备提示……'
+                : (_solutionSteps.isNotEmpty
+                      ? '返回首页'
+                      : (_hintLevel >= 2 ? '查看完整解答' : '再给一点提示')),
+            onPressed: _solutionSteps.isNotEmpty
+                ? () => Navigator.of(context).pop()
+                : _showHint,
+            background: _solutionSteps.isNotEmpty
+                ? const Color(0xFFEAF7F0)
+                : const Color(0xFFFFFBF0),
+            borderColor: _solutionSteps.isNotEmpty
+                ? const Color(0xFFB5DCC9)
+                : const Color(0xFFFFD979),
+            iconColor: _solutionSteps.isNotEmpty
+                ? _mint
+                : const Color(0xFFD89E00),
           ),
           if (_thoughtStarted) ...[
             const SizedBox(height: 18),
@@ -1644,6 +2741,45 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildAnswerStatePicker() {
+    const states = <String, String>{
+      'worked': '有作答',
+      'blank': '确认空白',
+      'unclear': '还不确定',
+      'answer_area_missing': '没拍到作答区',
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '已识别并确认的作答状态',
+          style: TextStyle(
+            color: _muted,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          decoration: BoxDecoration(
+            color: _surface,
+            border: Border.all(color: _mint),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            states[_answerState] ?? '还不确定',
+            style: const TextStyle(
+              color: _deepGreen,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1813,12 +2949,14 @@ class OcrConfirmationScreen extends StatefulWidget {
     this.imagePath,
     this.imageBytes,
     this.uploadReceipt,
+    this.sanitization,
     this.captureClient,
   });
 
   final String? imagePath;
   final Uint8List? imageBytes;
   final CaptureUploadReceipt? uploadReceipt;
+  final Map<String, dynamic>? sanitization;
   final CaptureApiClient? captureClient;
 
   @override
@@ -1831,18 +2969,22 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
   bool _confirmed = false;
   bool _remoteLoading = false;
   bool _confirming = false;
+  bool _retrying = false;
   bool _remoteFinished = false;
+  late CaptureUploadReceipt? _activeReceipt;
   String? _resultId;
   String? _candidateId;
   String? _remoteMessage;
   Map<String, dynamic>? _questionExtraction;
   Map<String, dynamic>? _verifiedQuestion;
+  String _answerState = 'unclear';
+
+  CaptureUploadReceipt? get _receipt => _activeReceipt;
 
   bool get _hasImageAnalysis =>
-      widget.uploadReceipt?.imageAnalysisJobId?.isNotEmpty == true;
+      _receipt?.imageAnalysisJobId?.isNotEmpty == true;
 
-  bool get _hasRemoteJob =>
-      widget.uploadReceipt?.hasRemoteOcr == true || _hasImageAnalysis;
+  bool get _hasRemoteJob => _receipt?.hasRemoteOcr == true || _hasImageAnalysis;
 
   bool get _hasRecognizedCandidate =>
       _candidateId != null || _questionExtraction != null;
@@ -1852,14 +2994,15 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
   @override
   void initState() {
     super.initState();
+    _activeReceipt = widget.uploadReceipt;
     _textController = TextEditingController(
-      text: widget.uploadReceipt == null
+      text: _receipt == null
           ? '3 + 4 = ?'
-          : (widget.uploadReceipt!.hasRemoteOcr
+          : (_receipt!.hasRemoteOcr
                 ? '等待本地 OCR 结果'
                 : (_hasImageAnalysis ? '等待视觉识别结果' : '请检查题目并填写题目内容')),
     );
-    if (widget.uploadReceipt?.hasRemoteOcr == true) {
+    if (_receipt?.hasRemoteOcr == true) {
       Future<void>.microtask(_loadRemoteOcr);
     } else if (_hasImageAnalysis) {
       Future<void>.microtask(_loadRemoteImageAnalysis);
@@ -1885,7 +3028,7 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
   }
 
   Future<void> _loadRemoteOcr() async {
-    final receipt = widget.uploadReceipt;
+    final receipt = _receipt;
     final client = widget.captureClient;
     if (receipt == null || client == null) return;
     if (mounted) {
@@ -1972,7 +3115,7 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
   }
 
   Future<void> _loadRemoteImageAnalysis() async {
-    final receipt = widget.uploadReceipt;
+    final receipt = _receipt;
     final client = widget.captureClient;
     if (receipt == null || client == null) return;
     if (mounted) {
@@ -2007,6 +3150,15 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
         _remoteLoading = false;
         _remoteFinished = true;
         _questionExtraction = extraction;
+        _answerState =
+            const {
+              'worked',
+              'blank',
+              'unclear',
+              'answer_area_missing',
+            }.contains(extraction['answer_state'])
+            ? extraction['answer_state'].toString()
+            : 'unclear';
         _textController.text = questionText;
         _remoteMessage = '视觉识别结果已返回，请逐字检查后确认。';
       });
@@ -2027,7 +3179,7 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
       _startTutor();
       return;
     }
-    final receipt = widget.uploadReceipt;
+    final receipt = _receipt;
     if (receipt != null) {
       if (_remotePending || widget.captureClient == null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2056,6 +3208,9 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
                 receipt: receipt,
                 questionText: _textController.text.trim(),
                 extraction: _questionExtraction!,
+                answerState: _answerState,
+                evidenceConfirmed:
+                    _answerState == 'worked' || _answerState == 'blank',
               );
         } else if (_editing || _candidateId == null) {
           await widget.captureClient!.correctCapture(
@@ -2092,6 +3247,21 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
             behavior: SnackBarBehavior.floating,
           ),
         );
+      } on Object catch (error, stackTrace) {
+        logChildNetworkFailure(
+          operation: 'confirm_question',
+          baseUrl: widget.captureClient!.baseUrlForDiagnostics,
+          error: error,
+          stackTrace: stackTrace,
+        );
+        if (!mounted) return;
+        setState(() => _confirming = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('确认请求未完成，请稍后重试。'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
       return;
     }
@@ -2119,7 +3289,7 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
 
   void _startTutor() {
     final verifiedQuestionId = _verifiedQuestion?['id']?.toString();
-    if (widget.uploadReceipt != null &&
+    if (_receipt != null &&
         (verifiedQuestionId == null || verifiedQuestionId.isEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -2132,12 +3302,87 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) => TutorHintScreen(
+          displayName:
+              widget.captureClient?.accountUsername?.trim().isNotEmpty == true
+              ? widget.captureClient!.accountUsername!.trim()
+              : '同学',
           questionText: _textController.text.trim(),
           verifiedQuestionId: verifiedQuestionId,
           captureClient: widget.captureClient,
+          answerState:
+              _verifiedQuestion?['answer_state']?.toString() ?? _answerState,
+          evidenceConfirmed: _verifiedQuestion?['evidence_confirmed'] == true,
         ),
       ),
     );
+  }
+
+  Future<void> _retryRecognition() async {
+    final client = widget.captureClient;
+    final bytes = widget.imageBytes;
+    final receipt = _receipt;
+    if (client == null || bytes == null || receipt == null || _retrying) return;
+    final retryNonce = DateTime.now().microsecondsSinceEpoch.toRadixString(16);
+    setState(() {
+      _retrying = true;
+      _remoteLoading = true;
+      _remoteFinished = false;
+      _remoteMessage = '正在重新提交当前照片……';
+      _editing = false;
+      _confirmed = false;
+      _resultId = null;
+      _candidateId = null;
+      _questionExtraction = null;
+      _verifiedQuestion = null;
+      _answerState = 'unclear';
+      _textController.text = '';
+    });
+    try {
+      final nextReceipt = receipt.hasRemoteOcr
+          ? await client.uploadAndEnqueueBytes(
+              bytes,
+              ocrMode: receipt.ocrMode,
+              retryNonce: retryNonce,
+            )
+          : await client.uploadAndStartImageAnalysisBytes(
+              bytes,
+              sanitization:
+                  widget.sanitization ??
+                  {
+                    'schema_version': 'privacy-sanitization.v1',
+                    'sanitizer_version': 'flutter-local-manual-v1',
+                    'safe_to_upload': true,
+                    'requires_confirmation': true,
+                    'sensitive_types': const <String>[],
+                    'region_count': 0,
+                    'face_detected': false,
+                    'qr_detected': false,
+                    'barcode_detected': false,
+                    'blocked_reasons': const <String>[],
+                  },
+              retryNonce: retryNonce,
+            );
+      if (!mounted) return;
+      setState(() {
+        _activeReceipt = nextReceipt;
+        _retrying = false;
+        _remoteLoading = false;
+      });
+      if (nextReceipt.hasRemoteOcr) {
+        await _loadRemoteOcr();
+      } else {
+        await _loadRemoteImageAnalysis();
+      }
+    } on CaptureApiException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _retrying = false;
+        _remoteLoading = false;
+        _remoteFinished = true;
+        _editing = true;
+        _remoteMessage = error.message;
+      });
+    }
   }
 
   @override
@@ -2214,7 +3459,7 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
       children: [
         Expanded(flex: 5, child: _buildPhotoPanel()),
         const SizedBox(width: 52),
-        Expanded(flex: 6, child: _buildReviewPanel()),
+        Expanded(flex: 6, child: _buildReviewPanel(compact: false)),
       ],
     );
   }
@@ -2224,7 +3469,7 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
       children: [
         _buildPhotoPanel(),
         const SizedBox(height: 24),
-        _buildReviewPanel(),
+        _buildReviewPanel(compact: true),
       ],
     );
   }
@@ -2241,7 +3486,7 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            widget.uploadReceipt != null
+            _receipt != null
                 ? '题目照片已上传'
                 : (widget.imagePath == null ? '题目照片（示例）' : '已选择题目照片'),
             style: _titleStyle(20),
@@ -2273,7 +3518,7 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
               ),
             ),
           ),
-          if (widget.uploadReceipt != null) ...[
+          if (_receipt != null) ...[
             const SizedBox(height: 14),
             Container(
               width: double.infinity,
@@ -2283,9 +3528,9 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Text(
-                widget.uploadReceipt!.hasRemoteOcr
-                    ? '已完成私有上传，OCR 任务已排队（${widget.uploadReceipt!.ocrJobStatus}）。'
-                    : '已完成私有上传，视觉识别任务状态：${widget.uploadReceipt!.imageAnalysisStatus ?? '等待处理'}。',
+                _receipt!.hasRemoteOcr
+                    ? '已完成私有上传，OCR 任务已排队（${_receipt!.ocrJobStatus}）。'
+                    : '已完成私有上传，视觉识别任务状态：${_receipt!.imageAnalysisStatus ?? '等待处理'}。',
                 style: const TextStyle(
                   color: _deepGreen,
                   fontSize: 15,
@@ -2299,7 +3544,7 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
     );
   }
 
-  Widget _buildReviewPanel() {
+  Widget _buildReviewPanel({required bool compact}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2314,33 +3559,95 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
           style: const TextStyle(color: _deepGreen, fontSize: 18, height: 1.4),
         ),
         const SizedBox(height: 28),
-        TextField(
-          controller: _textController,
-          readOnly: _remotePending || !_editing,
-          onTap: _editing ? null : _editText,
-          style: const TextStyle(
-            color: _deepGreen,
-            fontSize: 32,
-            fontWeight: FontWeight.w600,
-          ),
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: _surface,
-            suffixIcon: IconButton(
-              onPressed: _remotePending || _confirming ? null : _editText,
-              icon: const Icon(Icons.edit_outlined, size: 28),
-              color: _mint,
-              tooltip: '重新修改',
+        SizedBox(
+          height: compact ? 210 : 290,
+          child: TextField(
+            controller: _textController,
+            readOnly: _remotePending || !_editing,
+            onTap: _editing ? null : _editText,
+            maxLines: null,
+            expands: true,
+            textAlignVertical: TextAlignVertical.top,
+            keyboardType: TextInputType.multiline,
+            style: const TextStyle(
+              color: _deepGreen,
+              fontSize: 28,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
             ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 24,
-              vertical: 18,
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: _surface,
+              suffixIcon: IconButton(
+                onPressed: _remotePending || _confirming ? null : _editText,
+                icon: const Icon(Icons.edit_outlined, size: 28),
+                color: _mint,
+                tooltip: '重新修改',
+              ),
+              hintText: '可上下滑动查看全部题目文字',
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 18,
+              ),
+              enabledBorder: _inputBorder(_mint),
+              focusedBorder: _inputBorder(_mint, width: 2),
+              border: _inputBorder(_mint),
             ),
-            enabledBorder: _inputBorder(_mint),
-            focusedBorder: _inputBorder(_mint, width: 2),
-            border: _inputBorder(_mint),
           ),
         ),
+        const SizedBox(height: 8),
+        const Text(
+          '题目较长时可在框内上下拖动查看，确认前请逐字核对。',
+          style: TextStyle(color: _muted, fontSize: 14),
+        ),
+        if (_questionExtraction != null) ...[
+          const SizedBox(height: 20),
+          const Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              '系统识别到的作答状态（如不正确可修改）',
+              style: TextStyle(
+                color: _deepGreen,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children:
+                const <String, String>{
+                  'worked': '有作答',
+                  'blank': '确认空白',
+                  'unclear': '看不清楚',
+                  'answer_area_missing': '没拍到作答区',
+                }.entries.map((entry) {
+                  return ChoiceChip(
+                    label: Text(entry.value),
+                    selected: _answerState == entry.key,
+                    onSelected: _confirming
+                        ? null
+                        : (selected) {
+                            if (!selected) return;
+                            setState(() => _answerState = entry.key);
+                          },
+                  );
+                }).toList(),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _answerState == 'worked'
+                ? '检测到答题痕迹，讲解会优先检查已有步骤。'
+                : _answerState == 'blank'
+                ? '答题区清晰且为空，讲解会从理解题意开始。'
+                : _answerState == 'answer_area_missing'
+                ? '当前照片未包含答题区，建议重新拍摄完整区域。'
+                : '作答区域暂时无法可靠判断，建议检查照片或重新选择。',
+            style: const TextStyle(color: _muted, fontSize: 14, height: 1.4),
+          ),
+        ],
         const SizedBox(height: 18),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2396,15 +3703,53 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
             onPressed: _remotePending || _confirming ? null : _confirmText,
             style: _filledButtonStyle(),
             child: Text(
-              _remotePending
+              _confirming
+                  ? '正在确认题目……'
+                  : _remotePending
                   ? (_remoteLoading ? '正在识别……' : '等待识别结果')
                   : (_confirmed ? '开始学习' : (_editing ? '保存修改' : '确认题目')),
             ),
           ),
         ),
+        if (_hasRemoteJob &&
+            widget.captureClient != null &&
+            widget.imageBytes != null &&
+            _remoteFinished &&
+            !_hasRecognizedCandidate &&
+            !_confirmed) ...[
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _retrying ? null : _retryRecognition,
+              icon: const Icon(Icons.refresh_rounded),
+              label: Text(_retrying ? '正在重新识别……' : '重新识别当前照片'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _mint,
+                side: const BorderSide(color: _mint, width: 1.5),
+                minimumSize: const Size.fromHeight(58),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          TextButton.icon(
+            onPressed: _retrying ? null : () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.camera_alt_outlined),
+            label: const Text('重新拍题'),
+            style: TextButton.styleFrom(
+              foregroundColor: _deepGreen,
+              textStyle: const TextStyle(fontSize: 16),
+            ),
+          ),
+        ],
         Center(
           child: TextButton(
-            onPressed: _remotePending || _confirming ? null : _editText,
+            onPressed: _remotePending || _confirming || _retrying
+                ? null
+                : _editText,
             style: TextButton.styleFrom(
               foregroundColor: _mint,
               textStyle: const TextStyle(fontSize: 17),

@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import MetaData, Table, create_engine, delete, func, insert, select
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import Engine, RowMapping
 
 from study_api.database import database_url
 from study_api.domain.mistake_repository import MistakeRecord, ReviewSchedule
@@ -60,6 +60,15 @@ class ChildDataExport(BaseModel):
     review_schedules: tuple[ReviewSchedule, ...] = ()
 
 
+class LearningDetail(BaseModel):
+    """Parent-visible trace for one confirmed question and its Tutor turns."""
+
+    model_config = ConfigDict(frozen=True)
+
+    question: VerifiedQuestion
+    tutor_turns: tuple[TutorHintResponse, ...]
+
+
 class InsightsRepository(Protocol):
     def weekly_report(
         self, household_id: UUID, child_id: UUID, week_start: date
@@ -71,6 +80,10 @@ class InsightsRepository(Protocol):
         child_id: UUID,
         idempotency_key: str,
     ) -> tuple[ChildDataExport, bool]: ...
+
+    def learning_details(
+        self, household_id: UUID, child_id: UUID, limit: int = 20
+    ) -> tuple[LearningDetail, ...]: ...
 
 
 class EmptyInsightsRepository:
@@ -101,6 +114,12 @@ class EmptyInsightsRepository:
     ) -> tuple[ChildDataExport, bool]:
         del household_id, child_id, idempotency_key
         raise LookupError
+
+    def learning_details(
+        self, household_id: UUID, child_id: UUID, limit: int = 20
+    ) -> tuple[LearningDetail, ...]:
+        del household_id, child_id, limit
+        return ()
 
 
 class PostgresInsightsRepository:
@@ -235,6 +254,73 @@ class PostgresInsightsRepository:
             tutor_turns=int(tutor_count),
             completion_rate=finished_tasks / len(task_rows),
             review_items=review_items,
+        )
+
+    @staticmethod
+    def _verified_question(row: RowMapping) -> VerifiedQuestion:
+        payload = dict(row)
+        payload["options"] = tuple(payload["options"])
+        payload["formulas"] = tuple(payload["formulas"])
+        payload["answer_steps"] = tuple(payload["answer_steps"])
+        payload.pop("household_id", None)
+        payload.pop("child_id", None)
+        return VerifiedQuestion.model_validate(payload)
+
+    @staticmethod
+    def _tutor_turn(row: RowMapping) -> TutorHintResponse:
+        payload = dict(row)
+        payload["direct_answer"] = payload.pop("final_answer")
+        payload["solution_steps"] = tuple(payload["solution_steps"])
+        payload.pop("household_id", None)
+        payload.pop("child_id", None)
+        return TutorHintResponse.model_validate(payload)
+
+    def learning_details(
+        self, household_id: UUID, child_id: UUID, limit: int = 20
+    ) -> tuple[LearningDetail, ...]:
+        with self._engine.connect() as connection:
+            question_rows = (
+                connection.execute(
+                    select(self._verified_questions)
+                    .where(
+                        self._verified_questions.c.household_id == household_id,
+                        self._verified_questions.c.child_id == child_id,
+                    )
+                    .order_by(
+                        self._verified_questions.c.verified_at.desc(),
+                        self._verified_questions.c.id.desc(),
+                    )
+                    .limit(limit)
+                )
+                .mappings()
+                .all()
+            )
+            question_ids = [row["id"] for row in question_rows]
+            turn_rows = (
+                connection.execute(
+                    select(self._tutor_turns)
+                    .where(
+                        self._tutor_turns.c.household_id == household_id,
+                        self._tutor_turns.c.child_id == child_id,
+                        self._tutor_turns.c.verified_question_id.in_(question_ids),
+                    )
+                    .order_by(self._tutor_turns.c.created_at, self._tutor_turns.c.id)
+                )
+                .mappings()
+                .all()
+                if question_ids
+                else []
+            )
+        turns_by_question: dict[UUID, list[TutorHintResponse]] = {}
+        for row in turn_rows:
+            turn = self._tutor_turn(row)
+            turns_by_question.setdefault(turn.verified_question_id, []).append(turn)
+        return tuple(
+            LearningDetail(
+                question=(question := self._verified_question(row)),
+                tutor_turns=tuple(turns_by_question.get(question.id, ())),
+            )
+            for row in question_rows
         )
 
     def cleanup_expired_exports(self, now: datetime | None = None) -> int:
@@ -395,25 +481,9 @@ class PostgresInsightsRepository:
             child_payload.pop("updated_at", None)
             verified = []
             for row in verified_rows:
-                payload = dict(row)
-                payload["options"] = tuple(payload["options"])
-                payload["formulas"] = tuple(payload["formulas"])
-                payload.pop("household_id", None)
-                payload.pop("child_id", None)
-                verified.append(VerifiedQuestion.model_validate(payload))
+                verified.append(self._verified_question(row))
             tutor_turns = tuple(
-                TutorHintResponse(
-                    id=row["id"],
-                    verified_question_id=row["verified_question_id"],
-                    created_at=row["created_at"],
-                    level=row["level"],
-                    policy_version=row["policy_version"],
-                    provider=row["provider"],
-                    model=row["model"],
-                    prompt=row["prompt"],
-                    next_step=row["next_step"],
-                    cost_cents=row["cost_cents"],
-                )
+                self._tutor_turn(row)
                 for row in tutor_rows
             )
             export = ChildDataExport(

@@ -5,15 +5,19 @@ from hashlib import sha256
 from typing import Protocol
 from uuid import UUID, uuid4
 
-from sqlalchemy import MetaData, Table, create_engine, insert, select
+from sqlalchemy import MetaData, Table, create_engine, desc, insert, select
 from sqlalchemy.engine import Engine, RowMapping
 
 from study_api.database import database_url
 from study_api.domain.repository import IdempotencyConflictError
-from study_api.tutor_policy import TutorHintContent, TutorHintResponse
+from study_api.tutor_policy import CurriculumSource, TutorHintContent, TutorHintResponse
 
 
 class TutorTurnRepository(Protocol):
+    def latest_before_level(
+        self, household_id: UUID, child_id: UUID, verified_question_id: UUID, level: int
+    ) -> TutorHintResponse | None: ...
+
     def create(
         self,
         household_id: UUID,
@@ -60,6 +64,17 @@ class InMemoryTutorTurnRepository:
         self._idempotency[key] = (fingerprint, turn.id)
         return turn, False
 
+    def latest_before_level(
+        self, household_id: UUID, child_id: UUID, verified_question_id: UUID, level: int
+    ) -> TutorHintResponse | None:
+        del household_id, child_id
+        candidates = [
+            turn
+            for turn in self._turns.values()
+            if turn.verified_question_id == verified_question_id and turn.level < level
+        ]
+        return max(candidates, key=lambda turn: turn.created_at, default=None)
+
 
 class PostgresTutorTurnRepository:
     def __init__(self, url: str | None = None) -> None:
@@ -75,6 +90,27 @@ class PostgresTutorTurnRepository:
     def close(self) -> None:
         self._engine.dispose()
 
+    def latest_before_level(
+        self, household_id: UUID, child_id: UUID, verified_question_id: UUID, level: int
+    ) -> TutorHintResponse | None:
+        with self._engine.connect() as connection:
+            row = (
+                connection.execute(
+                    select(self._turns)
+                    .where(
+                        self._turns.c.household_id == household_id,
+                        self._turns.c.child_id == child_id,
+                        self._turns.c.verified_question_id == verified_question_id,
+                        self._turns.c.level < level,
+                    )
+                    .order_by(desc(self._turns.c.created_at))
+                    .limit(1)
+                )
+                .mappings()
+                .one_or_none()
+            )
+        return self._turn(row) if row is not None else None
+
     @staticmethod
     def _turn(row: RowMapping) -> TutorHintResponse:
         return TutorHintResponse(
@@ -85,9 +121,24 @@ class PostgresTutorTurnRepository:
             policy_version=row["policy_version"],
             provider=row["provider"],
             model=row["model"],
+            mode=row["mode"],
+            answer_state=row["answer_state"],
             prompt=row["prompt"],
             next_step=row["next_step"],
+            requires_child_response=row["requires_child_response"],
+            direct_answer=row["final_answer"],
+            solution_steps=tuple(row["solution_steps"]),
+            verification=row["verification"],
             cost_cents=row["cost_cents"],
+            curriculum_sources=tuple(
+                CurriculumSource.model_validate(item)
+                for item in (row.get("curriculum_sources") or [])
+            ),
+            hint_goal=row.get("hint_goal") or "understand_the_question",
+            builds_on_turn_id=row.get("builds_on_turn_id"),
+            revealed_elements=tuple(row.get("revealed_elements") or []),
+            child_action=row.get("child_action") or "用自己的话说出下一步。",
+            answer_exposure=row.get("answer_exposure") or "none",
         )
 
     def create(
@@ -146,9 +197,23 @@ class PostgresTutorTurnRepository:
                     policy_version=turn.policy_version,
                     provider=turn.provider,
                     model=turn.model,
+                    mode=turn.mode,
+                    answer_state=turn.answer_state,
                     prompt=turn.prompt,
                     next_step=turn.next_step,
+                    requires_child_response=turn.requires_child_response,
+                    final_answer=turn.direct_answer,
+                    solution_steps=list(turn.solution_steps),
+                    verification=turn.verification,
                     cost_cents=turn.cost_cents,
+                    curriculum_sources=[
+                        item.model_dump(mode="json") for item in turn.curriculum_sources
+                    ],
+                    hint_goal=turn.hint_goal,
+                    builds_on_turn_id=turn.builds_on_turn_id,
+                    revealed_elements=list(turn.revealed_elements),
+                    child_action=turn.child_action,
+                    answer_exposure=turn.answer_exposure,
                     created_at=turn.created_at,
                 )
             )

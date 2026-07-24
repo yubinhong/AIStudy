@@ -28,6 +28,13 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>用于拍摄题目照片，交给学习助手进行题目识别。</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>用于连接家庭局域网中的学习服务，获取任务并上传经确认的题目图片。</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>用于选择题目照片，交给学习助手进行题目识别。</string>
 	<key>UIApplicationSceneManifest</key>

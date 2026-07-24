@@ -1,29 +1,97 @@
-# TASK.md — TASK-0009 真机拍题视觉识别闭环
+# TASK.md — TASK-0010 教材原页、知识图谱与可用任务整改
 
 ## 当前任务元数据
 
-- 状态：`IN_PROGRESS（PLAN-0012 已完成 Ubuntu 成对部署；最终真机验收与 Provider 额度恢复仍待完成）`
+- 状态：`IN_PROGRESS（PLAN-0018 已部署 Ubuntu 0.11.0/0025；真实教材/NewAPI/E2E 待验收）`
 - 类型：`FEATURE / API CONTRACT / DEVICE`
 - 优先级：`P0`
-- Owner：Codex（执行）；项目 Owner（用户，要求继续完善拍题识别）
+- Owner：Codex（执行）；项目 Owner（用户，要求教材图片语义、整本知识归纳和错题任务立即可用）
 - 创建/更新：`2026-07-18`
-- 关联：`PLAN-0010`、`PLAN-0012`、`ADR-0003`、`ADR-0015`、`ADR-0016`、`ADR-0018`
+- 关联：`PLAN-0018`、`ADR-0020`、`ADR-0021`、`ADR-0022`、`ADR-0023`
 
 ## 当前目标与验收
 
-移除 Flutter 对编译期 `STUDY_CAPTURE_SESSION_ID` 的依赖，让孩子账号在没有家长预置任务时也能原子、幂等地建立即时拍题会话；真机只上传用户确认的脱敏副本，随后轮询 ImageAnalysis、展示结构化题目并把人工修改持久化为 VerifiedQuestion。
+修复教材 PDF 丢失图片语义和任务推荐使用残缺文字的问题：保留受鉴权原页，云端分批理解页面并归纳整本知识图谱，家长批准后才允许发布和推荐；推荐只使用开放错题与已批准知识点/具体练习。
+
+- [x] PDF 逐页生成有界私有 JPEG，原件/页图不返回对象键、MinIO URL 或预签名地址。
+- [x] NewAPI 每批最多 4 页多模态理解，再以严格 Schema 归纳整本章节、知识点、目标、先修关系和练习来源。
+- [x] `0025` 保存页图、页级分析、知识图谱、知识点和 AI 版本/指纹/延迟/token/成本字段。
+- [x] Web 以原页为主、文字为辅助，展示知识图谱并提供家长批准；批准前 PDF 不可发布。
+- [x] 推荐不再读取 `CurriculumChunk.text` 抽题，只使用批准知识点中的来源题与全部开放错题。
+- [x] OpenAPI `0.11.0`、API 非集成测试、mypy/相关 ruff、Web test/build、Flutter test/analyze、迁移 offline SQL 和本机 PostgreSQL 前滚已通过。
+- [x] 依赖教材图片的任务在 Flutter 显示视觉说明，并通过孩子 Session 受鉴权打开对应原页；客户端限制 JPEG/2 MiB。
+- [ ] 真实 118 页 PDF/NewAPI 输出质量、费用和失败重试验收；浏览器/设备 E2E。
+
+回滚：停止 `curriculum-analysis-worker` 并禁用知识图谱推荐；保留原 PDF、已生成私有页图和既有学习事实。`0025` 只新增表/可空外键，可在无新引用时 downgrade；不得恢复残缺文字抽题。
+
+## 2026-07-24 Ubuntu 前滚记录
+
+- 结果：在不读取家庭或教材内容的前提下，Ubuntu 单家庭 Compose 已从 API `0.10.0`/Alembic `0024_intelligent_recommendations` 成对前滚到 API `0.11.0`/`0025_curriculum_knowledge_map`；API、Web、ImageAnalysis、MaterialParse、CurriculumAnalysis 和 DataLifecycle worker 均健康，MinIO `9000` 仍无宿主端口映射。
+- 发布前：修复备份脚本遗漏教材 worker 且使用 `docker compose start` 无法满足已完成 migrate 依赖的问题。脚本现在冻结所有实际存在的写入 worker，并直接恢复其原容器；`/home/syin/study-backups/20260724T015356Z` 已通过 SHA-256、隔离 PostgreSQL 恢复（28 张 public 表）和 29 个 MinIO 文件快照校验。
+- 烟雾：远端 API `/healthz` 返回 `0.11.0`，Alembic current/head 都是 `0025_curriculum_knowledge_map`；教材分析和受鉴权原页 OpenAPI 路径存在，所有 Compose 服务健康。未上传、解析或发送真实教材。
+- 本地复核：API 非集成 `189 passed, 24 deselected`、迁移表结构断言、从初始版本到 `0025` 的 Alembic 静态 SQL、Mypy（56 source files）、教材相关 Ruff lint/format、Tutor Policy synthetic eval（5 cases）、Flutter `43` 项和 Analyze、OpenAPI/JSON Schema 结构检查均通过。Web 复跑受本机缺少锁定 Node `24.18`（仅有 Node 16/20/22）阻塞，未把 Node 20 的 engine warning 结果计为通过。
+
+## 2026-07-23 PLAN-0018 本地完成记录
+
+- 结果：本地实现已满足“原页视觉 → 页级多模态理解 → 整本知识图谱 → 家长批准 → 错题/知识点任务 → 孩子原页”的代码验收；本机开发 PostgreSQL 已从 `0023` 前滚至 `0025` 并通过实际表结构测试。Ubuntu 未部署。
+- 验证：API 非集成 188 项、教材/Provider/推荐定向 31 项、迁移表结构 1 项、Mypy 56 source files、相关 Ruff/格式通过；Web 20 项、Lint、类型、格式和 Next production build 通过；Flutter 43 项、Analyze 和格式通过；OpenAPI `0.11.0` 共 51 paths/81 refs 闭合，6 个 JSON Schema 可解析。
+- 未执行：真实 118 页教材/NewAPI 多模态调用、全书知识点人工质量评分、token/费用基线、浏览器 E2E、iPad/Nova 9 原页查看与弱网回归、教材个人信息自动检测和依赖/镜像安全扫描。
+- 剩余风险：真实教材可能超出模型上下文或产生章节合并偏差；当前用家长“无个人信息”声明阻断教材批注风险，自动门禁由 TODO-213 跟踪；Compose 本机缺少被忽略的 `infra/compose/.env`，本轮只更新配置未完整展开或启动。
+- 回滚：停止 `curriculum-analysis-worker`，回退匹配 API/Web/App 并保留 `0025` 新表、私有原件/预览和既有审批事实；不得恢复旧文本规则抽题。
+
+## 历史任务记录
 
 - [x] 新增孩子绑定的即时拍题会话 API，并覆盖内存/PostgreSQL 幂等、事务和反向越权。
 - [x] Flutter 自动取得会话，完成流式上传、视觉任务轮询、错误/超时兜底和人工确认；旧预签名传输仅作为历史实现事实保留。
 - [x] 按 ADR-0018 将图片传输收敛为 App 携带 Session 只上传到 API，API 有界流式校验并写入内部私有 MinIO；生产 Flutter 删除预签名 URL/确认流程。
 - [x] 本地 Compose 不再向宿主/LAN 暴露 `9000`，示例配置删除 `OBJECT_STORAGE_PUBLIC_ENDPOINT_URL`/`MINIO_API_PORT`；OpenAPI 不返回 `upload_url` 并合并为单一上传操作。
 - [x] API/OpenAPI/Flutter 单元、格式、Lint、类型和 PostgreSQL/MinIO 集成门槛通过。
-- [x] Ubuntu API/Web/worker 已部署，健康版本 `0.8.0`；Nova 9 既有登录验证保持有效。
+- [x] Ubuntu API/Web/worker 已部署，健康版本 `0.10.0`、迁移 `0024_intelligent_recommendations`；教材解析 worker 已稳定运行，Nova 9 既有登录验证保持有效。
 - [x] 使用 synthetic 大图在 Ubuntu 完成真实 NewAPI `upload → analysis → extraction → verify → tutor`，确认有界压缩、人工确认、TutorTurn 持久化和派生对象删除。
 - [x] PostgreSQL/MinIO 备份已生成并在隔离 PostgreSQL 16.10 容器恢复校验；数据生命周期 worker 已部署。
-- [ ] PLAN-0012 部署后由 Nova 9/iPad 验证 `capture-session → API streaming upload → image-analysis → extraction → verify`，不读取或记录题目原文；现有预签名直传不再作为最终发布验收。
+- [ ] 由 iPad 验证 `capture-session → API streaming upload → image-analysis（自动四态候选）→ 人工确认 → 状态分支提示 → 完整解答`；现有预签名直传不再作为最终发布验收。
+- [x] 修复 L1/L2 题意无关问题：云端生成受约束提示，L2 基于实际 L1 递进，同时关系题固定回归且两级不泄露答案（本地代码/自动化通过，真实 Provider 待验收）。
+- [x] 刚形成但尚未到期的开放错题可以从“复习错题”入口提前复习，不再显示成“没有错题”（Flutter 回归通过，真机待验收）。
+- [x] 任务推荐遍历已发布 PDF 和全部开放错题，生成带具体教材题、页码、知识点、题量、预计时间和未来日期的待审批计划；批准后孩子端显示同样内容（本地代码/自动化通过，真实 PDF/Provider 待验收）。
+
+## 2026-07-23 PLAN-0017 整改记录
+
+- Tutor：L1/L2 改为 NewAPI 文本生成，L2 必须绑定持久化 L1；增加答案泄露、重复、结构递进和题意相关校验。针对“多人同时经历同一段时间”建立本地安全回退与固定回归，题意无关的“增加/减少/平均分”提示会被拒绝。
+- 复习：Flutter 先请求到期错题；若为空则请求全部开放错题，并明确提示“可提前复习”，重新作答和 ReviewAttempt 路径保持不变。
+- 推荐：API 本地遍历已发布 Snapshot 的全部 CurriculumChunk 和全部开放错题，统计薄弱知识点频次、抽取具体教材题并排序；只把最多 30 个候选及不透明来源键交给 NewAPI。计划引用未知来源、忽略已有错题/教材、未把到期错题排到当天或超过每日 3 项时整体失败。
+- 下发：新增 `0024_intelligent_recommendations` 和 OpenAPI `0.10.0`；推荐/Task 保存来源类型、原始具体题、教材页码、知识点、预计时长和未来日期。Web 审核页展示同样依据，Flutter 今日任务显示当天全部任务而非第一条。
+- 本地验证：API 178 项非集成测试通过；本轮 Tutor/推荐定向 30 项通过；Mypy、相关 Ruff、OpenAPI/JSON Schema、Alembic offline SQL、5-case Tutor eval 通过；Web 16 项测试、Lint、类型、格式和 production build 通过；Flutter 全量 40 项测试与 analyze 通过。
+- 已执行：使用 `rsync` 同步最新工作区，排除 `.env`、`.git` 和本地缓存；Ubuntu Compose 以 `DOCKER_BUILDKIT=0` 重建，保留 PostgreSQL/MinIO/Redis 数据卷；API/Web `/healthz` 通过，API 返回 `0.10.0`，Alembic current/head 均为 `0024_intelligent_recommendations`，API/Web/四个 worker 重启次数均为 0。
+- 未执行：真实 NewAPI L1/L2/推荐、真实已上传 PDF 选章/抽题、iPad 立即复习与多任务页面、浏览器 E2E，以及 planner 的 token/延迟/成本完整审计。回滚需保持 API/Web/App/迁移成对；`0024` 新列不删除既有任务/推荐事实。
+
+## 2026-07-23 本轮实现记录
+
+- [x] M1：新增 `/mistake-closeout`，PostgreSQL 事务内校验活动 StudySession、已确认 VerifiedQuestion 和 `worked/blank` AttemptEvidence，完成会话并幂等创建 MistakeRecord/ReviewSchedule。
+- [x] M2：复习接口返回实际题目；Flutter 提交作答文本与确认标记；服务端写入 ReviewAttempt，并按 `review-policy.v2` 与 1/3/7/14/30 天间隔确定结果，客户端不再直接决定掌握状态。
+- [x] M3：教材上传合同收缩为 PDF-only；新增 `0021`～`0023`、pdfplumber 解析 worker、扫描 PDF `needs_ocr`、危险/加密文件隔离、页级 CurriculumChunk 和已发布 Snapshot 来源检索。
+- [x] M4：TutorTurn 保存教材来源、L1/L2 目标、递进来源、孩子动作和答案暴露级别；Flutter 展示下一步可执行动作。
+- [x] 自动验证：API 全量测试在本机 PostgreSQL/MinIO 前滚到 0023 后通过；Ruff/Mypy/compileall、PDF parser synthetic、Flutter analyze/test、Web test/lint/typecheck/format/build 通过。
+- [x] 远端/设备验证：使用 rsync 同步并在 Ubuntu 重建 Compose，迁移头为 `0024_intelligent_recommendations`，API/Web 健康检查通过，ImageAnalysis/DataLifecycle/MaterialParse worker 修复后稳定运行；iPad mini 6 已安装 Xcode 自动签名调试包并成功启动。
+- [ ] 未执行：真实 PDF/扫描 PDF 上传、iPad/Nova 9 相机闭环、浏览器 E2E、固定 Tutor/教材 eval、四设备弱网/权限回归、SBOM/镜像扫描。Ubuntu 已完成前滚与重建；剩余风险与回滚见 `RUNBOOK.md` 和 ADR-0021。
 
 ## 兼容、回滚与风险
+
+## 2026-07-23 教材解析与客户端收口修复
+
+- [x] 将教材单文件上限统一为 `50 MiB`（`52,428,800` 字节），修复原先后端/解析器使用十进制 `50,000,000` 字节而使 47.8 MiB 文件被 `413` 拒绝的问题；Web 在选择与失败响应中均显示同一精确上限。
+- [x] 修复教材解析 worker 错用仅允许 `captures/`、最多 8 MB 的对象读取接口；worker 现仅能以受限 `curriculum/` 前缀和同一 50 MiB 上限读取私有 PDF，解析页块可进入审核发布和具体题推荐。
+- [x] 家长工作台增加教材删除：删除一个快照时级联移除其私有 PDF、解析任务/页块和失效推荐引用；删除请求有会话、CSRF、家庭/孩子授权和幂等保护。旧“已发布但未解析正文”的范围会明确标记，需删除并重新上传实际 PDF 才能用于具体题推荐。
+- [x] 孩子端完整解答出现后将第二操作改为“返回首页”，不再继续显示“查看完整解答”。
+- [x] 回归与部署：教材 API/私有对象读取/PDF parser `27` 项、API 全量 `181` 项/Mypy、Web `17` 项/Lint/类型/格式/production build、Flutter 全量 `41` 项与 analyze 通过；已安全 rsync 到 Ubuntu 并重建。API/Web/三类 worker/数据服务均 healthy，运行容器确认 `curriculum_limit=52428800`、`read_document=True` 和删除 OpenAPI 路径存在；真实家庭 PDF 上传/解析/发布/推荐仍待用户现场验收。
+
+## 2026-07-23 家长教材阅读与推荐详情
+
+- [x] 教材快照列表不再直接渲染页级全文；新增仅限家长、同家庭/孩子授权的分页解析阅读接口，返回页码、标题、正文和置信度，不返回原始 PDF、对象键或 MinIO URL。
+- [x] Web 教材审核改为摘要卡片后显式打开分页阅读器；长文本按段落排版、可切换页码，草稿和已发布快照均可在发布前后审阅。
+- [x] 推荐列表改为摘要，点击“查看计划”才展示每道题、教材页码/错题来源、推荐理由及批准/忽略操作，避免在工作台堆叠完整题干。
+- [x] PDF 解析器仅过滤 `pdfminer.pdfinterp` 已知的灰度图形操作数兼容警告（`/P0` 等），保留其他警告与所有真实解析失败状态，避免 worker 日志被无关噪声淹没。
+- [x] 本地验证：API 定向 14 项与完整非集成 183 项、Mypy/Ruff；Web 18 项测试、Lint、类型、格式和 production build；OpenAPI YAML 解析与差异空白检查通过。
+- [ ] 未执行：本批可读性改动尚未部署 Ubuntu，真实家庭 PDF 的阅读版式和浏览器 E2E 待部署后现场验收。
 
 - Ubuntu API/Web/worker 已切换到 ADR-0018 的单一流式合同；已部署 Flutter 仍需在设备可用时重新验收。正式 OpenAPI 不再暴露预签名入口，旧实现仅保留为代码级受控回滚材料。
 - 回滚应用/API 不删除已创建任务、会话、Capture 或确认题目；新链路异常时只允许整体回滚匹配的 API/App，并在隔离受信 LAN 临时恢复旧 `9000`/配置，不得公开 Bucket 或下发密钥。
@@ -31,10 +99,16 @@
 
 ## 本轮全仓收口记录
 
+- `2026-07-23`：项目 Owner 将教材首版范围进一步收窄为“只支持 PDF 上传，DOCX/PPT 暂不支持”。PLAN-0016/ADR-0021 现要求 Web/OpenAPI/API 同步收缩 allowlist，Word/PPT/Excel 返回稳定不支持错误；文本 PDF 进入隔离解析，扫描 PDF 进入待 OCR。既有非 PDF 对象只保留用于兼容/删除，不解析、不发布、不进入 Tutor/推荐。本轮仍仅修改规划文档，当前运行时代码尚未执行合同收缩。
+
+- `2026-07-23`：项目 Owner 指出三项尚不可用能力：拍题记录未进入真实复习、上传教材未解析并用于讲解/推荐、Tutor 第 1/2 级提示过浅。代码审计确认：Flutter 完成拍题会话时未创建 MistakeRecord，复习页只提交客户端“会了/不会”而没有 Question/ReviewAttempt；教材路由只写入 MinIO 和占位草稿；多数 L1/L2 模板没有稳定递进语义。已建立 PLAN-0016、TODO-020 和 Proposed ADR-0021，明确原子错题 closeout、证据化复习、隔离教材解析/审核发布、两类教材消费和 Tutor Hint 新版本；教材格式随后由上一条记录进一步收窄为 PDF-only。本轮仅完成规划，没有修改运行时代码。
+
+- `2026-07-20`：OpenAPI/API 前滚为 `0.9.0`，新增 `0020_answer_evidence`。视觉提取现在必须返回四态候选、置信度和可见作答步骤；确认后写入 VerifiedQuestion，Tutor 不再信任客户端临时状态。`worked/blank` 在第三级通过已配置 NewAPI 仅传已确认文字生成完整步骤、答案和验算并持久化；`unclear/answer_area_missing` 明确要求确认或补拍。Flutter 去除硬编码 `2/4` 和练习页二次手选，家长 Web 增加 Household-scoped 逐题详情。Ubuntu 已在备份后 rsync、重建并健康前滚到 `0020`；合成题现场返回正确 3 步、答案 17 只和验算。iPad 已安装 profile App 并完成账号/档案/任务 200 启动 smoke，实际相机闭环仍待人工操作。
+
 - `0013_tutor_turn_persistence`～`0015_child_data_export` 已部署：Tutor 只读取服务端 VerifiedQuestion，TutorTurn 追加写；会话完成/复习和周报可追溯；导出为 24 小时不可变 JSON 快照并随孩子删除级联。
 - Flutter 使用真实任务与活动会话，确认题目后进入真实 Tutor；离线 Attempt 队列使用 SQLite 并按服务端/账号隔离。同一天重复拍题使用新的流程幂等 nonce，避免复用已完成会话。
 - 家长 Web 可创建当天数学任务、查看周报摘要、下载孩子数据导出；API 删除孩子档案会按依赖顺序清理学习、Capture/OCR、视觉、VerifiedQuestion、Tutor 和导出数据。
-- 自动验证：API 157 项非集成测试、Ruff/Mypy；Web 11 项测试/类型/Lint/生产构建；Flutter 29 项测试/analyze、Android release APK 和 iOS release 无签名构建（以 `TESTING.md` 最新记录为准）。
+- 自动验证：API 162 项非集成测试、Ruff/Mypy；Web 14 项测试/类型/Lint/生产构建；Flutter 39 项测试/analyze、Android release APK 和 iOS release 无签名构建（以 `TESTING.md` 最新记录为准）。
 - 未执行：用户当前不在实体设备旁，Nova 9/iPad 的最终相机、权限拒绝/允许、弱网、横竖屏和重启人工回归保留。自动视觉检测器仍未实现，当前外发门禁依赖规则信号、手动涂抹和用户确认，不得宣传为绝对匿名。
 - `2026-07-17` 架构变更：项目 Owner 接受 ADR-0018，要求 App 不再直连 MinIO；随后完成 API/Flutter/契约/Compose 迁移，关闭 Compose 的 MinIO `9000` 宿主入口。
 - `2026-07-18` PLAN-0012 远端收口：Ubuntu API/Web/两个 worker 已重建并运行，迁移到 `0016_child_account_uniqueness`；旧 `.env` 中残留的公开 MinIO 地址已清除，worker 使用 `http://minio:9000` 内部地址。synthetic 请求已到达 NewAPI，但 Provider 返回 HTTP `402`，属于额度/余额配置问题，不是上传链路失败。
@@ -42,7 +116,26 @@
 - `2026-07-18` 产品主线规划：项目 Owner 批准“教材范围 → 错题讲解 → 错题沉淀 → 到期复习 → 今日任务”方向及详细建议，已建立 Accepted ADR-0020、PLAN-0014 和 TODO-016～019。随后先实现错题/复习最小闭环：`MistakeRecord`/`ReviewSchedule`、`0017`、到期查询、确定性复习、导出覆盖和 Web/Flutter 调用，并部署 Ubuntu；教材、作答四态和三入口仍待后续阶段。
 - `2026-07-18` 错题讲解规划补充：Owner 确认拍题会包含孩子解答，答题区确认空白表示“没有思路”并允许从头讲解。ADR-0020/PLAN-0014 已改为四态作答 Schema：`worked/blank/unclear/answer_area_missing`；空白必须用户确认，未拍入/不清不得自动当空白。当前 `MistakeRecord` 只接受服务端已确认 `VerifiedQuestion` 与会话引用，未伪造四态作答证据。
 - `2026-07-18` PLAN-0012 实现与部署：新增 Session 鉴权的单一 API 原始流上传，服务端用 boto3 S3 multipart 有界写入私有 MinIO，增量校验大小/SHA-256，完成后重新读取并完整解码图片，失败清理 multipart/对象；API/Flutter/契约/Compose 相关回归通过，Ubuntu 已成对部署。未完成：Nova 9/iPad 新链路人工验收、并发/断连现场压测和 Provider 额度恢复后的真实识别。
-- `2026-07-18` PLAN-0014 最小闭环：新增错题创建/列表/到期过滤/复习提交 API，使用 `0017_mistake_review` 和 PostgreSQL 事实源，连续三次正确关闭错题，非正确结果按确定性策略回退；导出包含错题/复习计划，Web 显示到期错题，Flutter 客户端可读取并提交复习结果。API 157 项非集成、Web 11 项、Flutter 29 项回归通过，Ubuntu 已前滚到 `0017`。
+- `2026-07-18` PLAN-0014 最小闭环：新增错题创建/列表/到期过滤/复习提交 API，使用 `0017_mistake_review` 和 PostgreSQL 事实源，连续三次正确关闭错题，非正确结果按确定性策略回退；导出包含错题/复习计划，Web 显示到期错题，Flutter 客户端可读取并提交复习结果。API 159 项非集成、Web 11 项、Flutter 29 项回归通过，Ubuntu 已前滚到 `0017`。
+- `2026-07-18` PLAN-0014 纵向实现：新增 `0018_curriculum_answer_recommendations`，教材授权 manifest 导入/草稿/家长发布快照、Attempt 四态与 Tutor 分支、Flutter 数学三入口、任务推荐审批及批准后 Task 创建；新增 API/Web/Flutter 回归。真实 PDF 二进制解析、Provider 识别额度恢复后的联调、浏览器 E2E 和设备回归保留为最后验收。
+- `2026-07-18` Ubuntu 部署收口：使用 rsync 同步 API/Web/迁移/契约/Compose，修正 Alembic revision 长度后将远端 PostgreSQL 前滚到 `0018_curriculum_recommendations`；API、Web、两个 worker、PostgreSQL、MinIO、Redis 均 healthy，OpenAPI 已暴露教材/推荐新路径，远端 `.env` 未覆盖。
+- `2026-07-18` 教材上传增量：新增 `0019_curriculum_documents`、`python-multipart` 和多文档 multipart API；Web 支持多选 PDF/DOC/DOCX/PPT/PPTX/XLS/XLSX，逐文件流式写入私有 MinIO 并生成 `uploaded` 草稿。Ubuntu 已备份后前滚、重建并验证健康和 OpenAPI 路径；真实文档解析仍待完成。
+- `2026-07-20` 教材上传修复：浏览器在非安全上下文中不提供 `crypto.randomUUID()`，导致选择教材后点击上传立即抛出 TypeError；已改用 `crypto.getRandomValues` 并保留无 Web Crypto 时的随机回退，Web 12 项测试通过，Ubuntu Web 已重建并健康。
+- `2026-07-20` 教材上传 CSRF 修复：教材页面写请求补齐登录 Cookie 对应的 `X-CSRF-Token`，覆盖手工导入、文档上传、发布和任务推荐；新增 CSRF Cookie/header 回归，Web 14 项测试通过，待 Ubuntu Web 重建后复测上传。
+- `2026-07-20` iPhone 11 真机调试：Xcode 26.6/CoreDevice 识别 iOS 17.5.1 设备，开发者模式和 DDI 服务已启用；Flutter Debug App 已安装启动。真机发现登录卡片在紧凑窗口发生 58px 底部溢出，已改为可滚动布局，新增回归后 Flutter 30 项测试通过并热重载验证。
+- `2026-07-20` iPhone 局域网连接修复：确认 Mac 可访问 Ubuntu `3000/8000` 且 API 健康，但 iPhone 请求未到达服务端；定位到 Runner 缺少 `NSLocalNetworkUsageDescription` 与 iOS 17 局域网 IP 的 ATS 声明。已加入用途说明及 `NSAllowsLocalNetworking`，校验编译产物并重新安装真机；等待用户允许系统本地网络权限后复测登录。
+- `2026-07-20` iPhone 局域网诊断：经用户授权卸载 `com.example.studyChild` 清除本地权限/会话状态后重新安装，并在登录页增加 `/healthz` 检测、手动重试和不含凭据的安全网络错误信息；Flutter 真机返回 `errno 65: No route to host`，Ubuntu API 没有收到请求。iPhone Safari 对 Ubuntu `192.168.1.4:8000` 以及同 Wi-Fi 网段 Mac `192.168.100.158:18080` 的请求也均未到达，当前阻塞定位为 iPhone 本地网络权限状态、VPN/过滤器或 Wi-Fi 客户端隔离，不是 Flutter HTTP、账号或 API 故障。临时 HTTP 端口和 RVI 诊断接口已关闭。
+- `2026-07-20` iPad mini 6 真机回归：Flutter 识别 `00008110-0011356E0E41801E`，完成构建、安装、启动和热重启；启动期间 API 收到来自局域网 `192.168.1.100` 的 `/healthz` 并返回 200，证明同一客户端版本在 iPad 网络链路可用。登录、相机/相册权限及拍题人工确认仍待设备端点击验收。
+- `2026-07-20` 拍题失败恢复优化：识别失败页保留已确认脱敏照片，新增“重新识别当前照片”和“重新拍题”；重新识别使用新的幂等键创建新 OCR/ImageAnalysis 任务，不复用失败任务；同时修复从拍题返回学习桌时把异步刷新误放入 `setState` 的 iPad 真机运行时错误。Flutter 33 项测试/analyze 通过，已热重启到 iPad。
+- `2026-07-20` 拍题体验优化：脱敏完成后立即进入独立上传进度页，上传期间保持题目照片和转圈状态，不再回到拍题页；成功后自动进入题目确认，失败可在原页重新上传或返回拍题。确认题目改为大尺寸多行编辑框，可在框内上下拖动查看长文本。新增 3 项 Flutter Widget 与安全会话存储回归，Flutter 共 37 项通过。
+- `2026-07-20` 孩子端账号体验优化：登录后隐藏服务端切换入口，学习桌顶部增加账号入口；账号页支持安全保存的会话切换、添加账号和注销当前账号，不保存密码，服务端地址仍只在登录流程中配置。已在 iPad 热重启验证启动无运行时异常。
+- `2026-07-20` 修复确认题目点击后可能一直卡住：Capture HTTP 请求增加 8 秒连接与 20 秒响应上限，确认流程补齐非业务异常兜底并恢复按钮状态，按钮在请求期间显示“正在确认题目……”。Flutter 37 项测试/analyze 继续通过。
+- `2026-07-20` 根因修复：Flutter `HttpClientRequest.write()` 默认 Latin-1，中文题目序列化时抛出非法字符异常；Capture、登录和改密 JSON 请求统一改为 UTF-8 字节写入，并用中文题目回归验证确认请求。
+- `2026-07-20` 修复同一照片重试失败：首次 ImageAnalysis 失败后服务端会清理派生对象，重试不再复用原 Capture 上传幂等键，而是使用新的上传键创建新 Capture/对象/识别任务；错误提示不再把 Provider/配置失败误报为照片不清晰。Ubuntu 数据库确认原问题为旧重试任务的 `image_analysis_failed`，首个任务为 `provider_http_402`。
+- `2026-07-20` 修复脱敏后进入上传页提示照片大小不合规：相机 JPEG 经不可逆 PNG 重编码后可能膨胀超过 API 的 8 MB 上限；PrivacySanitizer 现在按 1800/1500/1200/960/720 像素上限逐级等比缩放、同步换算遮挡区域并重新编码，上传副本控制在 7.5 MB 内，仍超限时要求用户只裁剪题目区域。Flutter 38 项测试/analyze 通过。
+- `2026-07-20` 修复真机练习页身份和提示链路：标题改用当前安全会话对应的登录用户名，不再使用原型默认“小禾”；真实题目进入练习页自动请求第一级 Tutor 提示，零成本本地策略按“减少/剩余、比较、平均分组、求总量、分数”等已确认题目结构生成分级提示。视觉确认形成的 `VerifiedQuestion` 可在 Capture `needs_correction` 状态进入 Tutor，不再被旧 OCR `corrected` 门禁误拒绝为 409；Flutter 使用提示专属错误信息。API 162 项、Flutter 39 项及静态检查通过，Ubuntu API 已重建健康，iPad 已热重启。
+- `2026-07-22` 家长 Web 按已选“方案 1”完成后台化重构：统一固定分组导航、当前孩子上下文、今日优先事项、本周趋势、可展开逐题详情、孩子/账号聚合管理和教材/推荐工作区；统计继续读取 Household-scoped API，没有写入演示数据或认证旁路。新增 Phosphor Icons `2.1.10` 与 Recharts `3.10.0`（MIT、精确锁定），14 项 Web 单测、Lint、类型和 Next 生产构建通过；使用独立合成 API 在真实登录流程中完成 1280 桌面与 736 窄屏视觉/交互 QA，结果记录于 `design-qa.md`。Web 已通过 rsync 同步 Ubuntu、使用锁定 Node 24.18/pnpm 11.7 重建并健康启动；Nova 9 安装因本轮 ADB 本机访问授权被拒绝未执行，release APK 已就绪。
+- `2026-07-23` 修正家长后台信息架构：孩子切换移到所有页面共用的顶栏，下拉选择通过 `?child=` 保持工作台、教材和孩子管理作用域；侧栏删除与工作台卡片重复的今日任务、待复习、最近学习和学习周报，只保留三个顶层目的地。教材链路审计确认已发布小节仅用于生成带 `snapshot_id`、小节标题和学习目标的家长审批任务推荐，Tutor 尚未消费教材正文；上传 PDF/Word/PPT/Excel 仍只是私有存储和待解析草稿。为避免误用，待解析文档现在不能发布，Web 明确显示“待解析 · 尚未使用”。Web 16 项测试、Lint、类型、格式和生产构建及 API 教材定向 5 项测试通过；同尺寸参考图/实现图浏览器对照记录于 `design-qa.md`。相关 Web/API/worker 已 rsync 到 Ubuntu 并重建，API `0.9.0`、Web 和两个 worker 运行正常，API/Web healthcheck 均通过。
 
 ---
 

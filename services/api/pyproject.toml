@@ -11,7 +11,10 @@ dependencies = [
   "paddleocr[doc-parser]==3.7.0; sys_platform != 'linux' or platform_machine == 'x86_64'",
   "paddlepaddle==3.3.1; sys_platform != 'linux' or platform_machine == 'x86_64'",
   "pillow==12.3.0",
+  "pdfplumber==0.11.7",
+  "pypdfium2==5.11.0",
   "psycopg[binary]==3.3.4",
+  "python-multipart==0.0.20",
   "sqlalchemy==2.0.51",
   "uvicorn[standard]==0.41.0",
 ]

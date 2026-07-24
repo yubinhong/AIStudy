@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -19,7 +20,17 @@ from study_api.child_management import (
     InMemoryChildManagementRepository,
     PostgresChildManagementRepository,
 )
+from study_api.curriculum_analysis_jobs import (
+    CurriculumKnowledgeRepository,
+    InMemoryCurriculumKnowledgeRepository,
+    PostgresCurriculumKnowledgeRepository,
+)
 from study_api.domain.capture_repository import CaptureRepository, InMemoryCaptureRepository
+from study_api.domain.curriculum_repository import (
+    CurriculumRepository,
+    InMemoryCurriculumRepository,
+    PostgresCurriculumRepository,
+)
 from study_api.domain.insights_repository import (
     EmptyInsightsRepository,
     InsightsRepository,
@@ -41,6 +52,11 @@ from study_api.domain.question_extraction_repository import (
     PostgresQuestionExtractionRepository,
     QuestionExtractionRepository,
 )
+from study_api.domain.recommendation_repository import (
+    InMemoryTaskRecommendationRepository,
+    PostgresTaskRecommendationRepository,
+    TaskRecommendationRepository,
+)
 from study_api.domain.repository import InMemoryProfileRepository, ProfileRepository
 from study_api.domain.sql_capture_repository import PostgresCaptureRepository
 from study_api.domain.sql_learning_repository import LearningRepository, PostgresLearningRepository
@@ -60,6 +76,7 @@ from study_api.image_analysis_jobs import (
     InMemoryImageAnalysisJobRepository,
     PostgresImageAnalysisJobRepository,
 )
+from study_api.material_parse_jobs import MaterialParseRepository, PostgresMaterialParseRepository
 from study_api.newapi_provider import NewApiConfig
 from study_api.object_storage import (
     CaptureObjectStorage,
@@ -71,11 +88,13 @@ from study_api.object_storage import (
 from study_api.ocr_jobs import InMemoryOcrJobQueue, OcrJobQueue, PostgresOcrJobQueue
 from study_api.routes.authentication import router as authentication_router
 from study_api.routes.captures import router as capture_router
+from study_api.routes.curriculum import router as curriculum_router
 from study_api.routes.image_analysis import router as image_analysis_router
 from study_api.routes.insights import router as insights_router
 from study_api.routes.learning import router as learning_router
 from study_api.routes.mistakes import router as mistakes_router
 from study_api.routes.profiles import router as profile_router
+from study_api.routes.recommendations import router as recommendations_router
 from study_api.routes.tutor import router as tutor_router
 
 
@@ -93,6 +112,10 @@ def create_app(
     insights_repository: InsightsRepository | None = None,
     mistake_repository: MistakeRepository | None = None,
     account_repository: AccountRepository | None = None,
+    curriculum_repository: CurriculumRepository | None = None,
+    recommendation_repository: TaskRecommendationRepository | None = None,
+    material_parse_repository: MaterialParseRepository | None = None,
+    curriculum_knowledge_repository: CurriculumKnowledgeRepository | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="家庭 AI 学习助手 API",
@@ -125,6 +148,16 @@ def create_app(
     app.state.mistake_repository = mistake_repository or _default_mistake_repository()
     app.state.newapi_config = NewApiConfig.from_environment()
     app.state.account_repository = account_repository or _default_account_repository()
+    app.state.curriculum_repository = curriculum_repository or _default_curriculum_repository()
+    app.state.recommendation_repository = (
+        recommendation_repository or _default_recommendation_repository()
+    )
+    app.state.material_parse_repository = (
+        material_parse_repository or _default_material_parse_repository()
+    )
+    app.state.curriculum_knowledge_repository = (
+        curriculum_knowledge_repository or _default_curriculum_knowledge_repository()
+    )
     app.state.auth_service = AuthService(app.state.account_repository)
     app.state.child_management_repository = _default_child_management_repository(
         app.state.profile_repository,
@@ -139,6 +172,8 @@ def create_app(
     app.include_router(tutor_router)
     app.include_router(insights_router)
     app.include_router(mistakes_router)
+    app.include_router(curriculum_router)
+    app.include_router(recommendations_router)
 
     @app.exception_handler(HTTPException)
     async def http_error_handler(_: Request, exception: HTTPException) -> JSONResponse:
@@ -269,6 +304,47 @@ def _default_mistake_repository() -> MistakeRepository:
     if os.environ.get("STUDY_API_LEARNING_REPOSITORY") == "postgres":
         return PostgresMistakeRepository()
     return InMemoryMistakeRepository()
+
+
+def _default_curriculum_repository() -> CurriculumRepository:
+    if (
+        os.environ.get("STUDY_API_CURRICULUM_REPOSITORY") == "postgres"
+        or os.environ.get("STUDY_API_LEARNING_REPOSITORY") == "postgres"
+    ):
+        return PostgresCurriculumRepository()
+    return InMemoryCurriculumRepository()
+
+
+def _default_recommendation_repository() -> TaskRecommendationRepository:
+    if os.environ.get("STUDY_API_LEARNING_REPOSITORY") == "postgres":
+        return PostgresTaskRecommendationRepository()
+    return InMemoryTaskRecommendationRepository()
+
+
+def _default_material_parse_repository() -> MaterialParseRepository:
+    if os.environ.get("STUDY_API_LEARNING_REPOSITORY") == "postgres":
+        return PostgresMaterialParseRepository()
+    return _NoopMaterialParseRepository()
+
+
+def _default_curriculum_knowledge_repository() -> CurriculumKnowledgeRepository:
+    if os.environ.get("STUDY_API_LEARNING_REPOSITORY") == "postgres":
+        return PostgresCurriculumKnowledgeRepository()
+    return InMemoryCurriculumKnowledgeRepository()
+
+
+class _NoopMaterialParseRepository:
+    def enqueue(
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        material_id: UUID,
+        snapshot_id: UUID,
+    ) -> None:  # pragma: no cover - manifest-only in-memory test path
+        del household_id, child_id, material_id, snapshot_id
+
+    def close(self) -> None:
+        return None
 
 
 def _default_account_repository() -> AccountRepository:

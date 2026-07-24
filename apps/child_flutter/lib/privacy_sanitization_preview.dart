@@ -5,16 +5,110 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+const maxSanitizedUploadBytes = 7500000;
+const _sanitizedMaxDimensions = <int>[1800, 1500, 1200, 960, 720];
+
+class SanitizedImageTooLargeException implements Exception {
+  const SanitizedImageTooLargeException();
+}
+
 class SanitizedImageSelection {
   const SanitizedImageSelection({
     required this.bytes,
     required this.sha256,
     this.maskCount = 0,
+    this.pixelWidth,
+    this.pixelHeight,
   });
 
   final Uint8List bytes;
   final String sha256;
   final int maskCount;
+  final int? pixelWidth;
+  final int? pixelHeight;
+}
+
+Future<SanitizedImageSelection> renderSanitizedImage(
+  Uint8List source,
+  List<Rect> masks, {
+  int maxBytes = maxSanitizedUploadBytes,
+  List<int> maxDimensions = _sanitizedMaxDimensions,
+}) async {
+  final sourceCodec = await ui.instantiateImageCodec(source);
+  final sourceFrame = await sourceCodec.getNextFrame();
+  final sourceWidth = sourceFrame.image.width;
+  final sourceHeight = sourceFrame.image.height;
+  sourceFrame.image.dispose();
+  sourceCodec.dispose();
+
+  final attemptedSizes = <String>{};
+  for (final maxDimension in maxDimensions) {
+    final scale = maxDimension >= sourceWidth && maxDimension >= sourceHeight
+        ? 1.0
+        : maxDimension /
+              (sourceWidth > sourceHeight ? sourceWidth : sourceHeight);
+    final targetWidth = (sourceWidth * scale).round().clamp(1, sourceWidth);
+    final targetHeight = (sourceHeight * scale).round().clamp(1, sourceHeight);
+    if (!attemptedSizes.add('$targetWidth:$targetHeight')) continue;
+
+    final data = await _renderSanitizedAtSize(
+      source,
+      masks,
+      targetWidth,
+      targetHeight,
+    );
+    if (data.length <= maxBytes) {
+      return SanitizedImageSelection(
+        bytes: data,
+        sha256: sha256.convert(data).toString(),
+        maskCount: masks.length,
+        pixelWidth: targetWidth,
+        pixelHeight: targetHeight,
+      );
+    }
+  }
+  throw const SanitizedImageTooLargeException();
+}
+
+Future<Uint8List> _renderSanitizedAtSize(
+  Uint8List source,
+  List<Rect> masks,
+  int targetWidth,
+  int targetHeight,
+) async {
+  final codec = await ui.instantiateImageCodec(
+    source,
+    targetWidth: targetWidth,
+    targetHeight: targetHeight,
+  );
+  final frame = await codec.getNextFrame();
+  final image = frame.image;
+  final recorder = ui.PictureRecorder();
+  final canvas = Canvas(recorder);
+  canvas.drawImage(image, Offset.zero, Paint());
+  final maskPaint = Paint()..color = Colors.black;
+  for (final mask in masks) {
+    canvas.drawRect(
+      Rect.fromLTRB(
+        mask.left * image.width,
+        mask.top * image.height,
+        mask.right * image.width,
+        mask.bottom * image.height,
+      ),
+      maskPaint,
+    );
+  }
+  final picture = recorder.endRecording();
+  final sanitized = await picture.toImage(image.width, image.height);
+  final bytes = await sanitized.toByteData(format: ui.ImageByteFormat.png);
+  image.dispose();
+  sanitized.dispose();
+  picture.dispose();
+  codec.dispose();
+  if (bytes == null) {
+    throw StateError('sanitized preview could not be encoded');
+  }
+  return Uint8List.fromList(bytes.buffer.asUint8List());
 }
 
 typedef SanitizedPreviewRenderer =
@@ -97,40 +191,7 @@ class _SanitizationPreviewScreenState extends State<SanitizationPreviewScreen> {
   }
 
   Future<SanitizedImageSelection> _renderSanitized(Uint8List source) async {
-    final codec = await ui.instantiateImageCodec(source);
-    final frame = await codec.getNextFrame();
-    final image = frame.image;
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-    canvas.drawImage(image, Offset.zero, Paint());
-    final maskPaint = Paint()..color = Colors.black;
-    for (final mask in _masks) {
-      canvas.drawRect(
-        Rect.fromLTRB(
-          mask.left * image.width,
-          mask.top * image.height,
-          mask.right * image.width,
-          mask.bottom * image.height,
-        ),
-        maskPaint,
-      );
-    }
-    final picture = recorder.endRecording();
-    final sanitized = await picture.toImage(image.width, image.height);
-    final bytes = await sanitized.toByteData(format: ui.ImageByteFormat.png);
-    image.dispose();
-    sanitized.dispose();
-    picture.dispose();
-    codec.dispose();
-    if (bytes == null) {
-      throw StateError('sanitized preview could not be encoded');
-    }
-    final data = bytes.buffer.asUint8List();
-    return SanitizedImageSelection(
-      bytes: Uint8List.fromList(data),
-      sha256: sha256.convert(data).toString(),
-      maskCount: _masks.length,
-    );
+    return renderSanitizedImage(source, List.unmodifiable(_masks));
   }
 
   Future<void> _confirm(Uint8List source) async {
@@ -147,6 +208,12 @@ class _SanitizationPreviewScreenState extends State<SanitizationPreviewScreen> {
       } else {
         Navigator.of(context).pop(selection);
       }
+    } on SanitizedImageTooLargeException {
+      if (!mounted) return;
+      setState(() => _rendering = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('照片内容较复杂，请重新裁剪并只保留题目区域后再试。')),
+      );
     } catch (_) {
       if (!mounted) return;
       setState(() => _rendering = false);
@@ -265,7 +332,7 @@ class _SanitizationPreviewScreenState extends State<SanitizationPreviewScreen> {
                                 SizedBox(width: 10),
                                 Expanded(
                                   child: Text(
-                                    '确认后只会生成新的脱敏 PNG，并绑定当前副本哈希。当前页面不会上传原图。',
+                                    '确认后只会生成新的脱敏 PNG，必要时等比缩小并绑定当前副本哈希。当前页面不会上传原图。',
                                     style: TextStyle(fontSize: 15, height: 1.4),
                                   ),
                                 ),

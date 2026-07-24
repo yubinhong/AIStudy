@@ -11,6 +11,9 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    networks:
+      - default
+      - parser-backend
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -37,6 +40,9 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in infra/compose/.env}
     volumes:
       - minio-data:/data
+    networks:
+      - default
+      - parser-backend
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 5s
@@ -54,6 +60,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - parser-backend
     restart: "no"
 
   api:
@@ -66,6 +74,7 @@ services:
       OBJECT_STORAGE_ENDPOINT_URL: http://minio:9000
       STUDY_API_PROFILE_REPOSITORY: postgres
       STUDY_API_LEARNING_REPOSITORY: postgres
+      STUDY_API_CURRICULUM_REPOSITORY: postgres
       STUDY_API_OCR_QUEUE: postgres
       STUDY_API_OCR_RESULTS: postgres
       STUDY_API_IMAGE_ANALYSIS_REPOSITORY: postgres
@@ -83,6 +92,9 @@ services:
         condition: service_completed_successfully
       minio:
         condition: service_healthy
+    networks:
+      - default
+      - parser-backend
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
       interval: 10s
@@ -130,6 +142,47 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  material-parse-worker:
+    build:
+      context: ../../services/api
+      dockerfile: Dockerfile
+    command: ["python", "scripts/run_material_parse_worker.py", "--watch"]
+    env_file:
+      - .env
+    environment:
+      OBJECT_STORAGE_ENDPOINT_URL: http://minio:9000
+      MATERIAL_PARSE_POLL_INTERVAL_SECONDS: ${MATERIAL_PARSE_POLL_INTERVAL_SECONDS:-2}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+    networks:
+      - parser-backend
+    restart: unless-stopped
+
+  curriculum-analysis-worker:
+    build:
+      context: ../../services/api
+      dockerfile: Dockerfile
+    command: ["python", "scripts/run_curriculum_analysis_worker.py", "--watch"]
+    env_file:
+      - .env
+    environment:
+      OBJECT_STORAGE_ENDPOINT_URL: http://minio:9000
+      CURRICULUM_ANALYSIS_POLL_INTERVAL_SECONDS: ${CURRICULUM_ANALYSIS_POLL_INTERVAL_SECONDS:-2}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+    networks:
+      - default
+      - parser-backend
+    restart: unless-stopped
+
   data-lifecycle-worker:
     build:
       context: ../../services/api
@@ -151,3 +204,7 @@ volumes:
   postgres-data:
   redis-data:
   minio-data:
+
+networks:
+  parser-backend:
+    internal: true

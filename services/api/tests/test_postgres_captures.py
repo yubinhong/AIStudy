@@ -451,7 +451,9 @@ def test_postgresql_minio_capture_upload_confirmation_is_end_to_end_synthetic() 
     storage.ensure_bucket()
     client, learning, repository = _client(storage)
     object_key: str | None = None
-    content = b"\xff\xd8\xff\xe0synthetic-api-capture-only\xff\xd9"
+    content = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    )
     try:
         session_id = _session(client)
         upload_response = client.post(
@@ -461,7 +463,7 @@ def test_postgresql_minio_capture_upload_confirmation_is_end_to_end_synthetic() 
                 "Idempotency-Key": f"pg-minio-capture-upload-{uuid4()}",
             },
             json={
-                "media_type": "image/jpeg",
+                "media_type": "image/png",
                 "byte_size": len(content),
                 "content_sha256": sha256(content).hexdigest(),
             },
@@ -473,7 +475,7 @@ def test_postgresql_minio_capture_upload_confirmation_is_end_to_end_synthetic() 
             upload["upload_url"],
             data=content,
             method="PUT",
-            headers={"Content-Type": "image/jpeg"},
+            headers={"Content-Type": "image/png"},
         )
         with urlopen(request, timeout=10) as response:  # noqa: S310 -- URL is server-generated.
             assert response.status in {200, 204}

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 家庭 AI 学习助手 API
-  version: 0.8.0
+  version: 0.11.0
   description: Self-hosted Household account/session and learning contract vertical slices.
 servers:
   - url: http://localhost:8000
@@ -1496,6 +1496,407 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/IdempotencyConflict'
+  /households/{household_id}/children/{child_id}/mistake-closeout:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      operationId: closeoutMistakeSession
+      summary: Close a verified study session and project a confirmed mistake
+      description: The server only creates a mistake after a confirmed VerifiedQuestion and Attempt evidence are present. The operation is idempotent.
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MistakeCloseoutRequest'}
+      responses:
+        '200':
+          description: Session closeout result.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MistakeCloseoutResult'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/IdempotencyConflict'}
+  /households/{household_id}/children/{child_id}/curriculum/imports:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      operationId: importCurriculum
+      summary: Import an authorized curriculum manifest as a reviewable draft
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ImportCurriculumRequest'}
+      responses:
+        '201':
+          description: Draft material and snapshot.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CurriculumImportResult'}
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CurriculumImportResult'}
+  /households/{household_id}/children/{child_id}/curriculum/imports/files:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      operationId: importCurriculumFiles
+      summary: Upload multiple authorized PDF curriculum documents as reviewable drafts
+      description: Only PDF files are accepted. Each file is bounded to 50 MiB (52,428,800 bytes), stored privately, parsed by the local bounded worker, and remains a draft until a parent reviews and publishes it.
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [files, authorization_statement, grade, textbook_version, term]
+              properties:
+                files:
+                  type: array
+                  minItems: 1
+                  items: {type: string, format: binary, description: PDF only}
+                authorization_statement: {type: string, minLength: 1, maxLength: 500}
+                grade: {type: integer, minimum: 1, maximum: 6}
+                textbook_version: {type: string, minLength: 1, maxLength: 120}
+                term: {type: string, minLength: 1, maxLength: 40}
+      responses:
+        '201':
+          description: One reviewable draft per uploaded document.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/CurriculumImportResult'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '413':
+          description: File or batch exceeds the bounded upload size.
+        '422':
+          $ref: '#/components/responses/InvalidRequest'
+        '503':
+          description: Private object storage is temporarily unavailable.
+  /households/{household_id}/children/{child_id}/curriculum:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: listCurriculumSnapshots
+      summary: List child-visible published curriculum snapshots
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      responses:
+        '200':
+          description: Curriculum snapshots.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/CurriculumSnapshot'}
+  /households/{household_id}/children/{child_id}/curriculum/snapshots/{snapshot_id}/publish:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: snapshot_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      operationId: publishCurriculumSnapshot
+      summary: Publish a reviewed immutable curriculum snapshot
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Published snapshot.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CurriculumSnapshot'}
+  /households/{household_id}/children/{child_id}/curriculum/snapshots/{snapshot_id}/pages:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: snapshot_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: listCurriculumSnapshotPages
+      summary: Read parent-only parsed pages in a review document layout
+      description: Returns page-scoped derived text for one authorized draft or published snapshot. It never returns the private source PDF, object key, or object-storage URL.
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      responses:
+        '200':
+          description: Parsed page-level text for parent review.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/CurriculumParsedPage'}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /households/{household_id}/children/{child_id}/curriculum/snapshots/{snapshot_id}/analysis:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: snapshot_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: getCurriculumKnowledgeMap
+      summary: Read the source-bound whole-book knowledge map
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      responses:
+        '200':
+          description: Draft or approved curriculum knowledge.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CurriculumKnowledgeMap'}
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      operationId: enqueueCurriculumKnowledgeAnalysis
+      summary: Queue bounded multimodal whole-book analysis
+      description: Parent-only. Private page derivatives are sent in batches; neither the MinIO object key nor a public storage URL is returned.
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Analysis queued.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CurriculumKnowledgeMap'}
+        '409':
+          description: Approved knowledge cannot be overwritten.
+  /households/{household_id}/children/{child_id}/curriculum/snapshots/{snapshot_id}/analysis/approve:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: snapshot_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      operationId: approveCurriculumKnowledgeMap
+      summary: Approve AI-derived curriculum knowledge for learning use
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Approved knowledge map.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CurriculumKnowledgeMap'}
+        '409':
+          description: Analysis is not ready for review.
+  /households/{household_id}/children/{child_id}/curriculum/snapshots/{snapshot_id}/pages/{page_number}/image:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: snapshot_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: page_number
+        in: path
+        required: true
+        schema: {type: integer, minimum: 1, maximum: 400}
+    get:
+      operationId: getCurriculumPageImage
+      summary: Read one private rendered textbook page through the authenticated API
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      responses:
+        '200':
+          description: Private JPEG page derivative.
+          content:
+            image/jpeg:
+              schema: {type: string, format: binary}
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /households/{household_id}/children/{child_id}/curriculum/snapshots/{snapshot_id}:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: snapshot_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    delete:
+      operationId: deleteCurriculumSnapshot
+      summary: Delete one authorized curriculum source and its derived parsing facts
+      description: Parent-only and idempotent. Removes the private source document, its parse job/page chunks, and references that are invalidated by the source deletion.
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '204':
+          description: Snapshot and private source deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '503':
+          description: Private object storage is temporarily unavailable; deletion was not committed.
+  /households/{household_id}/children/{child_id}/task-recommendations:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: listTaskRecommendations
+      summary: List parent-reviewable task recommendations
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      responses:
+        '200':
+          description: Recommendations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/TaskRecommendation'}
+    post:
+      operationId: generateTaskRecommendations
+      summary: Generate a source-bound cloud-planned schedule without creating tasks
+      description: The API scans all local parsed PDF chunks and open mistakes, sends only a bounded set of opaque source candidates to the configured planner, rejects invented source keys, and returns parent-reviewable tasks with exact questions and page references.
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateRecommendationRequest'}
+      responses:
+        '200':
+          description: Pending recommendations.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/TaskRecommendation'}
+        '502':
+          description: The planner failed or returned an unsafe/unresolvable plan.
+        '503':
+          description: Intelligent recommendation Provider is not configured.
+  /households/{household_id}/children/{child_id}/task-recommendations/{recommendation_id}/decision:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: recommendation_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      operationId: decideTaskRecommendation
+      summary: Approve or reject a recommendation; approval creates a task
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DecideRecommendationRequest'}
+      responses:
+        '200':
+          description: Decided recommendation.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TaskRecommendation'}
   /households/{household_id}/reports/weekly:
     parameters:
       - $ref: '#/components/parameters/HouseholdId'
@@ -1560,6 +1961,35 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /households/{household_id}/children/{child_id}/learning-details:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: limit
+        in: query
+        required: false
+        schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+    get:
+      operationId: getLearningDetails
+      summary: Read recent confirmed questions, answer evidence and Tutor turns
+      description: Parent-only, Household-scoped projection. It contains no image bytes, object keys or Provider payloads.
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      responses:
+        '200':
+          description: Recent per-question learning details.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/LearningDetail'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
   /households/{household_id}/captures/{capture_id}/ocr-results/{result_id}:
     parameters:
       - $ref: '#/components/parameters/HouseholdId'
@@ -1849,7 +2279,7 @@ components:
           const: study-api
         version:
           type: string
-          const: 0.8.0
+          const: 0.11.0
     CreateChildRequest:
       type: object
       additionalProperties: false
@@ -1941,6 +2371,27 @@ components:
         registered_at:
           type: string
           format: date-time
+    TaskExercise:
+      type: object
+      additionalProperties: false
+      required: [question_text, source_type, mistake_id, snapshot_id, curriculum_chunk_id, knowledge_point_id, knowledge_key, source_title, source_page, visual_description, requires_visual_context]
+      properties:
+        question_text:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        source_type:
+          type: string
+          enum: [mistake, curriculum]
+        mistake_id: {type: string, format: uuid, nullable: true}
+        snapshot_id: {type: string, format: uuid, nullable: true}
+        curriculum_chunk_id: {type: string, format: uuid, nullable: true}
+        knowledge_point_id: {type: string, format: uuid, nullable: true}
+        knowledge_key: {type: string, maxLength: 80, nullable: true}
+        source_title: {type: string, maxLength: 160, nullable: true}
+        source_page: {type: integer, minimum: 1, nullable: true}
+        visual_description: {type: string, maxLength: 1000, nullable: true}
+        requires_visual_context: {type: boolean}
     CreateTaskRequest:
       type: object
       additionalProperties: false
@@ -1959,10 +2410,22 @@ components:
         scheduled_for:
           type: string
           format: date
+        source_type:
+          type: string
+          enum: [manual, mistake_review, curriculum_exercise, mixed_plan]
+          default: manual
+        reason: {type: string, maxLength: 500, nullable: true}
+        knowledge_point: {type: string, maxLength: 120, nullable: true}
+        knowledge_point_id: {type: string, format: uuid, nullable: true}
+        exercises:
+          type: array
+          maxItems: 5
+          items: {$ref: '#/components/schemas/TaskExercise'}
+        estimated_minutes: {type: integer, minimum: 1, maximum: 120, nullable: true}
     StudyTask:
       type: object
       additionalProperties: false
-      required: [id, household_id, child_id, title, subject, scheduled_for, status, version, created_at]
+      required: [id, household_id, child_id, title, subject, scheduled_for, status, version, created_at, source_type, reason, knowledge_point, knowledge_point_id, exercises, estimated_minutes]
       properties:
         id:
           type: string
@@ -1990,6 +2453,17 @@ components:
         created_at:
           type: string
           format: date-time
+        source_type:
+          type: string
+          enum: [manual, mistake_review, curriculum_exercise, mixed_plan]
+        reason: {type: string, maxLength: 500, nullable: true}
+        knowledge_point: {type: string, maxLength: 120, nullable: true}
+        knowledge_point_id: {type: string, format: uuid, nullable: true}
+        exercises:
+          type: array
+          maxItems: 5
+          items: {$ref: '#/components/schemas/TaskExercise'}
+        estimated_minutes: {type: integer, minimum: 1, maximum: 120, nullable: true}
     StartStudySessionRequest:
       type: object
       additionalProperties: false
@@ -2190,6 +2664,36 @@ components:
           minLength: 1
           maxLength: 64
           nullable: true
+    QuestionExtraction:
+      type: object
+      additionalProperties: false
+      required: [schema_version, subject, question_text, options, formulas, has_diagram, has_handwriting, answer_state, answer_state_confidence, answer_steps, question_region_count, confidence, needs_confirmation]
+      properties:
+        schema_version: {type: string, const: question-extraction.v1}
+        subject: {type: string, const: math}
+        question_text: {type: string, minLength: 1, maxLength: 4000}
+        options:
+          type: array
+          maxItems: 20
+          items: {type: string}
+        formulas:
+          type: array
+          maxItems: 50
+          items: {type: string}
+        has_diagram: {type: boolean}
+        has_handwriting: {type: boolean}
+        detected_answer: {type: [string, 'null'], maxLength: 1000}
+        answer_state:
+          type: string
+          enum: [worked, blank, unclear, answer_area_missing]
+        answer_state_confidence: {type: number, minimum: 0, maximum: 1}
+        answer_steps:
+          type: array
+          maxItems: 30
+          items: {type: string, minLength: 1, maxLength: 500}
+        question_region_count: {type: integer, minimum: 0, maximum: 256}
+        confidence: {type: number, minimum: 0, maximum: 1}
+        needs_confirmation: {type: boolean, const: true}
     QuestionExtractionRecord:
       type: object
       additionalProperties: false
@@ -2215,7 +2719,7 @@ components:
     VerifyQuestionRequest:
       type: object
       additionalProperties: false
-      required: [expected_capture_version, question_text, options, formulas, has_diagram, has_handwriting]
+      required: [expected_capture_version, question_text, options, formulas, has_diagram, has_handwriting, answer_state, answer_state_confidence, answer_steps, evidence_confirmed]
       properties:
         expected_capture_version:
           type: integer
@@ -2242,10 +2746,19 @@ components:
           type: string
           maxLength: 1000
           nullable: true
+        answer_state:
+          type: string
+          enum: [worked, blank, unclear, answer_area_missing]
+        answer_state_confidence: {type: number, minimum: 0, maximum: 1}
+        answer_steps:
+          type: array
+          maxItems: 30
+          items: {type: string, minLength: 1, maxLength: 500}
+        evidence_confirmed: {type: boolean}
     VerifiedQuestion:
       type: object
       additionalProperties: false
-      required: [id, capture_id, extraction_id, version, subject, question_text, options, formulas, has_diagram, has_handwriting, verified_by, verified_at]
+      required: [id, capture_id, extraction_id, version, subject, question_text, options, formulas, has_diagram, has_handwriting, answer_state, answer_state_confidence, answer_steps, evidence_confirmed, verified_by, verified_at]
       properties:
         id:
           type: string
@@ -2284,6 +2797,15 @@ components:
           type: string
           maxLength: 1000
           nullable: true
+        answer_state:
+          type: string
+          enum: [worked, blank, unclear, answer_area_missing]
+        answer_state_confidence: {type: number, minimum: 0, maximum: 1}
+        answer_steps:
+          type: array
+          maxItems: 30
+          items: {type: string, minLength: 1, maxLength: 500}
+        evidence_confirmed: {type: boolean}
         verified_by:
           type: string
           enum: [child, parent]
@@ -2302,10 +2824,21 @@ components:
           type: integer
           minimum: 1
           maximum: 3
+        mode:
+          type: string
+          enum: [guided_practice, review, mistake_explanation]
+          default: guided_practice
+        answer_state:
+          type: string
+          enum: [worked, blank, unclear, answer_area_missing]
+          nullable: true
+        evidence_confirmed:
+          type: boolean
+          default: false
     TutorHintResponse:
       type: object
       additionalProperties: false
-      required: [id, verified_question_id, created_at, schema_version, policy_version, provider, model, level, prompt, next_step, requires_child_response, direct_answer, cost_cents]
+      required: [id, verified_question_id, created_at, schema_version, policy_version, provider, model, level, mode, answer_state, prompt, next_step, requires_child_response, direct_answer, solution_steps, verification, cost_cents, hint_goal, revealed_elements, child_action, answer_exposure]
       properties:
         id:
           type: string
@@ -2319,19 +2852,20 @@ components:
         schema_version:
           type: string
           const: tutor-hint.v1
-        policy_version:
-          type: string
-          const: offline-tutor-policy.v1
-        provider:
-          type: string
-          const: local-policy
-        model:
-          type: string
-          const: rules-v1
+        policy_version: {type: string, minLength: 1, maxLength: 80}
+        provider: {type: string, minLength: 1, maxLength: 80}
+        model: {type: string, minLength: 1, maxLength: 120}
         level:
           type: integer
           minimum: 1
           maximum: 3
+        mode:
+          type: string
+          enum: [guided_practice, review, mistake_explanation]
+        answer_state:
+          type: string
+          enum: [worked, blank, unclear, answer_area_missing]
+          nullable: true
         prompt:
           type: string
           minLength: 1
@@ -2342,12 +2876,241 @@ components:
           maxLength: 500
         requires_child_response:
           type: boolean
-          const: true
+        solution_steps:
+          type: array
+          maxItems: 12
+          items: {type: string, minLength: 1, maxLength: 1000}
         direct_answer:
-          type: 'null'
+          type: [string, 'null']
+          maxLength: 1000
+        verification:
+          type: [string, 'null']
+          maxLength: 1000
         cost_cents:
           type: integer
-          const: 0
+          minimum: 0
+        hint_goal: {type: string, minLength: 1, maxLength: 80}
+        builds_on_turn_id: {type: string, format: uuid, nullable: true}
+        revealed_elements:
+          type: array
+          maxItems: 8
+          items: {type: string, minLength: 1, maxLength: 80}
+        child_action: {type: string, minLength: 1, maxLength: 300}
+        answer_exposure:
+          type: string
+          enum: [none, partial, full]
+    CurriculumSection:
+      type: object
+      additionalProperties: false
+      required: [title, chapter, learning_objectives]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 160}
+        chapter: {type: string, minLength: 1, maxLength: 120}
+        learning_objectives:
+          type: array
+          minItems: 1
+          maxItems: 12
+          items: {type: string, minLength: 1, maxLength: 200}
+    ImportCurriculumRequest:
+      type: object
+      additionalProperties: false
+      required: [filename, media_type, byte_size, content_sha256, authorization_statement, grade, textbook_version, term, sections]
+      properties:
+        filename: {type: string, minLength: 1, maxLength: 160}
+        media_type:
+          type: string
+          enum: [application/pdf, application/json]
+        byte_size: {type: integer, minimum: 0, maximum: 52428800}
+        content_sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
+        authorization_statement: {type: string, minLength: 1, maxLength: 500}
+        grade: {type: integer, minimum: 1, maximum: 6}
+        textbook_version: {type: string, minLength: 1, maxLength: 120}
+        term: {type: string, minLength: 1, maxLength: 40}
+        sections:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: {$ref: '#/components/schemas/CurriculumSection'}
+    CurriculumMaterial:
+      type: object
+      additionalProperties: false
+      required: [id, household_id, child_id, filename, media_type, byte_size, content_sha256, authorization_statement, status, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        household_id: {type: string, format: uuid}
+        child_id: {type: string, format: uuid}
+        filename: {type: string}
+        media_type: {type: string}
+        byte_size: {type: integer, minimum: 0}
+        content_sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
+        authorization_statement: {type: string}
+        status: {type: string, enum: [draft, uploaded, queued, parsing, needs_review, needs_ocr, failed, quarantined, unsupported_for_learning_content, parsed, published, rejected]}
+        created_at: {type: string, format: date-time}
+    CurriculumSnapshot:
+      type: object
+      additionalProperties: false
+      required: [id, household_id, child_id, material_id, grade, textbook_version, term, sections, status, version, created_at, published_at]
+      properties:
+        id: {type: string, format: uuid}
+        household_id: {type: string, format: uuid}
+        child_id: {type: string, format: uuid}
+        material_id: {type: string, format: uuid}
+        grade: {type: integer, minimum: 1, maximum: 6}
+        textbook_version: {type: string}
+        term: {type: string}
+        sections:
+          type: array
+          items: {$ref: '#/components/schemas/CurriculumSection'}
+        status: {type: string, enum: [draft, needs_review, published, rejected]}
+        version: {type: integer, minimum: 1}
+        created_at: {type: string, format: date-time}
+        published_at: {type: string, format: date-time, nullable: true}
+    CurriculumParsedPage:
+      type: object
+      additionalProperties: false
+      required: [page_number, title, text, confidence, image_available, image_path]
+      properties:
+        page_number: {type: integer, minimum: 1}
+        title: {type: string, minLength: 1, maxLength: 160}
+        text: {type: string, minLength: 1, maxLength: 40000}
+        confidence: {type: number, minimum: 0, maximum: 1}
+        image_available: {type: boolean}
+        image_path: {type: string, nullable: true}
+    CurriculumKnowledgeExercise:
+      type: object
+      additionalProperties: false
+      required: [source_key, page_number, question_text, visual_description, requires_visual_context, difficulty, confidence]
+      properties:
+        source_key: {type: string, minLength: 1, maxLength: 120}
+        page_number: {type: integer, minimum: 1, maximum: 400}
+        question_text: {type: string, minLength: 1, maxLength: 2000}
+        visual_description: {type: string, maxLength: 1000, nullable: true}
+        requires_visual_context: {type: boolean}
+        difficulty: {type: string, enum: [basic, medium, advanced]}
+        confidence: {type: number, minimum: 0, maximum: 1}
+    CurriculumKnowledgePoint:
+      type: object
+      additionalProperties: false
+      required: [id, household_id, child_id, material_id, snapshot_id, knowledge_map_id, knowledge_key, order_index, chapter_title, section_title, title, summary, learning_objectives, prerequisites, page_numbers, exercises, confidence, status, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        household_id: {type: string, format: uuid}
+        child_id: {type: string, format: uuid}
+        material_id: {type: string, format: uuid}
+        snapshot_id: {type: string, format: uuid}
+        knowledge_map_id: {type: string, format: uuid}
+        knowledge_key: {type: string, minLength: 1, maxLength: 80}
+        order_index: {type: integer, minimum: 0}
+        chapter_title: {type: string}
+        section_title: {type: string}
+        title: {type: string}
+        summary: {type: string}
+        learning_objectives:
+          type: array
+          items: {type: string}
+        prerequisites:
+          type: array
+          items: {type: string}
+        page_numbers:
+          type: array
+          items: {type: integer, minimum: 1, maximum: 400}
+        exercises:
+          type: array
+          items: {$ref: '#/components/schemas/CurriculumKnowledgeExercise'}
+        confidence: {type: number, minimum: 0, maximum: 1}
+        status: {type: string, enum: [draft, approved, rejected]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    CurriculumChapterSummary:
+      type: object
+      additionalProperties: false
+      required: [title, start_page, end_page, summary, knowledge_keys]
+      properties:
+        title: {type: string}
+        start_page: {type: integer, minimum: 1, maximum: 400}
+        end_page: {type: integer, minimum: 1, maximum: 400}
+        summary: {type: string}
+        knowledge_keys:
+          type: array
+          items: {type: string}
+    CurriculumKnowledgeMap:
+      type: object
+      additionalProperties: false
+      required: [id, household_id, child_id, material_id, snapshot_id, status, attempt, book_summary, chapters, page_count, analyzed_page_count, provider, model, schema_version, prompt_version, error_code, created_at, updated_at, reviewed_at, knowledge_points]
+      properties:
+        id: {type: string, format: uuid}
+        household_id: {type: string, format: uuid}
+        child_id: {type: string, format: uuid}
+        material_id: {type: string, format: uuid}
+        snapshot_id: {type: string, format: uuid}
+        status: {type: string, enum: [queued, analyzing, needs_review, approved, failed]}
+        attempt: {type: integer, minimum: 0}
+        book_summary: {type: string, nullable: true}
+        chapters:
+          type: array
+          items: {$ref: '#/components/schemas/CurriculumChapterSummary'}
+        page_count: {type: integer, minimum: 0}
+        analyzed_page_count: {type: integer, minimum: 0}
+        provider: {type: string, nullable: true}
+        model: {type: string, nullable: true}
+        schema_version: {type: string}
+        prompt_version: {type: string}
+        error_code: {type: string, nullable: true}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        reviewed_at: {type: string, format: date-time, nullable: true}
+        knowledge_points:
+          type: array
+          items: {$ref: '#/components/schemas/CurriculumKnowledgePoint'}
+    CurriculumImportResult:
+      type: object
+      additionalProperties: false
+      required: [material, snapshot]
+      properties:
+        material: {$ref: '#/components/schemas/CurriculumMaterial'}
+        snapshot: {$ref: '#/components/schemas/CurriculumSnapshot'}
+    CreateRecommendationRequest:
+      type: object
+      additionalProperties: false
+      required: [child_id]
+      properties:
+        child_id: {type: string, format: uuid}
+    DecideRecommendationRequest:
+      type: object
+      additionalProperties: false
+      required: [decision]
+      properties:
+        decision: {type: string, enum: [approve, reject]}
+    TaskRecommendation:
+      type: object
+      additionalProperties: false
+      required: [id, household_id, child_id, source_type, source_key, mistake_id, snapshot_id, curriculum_chunk_id, knowledge_point_id, title, reason, knowledge_point, exercises, estimated_minutes, scheduled_for, strategy_version, provider, model, status, task_id, created_at, decided_at]
+      properties:
+        id: {type: string, format: uuid}
+        household_id: {type: string, format: uuid}
+        child_id: {type: string, format: uuid}
+        source_type: {type: string, enum: [manual, mistake_review, curriculum_exercise, mixed_plan]}
+        source_key: {type: string, minLength: 1, maxLength: 160}
+        mistake_id: {type: string, format: uuid, nullable: true}
+        snapshot_id: {type: string, format: uuid, nullable: true}
+        curriculum_chunk_id: {type: string, format: uuid, nullable: true}
+        knowledge_point_id: {type: string, format: uuid, nullable: true}
+        title: {type: string, minLength: 1, maxLength: 120}
+        reason: {type: string, minLength: 1, maxLength: 240}
+        knowledge_point: {type: string, minLength: 1, maxLength: 120}
+        exercises:
+          type: array
+          maxItems: 5
+          items: {$ref: '#/components/schemas/TaskExercise'}
+        estimated_minutes: {type: integer, minimum: 5, maximum: 60}
+        scheduled_for: {type: string, format: date}
+        strategy_version: {type: string, minLength: 1, maxLength: 80}
+        provider: {type: string, minLength: 1, maxLength: 80}
+        model: {type: string, minLength: 1, maxLength: 160}
+        status: {type: string, enum: [pending, approved, rejected]}
+        task_id: {type: string, format: uuid, nullable: true}
+        created_at: {type: string, format: date-time}
+        decided_at: {type: string, format: date-time, nullable: true}
     CreateMistakeRequest:
       type: object
       additionalProperties: false
@@ -2371,6 +3134,27 @@ components:
         outcome:
           type: string
           enum: [correct, needs_review, skipped]
+        answer_summary: {type: string, maxLength: 1000}
+        submitted_answer: {type: string, maxLength: 1000, nullable: true}
+        evidence_confirmed: {type: boolean, default: false}
+    MistakeCloseoutRequest:
+      type: object
+      additionalProperties: false
+      required: [verified_question_id, session_id, outcome]
+      properties:
+        verified_question_id: {type: string, format: uuid}
+        session_id: {type: string, format: uuid}
+        outcome: {type: string, enum: [learned, needs_review, skipped]}
+        reason: {type: string, maxLength: 80, default: session_closeout}
+    MistakeCloseoutResult:
+      type: object
+      additionalProperties: false
+      required: [session_id, outcome, mistake, schedule]
+      properties:
+        session_id: {type: string, format: uuid}
+        outcome: {type: string, enum: [learned, needs_review, skipped]}
+        mistake: {$ref: '#/components/schemas/MistakeWithSchedule'}
+        schedule: {$ref: '#/components/schemas/ReviewSchedule'}
     MistakeRecord:
       type: object
       additionalProperties: false
@@ -2446,6 +3230,19 @@ components:
           $ref: '#/components/schemas/MistakeRecord'
         schedule:
           $ref: '#/components/schemas/ReviewSchedule'
+        question:
+          allOf:
+            - $ref: '#/components/schemas/ReviewQuestion'
+          nullable: true
+    ReviewQuestion:
+      type: object
+      additionalProperties: false
+      required: [id, question_text, options, formulas]
+      properties:
+        id: {type: string, format: uuid}
+        question_text: {type: string}
+        options: {type: array, items: {type: string}}
+        formulas: {type: array, items: {type: string}}
     ReviewItem:
       type: object
       additionalProperties: false
@@ -2505,6 +3302,15 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ReviewItem'
+    LearningDetail:
+      type: object
+      additionalProperties: false
+      required: [question, tutor_turns]
+      properties:
+        question: {$ref: '#/components/schemas/VerifiedQuestion'}
+        tutor_turns:
+          type: array
+          items: {$ref: '#/components/schemas/TutorHintResponse'}
     ChildDataExport:
       type: object
       additionalProperties: false
@@ -2729,10 +3535,17 @@ components:
           type: string
           minLength: 1
           maxLength: 200
+        answer_state:
+          type: string
+          enum: [worked, blank, unclear, answer_area_missing]
+          default: unclear
+        evidence_confirmed:
+          type: boolean
+          default: false
     Attempt:
       type: object
       additionalProperties: false
-      required: [id, event_id, household_id, child_id, session_id, sequence, answer_summary, recorded_at]
+      required: [id, event_id, household_id, child_id, session_id, sequence, answer_summary, answer_state, evidence_confirmed, recorded_at]
       properties:
         id:
           type: string
@@ -2754,6 +3567,11 @@ components:
           minimum: 1
         answer_summary:
           type: string
+        answer_state:
+          type: string
+          enum: [worked, blank, unclear, answer_area_missing]
+        evidence_confirmed:
+          type: boolean
         recorded_at:
           type: string
           format: date-time
@@ -2779,6 +3597,13 @@ components:
           type: string
           minLength: 1
           maxLength: 200
+        answer_state:
+          type: string
+          enum: [worked, blank, unclear, answer_area_missing]
+          default: unclear
+        evidence_confirmed:
+          type: boolean
+          default: false
     SyncBatchRequest:
       type: object
       additionalProperties: false
@@ -2818,6 +3643,15 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SyncEventResult'
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
   responses:
     Unauthorized:
       description: Missing or invalid synthetic principal.
@@ -2849,12 +3683,3 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
-    ErrorResponse:
-      type: object
-      additionalProperties: false
-      required: [code, message]
-      properties:
-        code:
-          type: string
-        message:
-          type: string

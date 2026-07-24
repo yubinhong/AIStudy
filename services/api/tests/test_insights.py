@@ -81,6 +81,21 @@ def test_weekly_report_rejects_unknown_profile() -> None:
     assert response.status_code == 404
 
 
+def test_parent_learning_details_are_scoped_and_children_cannot_read_them() -> None:
+    client = TestClient(create_app(insights_repository=EmptyInsightsRepository()))
+    path = f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/learning-details"
+
+    parent = client.get(path, headers=session_headers(client, role="parent"))
+    child = client.get(
+        path,
+        headers=session_headers(client, role="child", child_id=CHILD_A),
+    )
+
+    assert parent.status_code == 200
+    assert parent.json() == []
+    assert child.status_code == 403
+
+
 def test_parent_can_export_child_data_with_exact_idempotent_replay() -> None:
     client = TestClient(create_app(insights_repository=ExportInsightsRepository()))
     path = f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/exports"

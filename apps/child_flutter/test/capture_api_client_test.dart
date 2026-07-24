@@ -7,6 +7,47 @@ import 'package:image_picker/image_picker.dart';
 import 'package:study_child/capture_api_client.dart';
 
 void main() {
+  test(
+    'loads a private curriculum page image with the child session',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final subscription = server.listen((request) async {
+        expect(
+          request.headers.value(HttpHeaders.authorizationHeader),
+          'Bearer test-session-token',
+        );
+        expect(
+          request.uri.path,
+          '/households/00000000-0000-0000-0000-000000000001/'
+          'children/00000000-0000-0000-0000-000000000101/curriculum/'
+          'snapshots/00000000-0000-0000-0000-000000000201/pages/14/image',
+        );
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..headers.contentType = ContentType('image', 'jpeg')
+          ..add(const [0xff, 0xd8, 0xff, 0xd9]);
+        await request.response.close();
+      });
+      addTearDown(() async {
+        await subscription.cancel();
+        await server.close(force: true);
+      });
+      final client = CaptureApiClient(
+        baseUrl: 'http://${server.address.host}:${server.port}',
+        householdId: '00000000-0000-0000-0000-000000000001',
+        childId: '00000000-0000-0000-0000-000000000101',
+        authorizationToken: 'test-session-token',
+      );
+
+      final bytes = await client.loadCurriculumPageImage(
+        '00000000-0000-0000-0000-000000000201',
+        14,
+      );
+
+      expect(bytes, Uint8List.fromList(const [0xff, 0xd8, 0xff, 0xd9]));
+    },
+  );
+
   test('loads real tasks and resumes an existing active session', () async {
     final requests = <String>[];
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -199,6 +240,8 @@ void main() {
     'uploads only the confirmed derivative and records blocked image analysis',
     () async {
       final requests = <String>[];
+      final analysisKeys = <String>[];
+      final uploadKeys = <String>[];
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       const captureId = '00000000-0000-0000-0000-000000000501';
       const analysisJobId = '00000000-0000-0000-0000-000000000502';
@@ -230,6 +273,7 @@ void main() {
         }
         if (request.method == 'POST' &&
             request.uri.path.endsWith('/captures/upload')) {
+          uploadKeys.add(request.headers.value('Idempotency-Key')!);
           await request.drain<void>();
           request.response
             ..statusCode = HttpStatus.created
@@ -240,6 +284,7 @@ void main() {
         }
         if (request.method == 'POST' &&
             request.uri.path.endsWith('/image-analysis-jobs')) {
+          analysisKeys.add(request.headers.value('Idempotency-Key')!);
           final body = jsonDecode(
             utf8.decode(await request.expand((chunk) => chunk).toList()),
           );
@@ -282,33 +327,61 @@ void main() {
         await server.close(force: true);
       });
 
-      final receipt =
-          await CaptureApiClient(
-            baseUrl: 'http://${server.address.host}:${server.port}',
-            householdId: '00000000-0000-0000-0000-000000000001',
-            childId: '00000000-0000-0000-0000-000000000101',
-            authorizationToken: 'test-session-token',
-          ).uploadAndStartImageAnalysisBytes(
-            Uint8List.fromList(const [0xff, 0xd8, 0xff]),
-            sanitization: {
-              'schema_version': 'privacy-sanitization.v1',
-              'sanitizer_version': 'flutter-local-manual-v1',
-              'safe_to_upload': true,
-              'requires_confirmation': true,
-              'sensitive_types': const <String>[],
-              'region_count': 0,
-              'face_detected': false,
-              'qr_detected': false,
-              'barcode_detected': false,
-              'blocked_reasons': const <String>[],
-            },
-          );
+      final client = CaptureApiClient(
+        baseUrl: 'http://${server.address.host}:${server.port}',
+        householdId: '00000000-0000-0000-0000-000000000001',
+        childId: '00000000-0000-0000-0000-000000000101',
+        authorizationToken: 'test-session-token',
+      );
+      final receipt = await client.uploadAndStartImageAnalysisBytes(
+        Uint8List.fromList(const [0xff, 0xd8, 0xff]),
+        sanitization: {
+          'schema_version': 'privacy-sanitization.v1',
+          'sanitizer_version': 'flutter-local-manual-v1',
+          'safe_to_upload': true,
+          'requires_confirmation': true,
+          'sensitive_types': const <String>[],
+          'region_count': 0,
+          'face_detected': false,
+          'qr_detected': false,
+          'barcode_detected': false,
+          'blocked_reasons': const <String>[],
+        },
+      );
+      final retryReceipt = await client.uploadAndStartImageAnalysisBytes(
+        Uint8List.fromList(const [0xff, 0xd8, 0xff]),
+        sanitization: {
+          'schema_version': 'privacy-sanitization.v1',
+          'sanitizer_version': 'flutter-local-manual-v1',
+          'safe_to_upload': true,
+          'requires_confirmation': true,
+          'sensitive_types': const <String>[],
+          'region_count': 0,
+          'face_detected': false,
+          'qr_detected': false,
+          'barcode_detected': false,
+          'blocked_reasons': const <String>[],
+        },
+        retryNonce: 'retry-12345678',
+      );
 
       expect(receipt.imageAnalysisJobId, analysisJobId);
+      expect(retryReceipt.imageAnalysisJobId, analysisJobId);
       expect(receipt.imageAnalysisStatus, 'blocked');
       expect(receipt.hasRemoteOcr, isFalse);
+      expect(analysisKeys, [
+        'image-analysis-$captureId',
+        'image-analysis-$captureId-retry-retry-12345678',
+      ]);
+      expect(uploadKeys, [
+        startsWith('capture-upload-'),
+        startsWith('capture-upload-'),
+      ]);
+      expect(uploadKeys[0], isNot(uploadKeys[1]));
       expect(requests, [
         'POST /households/00000000-0000-0000-0000-000000000001/capture-sessions',
+        'POST /households/00000000-0000-0000-0000-000000000001/sessions/00000000-0000-0000-0000-000000000201/captures/upload',
+        'POST /households/00000000-0000-0000-0000-000000000001/captures/$captureId/image-analysis-jobs',
         'POST /households/00000000-0000-0000-0000-000000000001/sessions/00000000-0000-0000-0000-000000000201/captures/upload',
         'POST /households/00000000-0000-0000-0000-000000000001/captures/$captureId/image-analysis-jobs',
       ]);
@@ -372,7 +445,7 @@ void main() {
         final body = jsonDecode(
           utf8.decode(await request.expand((chunk) => chunk).toList()),
         );
-        expect(body['question_text'], 'synthetic corrected question');
+        expect(body['question_text'], '花丛中有蜻蜓和蝴蝶共35只');
         expect(body['options'], ['A', 'B']);
         expect(body['formulas'], ['1+1']);
         expect(body['expected_capture_version'], 2);
@@ -427,7 +500,7 @@ void main() {
     expect(extraction['question_text'], 'synthetic question');
     await client.verifyQuestionExtraction(
       receipt: receipt,
-      questionText: 'synthetic corrected question',
+      questionText: '花丛中有蜻蜓和蝴蝶共35只',
       extraction: extraction,
     );
     expect(requests, [
@@ -668,6 +741,38 @@ void main() {
     },
   );
 
+  test('uses a Tutor-specific error when a hint request is rejected', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    const verifiedQuestionId = '00000000-0000-0000-0000-000000000703';
+    final subscription = server.listen((request) async {
+      await request.drain<void>();
+      request.response
+        ..statusCode = HttpStatus.conflict
+        ..headers.contentType = ContentType.json
+        ..write(jsonEncode({'detail': 'capture state conflict'}));
+      await request.response.close();
+    });
+    addTearDown(() async {
+      await subscription.cancel();
+      await server.close(force: true);
+    });
+    final client = CaptureApiClient(
+      baseUrl: 'http://${server.address.host}:${server.port}',
+      householdId: 'household',
+      childId: 'child',
+      authorizationToken: 'test-session-token',
+    );
+
+    await expectLater(
+      client.createTutorHint(verifiedQuestionId: verifiedQuestionId, level: 1),
+      throwsA(
+        isA<CaptureApiException>()
+            .having((error) => error.statusCode, 'statusCode', 409)
+            .having((error) => error.message, 'message', '暂时无法获取这道题的提示，请稍后重试。'),
+      ),
+    );
+  });
+
   test('completes the current session with an explicit outcome', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     const sessionId = '00000000-0000-0000-0000-000000000801';
@@ -747,7 +852,12 @@ void main() {
         final body = jsonDecode(
           utf8.decode(await request.expand((chunk) => chunk).toList()),
         );
-        expect(body, {'outcome': 'correct'});
+        expect(body, {
+          'outcome': 'correct',
+          'answer_summary': '旧客户端未提交作答文本',
+          'submitted_answer': null,
+          'evidence_confirmed': false,
+        });
         request.response
           ..statusCode = HttpStatus.ok
           ..headers.contentType = ContentType.json
@@ -775,6 +885,48 @@ void main() {
     final reviewed = await client.reviewMistake(mistakeId, 'correct');
     expect(due.single['mistake'], {'id': mistakeId});
     expect(reviewed['mistake'], {'id': mistakeId});
+  });
+
+  test('falls back to all mistakes when none are due yet', () async {
+    final requestedDueValues = <String?>[];
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    const mistakeId = '00000000-0000-0000-0000-000000000902';
+    final subscription = server.listen((request) async {
+      final dueOnly = request.uri.queryParameters['due_only'];
+      requestedDueValues.add(dueOnly);
+      request.response
+        ..statusCode = HttpStatus.ok
+        ..headers.contentType = ContentType.json
+        ..write(
+          jsonEncode(
+            dueOnly == 'true'
+                ? []
+                : [
+                    {
+                      'mistake': {'id': mistakeId},
+                      'schedule': {'due_at': '2026-07-24T08:00:00Z'},
+                    },
+                  ],
+          ),
+        );
+      await request.response.close();
+    });
+    addTearDown(() async {
+      await subscription.cancel();
+      await server.close(force: true);
+    });
+    final client = CaptureApiClient(
+      baseUrl: 'http://${server.address.host}:${server.port}',
+      householdId: 'household',
+      childId: 'child',
+      sessionId: 'session',
+      authorizationToken: 'test-session-token',
+    );
+
+    final reviewQueue = await client.listReviewMistakes();
+
+    expect(requestedDueValues, ['true', 'false']);
+    expect(reviewQueue.single['mistake'], {'id': mistakeId});
   });
 }
 

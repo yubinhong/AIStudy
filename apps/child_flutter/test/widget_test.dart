@@ -1,14 +1,77 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'package:study_child/auth_client.dart';
+import 'package:study_child/capture_api_client.dart';
 import 'package:study_child/main.dart';
 import 'package:study_child/privacy_sanitization_preview.dart';
 import 'package:study_child/startup_transition.dart';
+
+class _FullSolutionCaptureClient extends CaptureApiClient {
+  _FullSolutionCaptureClient()
+    : super(
+        baseUrl: 'http://localhost:8000',
+        householdId: '00000000-0000-0000-0000-000000000001',
+        childId: '00000000-0000-0000-0000-000000000101',
+        authorizationToken: 'test-session',
+      );
+
+  @override
+  Future<Map<String, dynamic>> createTutorHint({
+    required String verifiedQuestionId,
+    required int level,
+    String mode = 'guided_practice',
+    String? answerState,
+    bool evidenceConfirmed = false,
+  }) async {
+    return <String, dynamic>{
+      'prompt': '先找出题目给出的条件。',
+      'solution_steps': <String>['列出算式', '完成计算'],
+      'direct_answer': '42',
+      'verification': '把答案代回题意检查。',
+    };
+  }
+}
+
+class _CurriculumTaskClient extends CaptureApiClient {
+  _CurriculumTaskClient()
+    : super(
+        baseUrl: 'http://localhost:8000',
+        householdId: '00000000-0000-0000-0000-000000000001',
+        childId: '00000000-0000-0000-0000-000000000101',
+        authorizationToken: 'test-session',
+      );
+
+  @override
+  Future<List<Map<String, dynamic>>> listTasks() async {
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    return [
+      {
+        'id': '00000000-0000-0000-0000-000000000501',
+        'title': '位置关系练习',
+        'status': 'assigned',
+        'scheduled_for': today,
+        'exercises': [
+          {
+            'source_type': 'curriculum',
+            'source_title': '位置',
+            'source_page': 14,
+            'snapshot_id': '00000000-0000-0000-0000-000000000201',
+            'question_text': '把铅笔放在书本的下面。',
+            'visual_description': '原页展示一本书和一支铅笔。',
+            'requires_visual_context': true,
+          },
+        ],
+      },
+    ];
+  }
+}
 
 void main() {
   testWidgets('configures and persists the server before password login', (
@@ -31,9 +94,11 @@ void main() {
               mustChangePassword: false,
             );
           },
-          onLoggedIn: (baseUrl, token, mustChangePassword) {
+          healthAction: (_) async {},
+          onLoggedIn: (baseUrl, token, mustChangePassword, username) {
             expect(baseUrl, 'http://192.168.1.4:8000');
             expect(mustChangePassword, isFalse);
+            expect(username, 'child-a');
             savedToken = token;
           },
         ),
@@ -53,6 +118,51 @@ void main() {
     expect(store.serverBaseUrl, usedBaseUrl);
     expect(store.sessionToken, 'configured-session');
     expect(savedToken, 'configured-session');
+  });
+
+  testWidgets('login form remains scrollable on a compact viewport', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 320);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChildLoginScreen(
+          initialServerBaseUrl: defaultServerBaseUrl,
+          store: _MemoryChildAuthStore(),
+          onLoggedIn: (_, _, _, _) {},
+          healthAction: (_) async {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('登录学习桌'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('shows the configured service health on the login form', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChildLoginScreen(
+          initialServerBaseUrl: 'http://192.168.1.4:8000',
+          store: _MemoryChildAuthStore(),
+          onLoggedIn: (_, _, _, _) {},
+          healthAction: (baseUrl) async {
+            expect(baseUrl, 'http://192.168.1.4:8000');
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('学习服务已连接'), findsOneWidget);
+    expect(find.text('重新检测'), findsOneWidget);
   });
 
   testWidgets('restores a pending session into the first password screen', (
@@ -189,12 +299,32 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('curriculum task offers its authenticated source page', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LearningDeskScreen(
+          displayName: '小禾',
+          curriculumVersion: 'math-demo-2026',
+          captureClient: _CurriculumTaskClient(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('把铅笔放在书本的下面。'), findsOneWidget);
+    expect(find.text('查看教材第 14 页原图'), findsOneWidget);
+  });
+
   testWidgets('opens OCR confirmation from the learning desk', (tester) async {
     await tester.pumpWidget(
-      StudyChildApp(
-        loadChildren: () async => [
-          {'display_name': '小禾', 'curriculum_version': 'math-demo-2026'},
-        ],
+      const MaterialApp(
+        home: LearningDeskScreen(
+          displayName: '小禾',
+          username: 'xiaotangyuan',
+          curriculumVersion: 'math-demo-2026',
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -222,10 +352,12 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      StudyChildApp(
-        loadChildren: () async => [
-          {'display_name': '小禾', 'curriculum_version': 'math-demo-2026'},
-        ],
+      const MaterialApp(
+        home: LearningDeskScreen(
+          displayName: '小禾',
+          username: 'xiaotangyuan',
+          curriculumVersion: 'math-demo-2026',
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -234,7 +366,7 @@ void main() {
     await tester.tap(find.text('继续学习'));
     await tester.pumpAndSettle();
 
-    expect(find.text('小禾的数学练习'), findsOneWidget);
+    expect(find.text('xiaotangyuan的数学练习'), findsOneWidget);
     expect(find.text('先想一想'), findsOneWidget);
     expect(find.text('我想到了'), findsOneWidget);
 
@@ -247,6 +379,46 @@ void main() {
     await tester.tap(find.text('我想到了'));
     await tester.pump();
     expect(find.text('继续说下去'), findsOneWidget);
+  });
+
+  testWidgets('returns to the previous page after the full solution is shown', (
+    tester,
+  ) async {
+    final client = _FullSolutionCaptureClient();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: FilledButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => TutorHintScreen(
+                    verifiedQuestionId: 'verified-question',
+                    captureClient: client,
+                    answerState: 'blank',
+                    evidenceConfirmed: true,
+                  ),
+                ),
+              ),
+              child: const Text('打开讲解'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('打开讲解'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('完整解答'), findsOneWidget);
+    expect(find.text('返回首页'), findsOneWidget);
+    expect(find.text('查看完整解答'), findsNothing);
+
+    final returnHome = find.text('返回首页');
+    await tester.ensureVisible(returnHome);
+    await tester.tap(returnHome);
+    await tester.pumpAndSettle();
+    expect(find.text('打开讲解'), findsOneWidget);
   });
 
   testWidgets(
@@ -290,16 +462,199 @@ void main() {
       expect(selection!.sha256, hasLength(64));
     },
   );
+
+  testWidgets('bounds the sanitized PNG before upload', (tester) async {
+    final selection = await tester.runAsync(() async {
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      canvas.drawRect(
+        const Rect.fromLTWH(0, 0, 400, 300),
+        Paint()..color = const Color(0xFFE5E1D8),
+      );
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(400, 300);
+      final encoded = await image.toByteData(format: ui.ImageByteFormat.png);
+      final result = await renderSanitizedImage(
+        encoded!.buffer.asUint8List(),
+        const [Rect.fromLTWH(0.1, 0.1, 0.2, 0.1)],
+        maxDimensions: const [180, 150, 120],
+      );
+      image.dispose();
+      picture.dispose();
+      return result;
+    });
+
+    expect(selection!.bytes.length, lessThanOrEqualTo(maxSanitizedUploadBytes));
+    expect(selection.pixelWidth, 180);
+    expect(selection.pixelHeight, 135);
+    expect(selection.maskCount, 1);
+  });
+
+  testWidgets('shows retry and retake actions after recognition failure', (
+    tester,
+  ) async {
+    const receipt = CaptureUploadReceipt(
+      captureId: '00000000-0000-0000-0000-000000000801',
+      captureVersion: 2,
+      mediaType: 'image/png',
+      byteSize: 68,
+      contentSha256:
+          '0000000000000000000000000000000000000000000000000000000000000000',
+      ocrJobId: '',
+      ocrJobStatus: 'not_started',
+      imageAnalysisJobId: '00000000-0000-0000-0000-000000000802',
+      imageAnalysisStatus: 'queued',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: OcrConfirmationScreen(
+          imageBytes: Uint8List.fromList(
+            base64Decode(
+              'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+            ),
+          ),
+          uploadReceipt: receipt,
+          captureClient: CaptureApiClient(
+            baseUrl: 'http://127.0.0.1:1',
+            householdId: 'household',
+            childId: 'child',
+            authorizationToken: 'test-session-token',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('重新识别当前照片'), findsOneWidget);
+    expect(find.text('重新拍题'), findsOneWidget);
+  });
+
+  testWidgets('uses a large scrollable multiline question editor', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const MaterialApp(home: OcrConfirmationScreen()));
+    await tester.pumpAndSettle();
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.expands, isTrue);
+    expect(field.maxLines, isNull);
+    expect(find.text('题目较长时可在框内上下拖动查看，确认前请逐字核对。'), findsOneWidget);
+  });
+
+  testWidgets('keeps upload progress visible until the upload finishes', (
+    tester,
+  ) async {
+    final upload = Completer<CaptureUploadReceipt>();
+    const receipt = CaptureUploadReceipt(
+      captureId: '00000000-0000-0000-0000-000000000901',
+      captureVersion: 1,
+      mediaType: 'image/png',
+      byteSize: 68,
+      contentSha256:
+          '0000000000000000000000000000000000000000000000000000000000000000',
+      ocrJobId: '',
+      ocrJobStatus: 'not_started',
+      imageAnalysisJobId: '00000000-0000-0000-0000-000000000902',
+      imageAnalysisStatus: 'queued',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CaptureUploadProgressScreen(
+          imageBytes: Uint8List.fromList(
+            base64Decode(
+              'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+            ),
+          ),
+          sanitization: const {'safe_to_upload': true},
+          captureClient: CaptureApiClient(
+            baseUrl: 'http://127.0.0.1:1',
+            householdId: 'household',
+            childId: 'child',
+            authorizationToken: 'test-session-token',
+          ),
+          uploadAction: () => upload.future,
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('正在处理题目照片'), findsOneWidget);
+    expect(find.text('照片已完成脱敏，正在安全上传并启动识别……'), findsOneWidget);
+
+    upload.complete(receipt);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('ocr-confirmation')), findsOneWidget);
+  });
+
+  testWidgets('shows account switching and logout actions', (tester) async {
+    final first = const ChildSavedAccount(
+      username: 'child-a',
+      serverBaseUrl: 'http://192.168.1.4:8000',
+      sessionToken: 'session-a',
+    );
+    final second = const ChildSavedAccount(
+      username: 'child-b',
+      serverBaseUrl: 'http://192.168.1.4:8000',
+      sessionToken: 'session-b',
+    );
+    final store = _MemoryChildAuthStore(savedAccounts: [first, second]);
+    ChildSavedAccount? switched;
+    var added = false;
+    var loggedOut = false;
+    Widget accountHost() => Builder(
+      builder: (context) => Scaffold(
+        body: Center(
+          child: FilledButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => ChildAccountScreen(
+                  store: store,
+                  currentToken: first.sessionToken,
+                  onAddAccount: () async => added = true,
+                  onLogout: () async => loggedOut = true,
+                  onSwitchAccount: (account) async => switched = account,
+                ),
+              ),
+            ),
+            child: const Text('打开账号页'),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(MaterialApp(home: accountHost()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('打开账号页'));
+    await tester.pumpAndSettle();
+    expect(find.text('切换账号'), findsOneWidget);
+    await tester.tap(find.text('切换').first);
+    await tester.pumpAndSettle();
+    expect(switched?.username, 'child-b');
+
+    await tester.tap(find.text('打开账号页'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('添加账号'));
+    await tester.pumpAndSettle();
+    expect(added, isTrue);
+
+    await tester.tap(find.text('打开账号页'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('注销当前账号'));
+    await tester.pumpAndSettle();
+    expect(loggedOut, isTrue);
+  });
 }
 
 class _MemoryChildAuthStore implements ChildAuthStore {
   _MemoryChildAuthStore({
     this.serverBaseUrl,
     this.sessionToken = 'old-server-session',
-  });
+    List<ChildSavedAccount>? savedAccounts,
+  }) : savedAccounts = savedAccounts ?? [];
 
   String? serverBaseUrl;
   String? sessionToken;
+  List<ChildSavedAccount> savedAccounts;
 
   @override
   Future<void> clearSessionToken() async => sessionToken = null;
@@ -320,4 +675,22 @@ class _MemoryChildAuthStore implements ChildAuthStore {
 
   @override
   Future<void> writeSessionToken(String token) async => sessionToken = token;
+
+  @override
+  Future<List<ChildSavedAccount>> readSavedAccounts() async => savedAccounts;
+
+  @override
+  Future<void> saveAccount(ChildSavedAccount account) async {
+    final index = savedAccounts.indexWhere((item) => item.key == account.key);
+    if (index == -1) {
+      savedAccounts.add(account);
+    } else {
+      savedAccounts[index] = account;
+    }
+  }
+
+  @override
+  Future<void> removeAccount(ChildSavedAccount account) async {
+    savedAccounts.removeWhere((item) => item.key == account.key);
+  }
 }

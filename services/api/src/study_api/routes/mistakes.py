@@ -15,6 +15,8 @@ from study_api.auth import (
 )
 from study_api.domain.mistake_repository import (
     CreateMistakeRequest,
+    MistakeCloseoutRequest,
+    MistakeCloseoutResult,
     MistakeRepository,
     MistakeWithSchedule,
     ReviewMistakeRequest,
@@ -38,6 +40,41 @@ def _child_scope(principal: AuthenticatedPrincipal, household_id: UUID, child_id
     role = require_household(principal, household_id)
     if role is AccountRole.CHILD and require_bound_child(principal) != child_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
+
+
+@router.post(
+    "/children/{child_id}/mistake-closeout",
+    response_model=MistakeCloseoutResult,
+)
+def closeout_mistake(
+    household_id: UUID,
+    child_id: UUID,
+    request: MistakeCloseoutRequest,
+    idempotency_key: IdempotencyKey,
+    principal: Principal,
+    repository: Repository,
+) -> JSONResponse:
+    """Atomically finish a capture session and persist only an evidence-backed mistake."""
+
+    _child_scope(principal, household_id, child_id)
+    try:
+        result, replayed = repository.closeout(
+            household_id, child_id, request, idempotency_key
+        )
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail="resource not found") from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except IdempotencyConflictError as error:
+        raise HTTPException(
+            status_code=409,
+            detail="idempotency key reused with a different payload",
+        ) from error
+    return JSONResponse(
+        status_code=200,
+        content=result.model_dump(mode="json"),
+        headers={"Idempotency-Replayed": "true"} if replayed else {},
+    )
 
 
 @router.post(

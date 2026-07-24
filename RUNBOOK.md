@@ -15,12 +15,12 @@ SLO 必须在 staging 获得基线后由产品/技术 Owner 批准，不在零�
 
 | 指标 | 目标 | 告警阈值 | 当前状态 |
 | --- | --- | --- | --- |
-| API 可用性 | `TBD` | `TBD` | 无服务 |
-| 任务/会话 API 延迟 | `TBD` | `TBD` | 无基线 |
-| 本地脱敏/云视觉解析/首个 Tutor 提示延迟 | `TBD` | `TBD` | 仅旧本地 OCR 有 synthetic 基线；新路线无 Provider |
-| 错误率 | `TBD` | `TBD` | 无基线 |
+| API 可用性 | `TBD` | `TBD` | Ubuntu 自用健康检查存在，无 SLO 基线 |
+| 任务/会话 API 延迟 | `TBD` | `TBD` | 无正式基线 |
+| 本地脱敏/云视觉解析/首个 Tutor 提示延迟 | `TBD` | `TBD` | NewAPI synthetic 已通过，无真实家庭基线 |
+| 错误率 | `TBD` | `TBD` | 无正式基线 |
 | 离线同步冲突/失败 | 不得丢失或覆盖学习记录 | 阈值 `TBD`；任何确认的数据丢失立即升级 | 无实现 |
-| AI Schema/安全失败 | 阻断不合规响应 | 阈值 `TBD`；无错题门禁直接代答、错误完整讲解或敏感泄露立即升级 | 现有最小 Tutor eval；ADR-0020 eval 未实现 |
+| AI Schema/安全失败 | 阻断不合规响应 | 阈值 `TBD`；无错题门禁直接代答、错误完整讲解或敏感泄露立即升级 | 本地 5-case Tutor eval 与来源键推荐回归已通过；真实 Provider 基线未建立 |
 | AI 成本 | 每家庭/请求预算 `TBD` | 超批准预算即告警/降级 | 无成本数据 |
 | 导出/删除/备份失败 | 0 个静默失败 | 任一超时或错误立即告警 | 导出/删除/备份恢复已实现；自动告警未接入 |
 
@@ -29,7 +29,7 @@ SLO 必须在 staging 获得基线后由产品/技术 Owner 批准，不在零�
 ### 当前环境
 
 - local：`infra/compose/compose.yml` 已编排 PostgreSQL、Redis、MinIO、API、家长 Web、一次性 Alembic migration 和默认启动的 ImageAnalysis worker；Apple Silicon `linux/arm64` 调试镜像构建成功。NewAPI 默认关闭；此时 worker 保持空闲。
-- Ubuntu 自用验收：宿主为 Ubuntu 24.04/x86_64，远端 `.env` 权限 600。2026-07-18 前滚至 `0016_child_account_uniqueness`；API `0.8.0`、PostgreSQL、MinIO、Redis、Web、ImageAnalysis 和 DataLifecycle worker 运行。新流式上传使用内部 `minio:9000`，宿主/LAN 未发布 MinIO `9000`。synthetic 请求已到达 NewAPI，但当前 Provider 返回 HTTP `402`，因此 `Extraction → VerifiedQuestion → TutorTurn` 需在额度恢复后复验；PostgreSQL custom dump 与 MinIO 快照已在隔离 PostgreSQL 16.10 容器恢复校验。生产监控仍未实现。
+- Ubuntu 自用验收：宿主为 Ubuntu 24.04/x86_64，远端 `.env` 权限 600。2026-07-24 已前滚至 `0025_curriculum_knowledge_map`；API `0.11.0`、PostgreSQL、MinIO、Redis、Web、ImageAnalysis、DataLifecycle、MaterialParse 和 CurriculumAnalysis worker 运行健康。新流式上传使用内部 `minio:9000`，宿主/LAN 未发布 MinIO `9000`。PDF-only 解析/发布、错题 closeout、ReviewAttempt、Tutor Hint、私有原页、知识图谱和来源受限推荐已部署；API/Web `/healthz`、远端 current/head 及新 OpenAPI 路径已校验。NewAPI synthetic 完整解答已通过，真实规划质量/成本与生产监控仍未实现。
 - 真机拍题当前事实：API/Flutter/Compose/Ubuntu 已切换为 App 携带 Session 向 API 上传，且 Compose 不发布 MinIO `9000`；Nova 9/iPad 需在设备可用时重新执行拍题、权限、弱网和重启验收。Provider HTTP `402` 只表示 NewAPI 余额/模型额度不可用，不应误判为上传或 MinIO 故障。
 - staging：未建立。
 - production：未建立且未获部署授权。
@@ -45,24 +45,29 @@ SLO 必须在 staging 获得基线后由产品/技术 Owner 批准，不在零�
 5. 验证登出、改密、停用、重置和 30 天到期均能撤销会话；验证 Web Cookie/CSRF、Flutter 登录前服务端地址配置和 Keychain/Android Keystore 生命周期。
 6. 唯一管理员忘记密码时当前仅允许服务器本机维护人员按恢复方案处理；正式受审计恢复命令仍待实现，不提供短信、邮箱或 MFA 恢复。
 
-回滚时优先前滚修复；确需回退时只回退应用镜像并保留 `0012`～`0016` 数据表，不执行生产 downgrade，不删除 Profile/Device/Account/AuthSession/TutorTurn/Export 或恢复已撤销会话。迁移前备份必须保留到新版本验收完成；恢复验证脚本不得对运行中数据库执行。
+回滚时优先前滚修复；确需回退时只回退应用镜像并保留 `0012`～`0019` 数据表，不执行生产 downgrade，不删除 Profile/Device/Account/AuthSession/TutorTurn/Export 或恢复已撤销会话。迁移前备份必须保留到新版本验收完成；恢复验证脚本不得对运行中数据库执行。
 
 ### 统一孩子管理迁移（PLAN-0013 / ADR-0019 Proposed；首版已实施）
 
 实施前先对 `accounts` 与 `child_profiles` 做只读基数审计，分别统计无账号档案、一对一绑定和同档案多账号；报告只使用 UUID/计数，不打印用户名或儿童姓名。发现重复绑定时停止自动迁移，由项目 Owner 选择保留的账号并显式处理其余账号/会话，不得静默删除。
 
-发布顺序为：备份 → 数据审计/处置 → 部署扩展后的数据库约束与 API 聚合合同 → 运行原子创建/授权 smoke → 部署匹配 Web → 用两个 synthetic 孩子验证切换、刷新和删除回退 → 收缩旧 Web 分离创建入口。数据库继续保留 `accounts`/`child_profiles` 两表，应用回滚不得重新允许同档案多账号。该流程只在 ADR-0019 Accepted 且实现/测试完成后执行；当前 Ubuntu 不做任何迁移。
+发布顺序为：备份 → 数据审计/处置 → 部署扩展后的数据库约束与 API 聚合合同 → 运行原子创建/授权 smoke → 部署匹配 Web → 用两个 synthetic 孩子验证切换、刷新和删除回退 → 收缩旧 Web 分离创建入口。数据库继续保留 `accounts`/`child_profiles` 两表，应用回滚不得重新允许同档案多账号。该流程只在 ADR-0019 Accepted 且实现/测试完成后执行；该首版流程已在 Ubuntu 完成前滚，双孩子浏览器 E2E 仍待执行。
 
-### 教材驱动错题闭环发布（ADR-0020 / PLAN-0014；错题/复习最小闭环已实施）
+### 教材驱动错题闭环与智能推荐发布（ADR-0020/0022；PLAN-0016/0017）
 
 按独立特性开关和里程碑发布，禁止一次性开放全部目标能力：
 
-1. 完成 PLAN-0012 后，备份 PostgreSQL/MinIO，先部署 Curriculum/Material/Snapshot 迁移、API/worker 和家长审核 Web；只用 synthetic PDF 验证，真实教材导入前必须批准文件处理依赖、资源上限、授权声明、原文保留与备份删除。
-2. 确认未发布/跨家庭材料无法检索、Snapshot 来源可追溯后，再部署匹配的 Flutter 数学三入口与错题讲解。Provider/完整讲解开关默认关闭，固定数学 eval 必须通过题目/作答分区、`worked/blank/unclear/answer_area_missing`、人工修正、有作答错步讲解和空白从头讲解后才开启。
-3. `0017` 已部署 MistakeRecord/ReviewSchedule；继续用 synthetic 时钟验证 ReviewPolicy v1、时区、并发、重试和重激活。当前 `needs_review` 不会自动生成错误答案/知识点，正式记录必须引用已确认 VerifiedQuestion 和会话。
-4. 最后开放 TaskRecommendation；默认必须家长批准。到期复习确定性下发需家庭显式开启，AI 新编题继续关闭。
+1. 先备份 PostgreSQL/MinIO，并接受 ADR-0021、锁定 PDF 解析依赖、许可证/SBOM、无网络 worker、PDF 对象展开/CPU/内存/超时上限和原文保留；先成对部署 Web/OpenAPI/API 的 PDF-only allowlist，确认 Word/PPT/Excel 新上传被稳定拒绝。
+2. 部署新增迁移和 API/解析 worker，但保持解析开关关闭；依次用 synthetic 文本/扫描/加密/损坏/超限/危险 PDF 验证状态机、隔离、重试、删除和恢复，再开放家长预览/审核发布。既有非 PDF 对象不得进入回填队列。
+3. 独立部署错题 closeout 与 ReviewAttempt/ReviewPolicy v2：先验证同一 Session 重试只产生一条错题、失败不显示成功、历史只生成证据完整候选；再验证到期/全部真实题目、服务端判定、`1/3/7/14/30`、并发/断网/时区后开放复习入口。
+4. 部署 Tutor Hint Schema/Policy 和匹配 Flutter；固定题集证明 L2 绑定 L1、增加方法脚手架且 L1/L2 不泄露答案。Provider/完整讲解仍须通过四态、worked/blank、来源和确定性校验。
+5. 只有已发布教材的来源回看和跨孩子授权通过后才开启 Tutor grounding；TaskRecommendation 最后接入已审核页级题目/知识点，继续默认家长审批，AI 新编题保持关闭。
+6. 部署 `0024_intelligent_recommendations` 前再次备份并记录 `alembic current`；按“migration → API/worker → Web → Flutter”成对前滚。2026-07-23 已完成本轮 rsync、Compose 重建、远端 Alembic `current/head` 校验和 API/Web 健康校验；后续仍需用 synthetic/真实受控数据确认旧 Task/Recommendation 可读、新推荐只引用允许的 source key、到期错题排当天、每日不超过 3 项、批准后 Task 保留具体题/页码/日期/时长。
+7. 打开真实 NewAPI 规划前，先用非儿童 synthetic 题和教材验证 L1/L2 相关性、来源键拒绝、超时/Schema 失败、请求量和费用；真实孩子数据验收只发送已确认题目文字和有界教材候选，不发送图片/PDF/对象键。
+8. `0025_curriculum_knowledge_map` 已于 2026-07-24 前滚：先完成 `/home/syin/study-backups/20260724T015356Z` 的 quiesced PostgreSQL/MinIO 备份和隔离恢复，再部署匹配 API/Web/五个 worker；API `0.11.0`、迁移头、健康端点、私有 MinIO 边界及教材分析/原页 OpenAPI 路径通过。仍须用不含个人信息的 synthetic 图文 PDF 验证私有原页与页码一致、每批最多 4 页、缺页/伪造页码/伪造练习键整体拒绝、token/延迟/成本可见、删除同时清理 `curriculum/` 和 `curriculum-previews/`；随后才可进行真实教材和 Flutter 原页人工验收。
+9. 真实教材只允许上传家庭有权使用的清洁电子版，家长必须确认文件不含儿童姓名、个人批注或其他个人信息。`curriculum-analysis-worker` 会把页级派生图发送给配置的单一 NewAPI Provider；未确认 Provider 数据条款、预算、模型上下文和留存策略前，保持 `STUDY_NEWAPI_ENABLED=false`，不得用真实教材试跑。
 
-回滚只关闭对应开关并回退匹配应用，不破坏性 downgrade 或删除已发布 Snapshot、Mistake、Attempt、Review/审批事实。Provider 不可用时保留手工教材/错题、既有讲解和确定性复习队列。当前 Ubuntu 未执行上述迁移或部署。
+回滚只停止 `curriculum-analysis-worker`，关闭 `material_parsing/curriculum_knowledge_map/curriculum_grounding/mistake_closeout/review_v2/progressive_hints/task_recommendation_sources` 对应能力并回退匹配应用，不破坏性 downgrade 或删除已发布 Snapshot、已批准 KnowledgeMap、Mistake、Attempt/ReviewAttempt、Review/审批事实。Provider 或解析器不可用时保留私有原 PDF/原页、手工教材、既有讲解和确定性复习事实；解析草稿/索引可重算，发布/学习事实不可覆盖，也不得恢复从残缺页级文字抽题。
 
 ### 自用 NewAPI 启用流程
 
@@ -76,9 +81,10 @@ export STUDY_NEWAPI_VISION_MODEL="<vision-model>"
 export STUDY_NEWAPI_USER_AGENT="study-api/0.5"
 cd services/api
 uv run python scripts/run_image_analysis_worker.py --watch
+uv run python scripts/run_curriculum_analysis_worker.py --watch
 ```
 
-启用前先用 synthetic 图片验证 NewAPI 返回 `question-extraction.v1` JSON；默认 `STUDY_NEWAPI_USER_AGENT=study-api/0.5`，用于兼容会拦截 Python 默认 `urllib` 签名的前置网关。该值只能是 1–256 个可打印 ASCII 字符，禁止换行或其他控制字符。worker 的失败只写稳定错误码，原始 Provider 请求/响应不写日志。发现外发范围、模型行为或成本异常时，立即将 `STUDY_NEWAPI_ENABLED=false` 并停止 worker；已入队任务不会在关闭开关后继续被新 worker 领取。
+启用前先用 synthetic 图片验证 NewAPI 返回 `question-extraction.v1`，再用 synthetic 图文教材验证 `curriculum-page-analysis.v1` 与 `curriculum-book-analysis.v1`；默认 `STUDY_NEWAPI_USER_AGENT=study-api/0.5`，用于兼容会拦截 Python 默认 `urllib` 签名的前置网关。该值只能是 1–256 个可打印 ASCII 字符，禁止换行或其他控制字符。worker 的失败只写稳定错误码，原始 Provider 请求/响应、教材文字和页图不写日志。发现外发范围、模型行为或成本异常时，立即将 `STUDY_NEWAPI_ENABLED=false` 并停止两个 Provider worker；已入队任务不会在关闭开关后继续被新 worker 领取。
 
 ### 生产前置检查
 
@@ -90,7 +96,7 @@ uv run python scripts/run_image_analysis_worker.py --watch
 - [x] 自用 NewAPI 的 URL、API key、视觉模型、响应 Schema、停用开关和 synthetic 大图联调已验证；PrivacySanitizer/用户确认/临时副本删除 eval 已通过。
 - [ ] ADR-0018 上传收敛：本地与 Ubuntu OpenAPI/Flutter/API/Compose 已切换为单一有界流式上传；公开 MinIO 配置和 `9000` 映射已删除，相关本地回归及远端端口复核通过；断连/超限/超时/并发现场压测和真机验证待执行。
 - [ ] ADR-0019/PLAN-0013：孩子聚合原子创建/幂等/唯一约束、孩子选择/服务端过滤、反向授权和 API/Web 成对部署已通过；双孩子浏览器 E2E、旧数据审计和真实回归仍待执行。
-- [ ] ADR-0020/PLAN-0014：材料解析依赖/上限/保留已批准；Curriculum 发布、数学三入口、作答状态确认与分支讲解、Mistake/ReviewPolicy、任务建议审批按阶段通过 synthetic/双孩子/授权/删除/恢复/eval 后才逐项开关。
+- [ ] PLAN-0016/0017/0018、ADR-0021/0022/0023：Ubuntu 已实施 `0.11.0`/`0025` 的 PDF-only、错题 closeout/ReviewAttempt、私有原页、多模态知识图谱、家长批准、批准知识点推荐和孩子端原页入口，并完成备份恢复、迁移头、健康和私有端口烟雾。仍须完成真实 Provider/PDF/iPad/浏览器验收、个人信息门禁及 AI 成本观测后才可勾选。
 - [ ] 发布、停止、回滚和前滚负责人明确，真实数据不来自开发环境。
 
 ### 本地/自用 Compose 流程

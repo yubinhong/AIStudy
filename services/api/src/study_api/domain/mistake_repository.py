@@ -25,6 +25,10 @@ class ReviewOutcome(StrEnum):
     SKIPPED = "skipped"
 
 
+REVIEW_POLICY_VERSION = "review-policy.v2"
+REVIEW_INTERVALS = (1, 3, 7, 14, 30)
+
+
 class MistakeRecord(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -54,6 +58,31 @@ class ReviewSchedule(BaseModel):
     updated_at: datetime
 
 
+class ReviewAttempt(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: UUID
+    household_id: UUID
+    child_id: UUID
+    mistake_id: UUID
+    verified_question_id: UUID
+    answer_summary: str = Field(min_length=1, max_length=1000)
+    submitted_answer: str | None = Field(default=None, max_length=1000)
+    evidence_confirmed: bool
+    outcome: ReviewOutcome
+    policy_version: str = Field(min_length=1, max_length=80)
+    created_at: datetime
+
+
+class ReviewQuestion(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: UUID
+    question_text: str = Field(min_length=1, max_length=4000)
+    options: tuple[str, ...] = Field(max_length=20)
+    formulas: tuple[str, ...] = Field(max_length=50)
+
+
 class CreateMistakeRequest(BaseModel):
     verified_question_id: UUID
     session_id: UUID
@@ -61,7 +90,12 @@ class CreateMistakeRequest(BaseModel):
 
 
 class ReviewMistakeRequest(BaseModel):
-    outcome: ReviewOutcome
+    """A new review is evidence-first; outcome remains a narrow old-client bridge."""
+
+    answer_summary: str = Field(default="旧客户端未提交作答文本", min_length=1, max_length=1000)
+    submitted_answer: str | None = Field(default=None, max_length=1000)
+    evidence_confirmed: bool = False
+    outcome: ReviewOutcome | None = None
 
 
 class MistakeWithSchedule(BaseModel):
@@ -69,9 +103,33 @@ class MistakeWithSchedule(BaseModel):
 
     mistake: MistakeRecord
     schedule: ReviewSchedule
+    question: ReviewQuestion | None = None
+
+
+class MistakeCloseoutRequest(BaseModel):
+    verified_question_id: UUID
+    session_id: UUID
+    outcome: str = Field(pattern=r"^(learned|needs_review|skipped)$")
+    reason: str = Field(default="拍题讲解后需要复习", min_length=1, max_length=80)
+
+
+class MistakeCloseoutResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    session_id: UUID
+    outcome: str
+    mistake: MistakeWithSchedule | None = None
 
 
 class MistakeRepository(Protocol):
+    def closeout(
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        request: MistakeCloseoutRequest,
+        idempotency_key: str,
+    ) -> tuple[MistakeCloseoutResult, bool]: ...
+
     def create_mistake(
         self,
         household_id: UUID,
@@ -99,13 +157,91 @@ def _next_interval(current: int, outcome: ReviewOutcome) -> int:
         return 1
     if outcome is ReviewOutcome.SKIPPED:
         return max(1, min(current, 3))
-    return min(max(current, 1) * 2, 30)
+    try:
+        index = REVIEW_INTERVALS.index(current)
+    except ValueError:
+        index = 0
+    return REVIEW_INTERVALS[min(index + 1, len(REVIEW_INTERVALS) - 1)]
+
+
+def _determine_review_outcome(
+    request: ReviewMistakeRequest, expected_answer: str | None
+) -> ReviewOutcome:
+    if request.evidence_confirmed and request.submitted_answer and expected_answer:
+        def normalize(value: str) -> str:
+            return "".join(value.split()).lower()
+
+        return (
+            ReviewOutcome.CORRECT
+            if normalize(request.submitted_answer) == normalize(expected_answer)
+            else ReviewOutcome.NEEDS_REVIEW
+        )
+    # Compatibility for the pre-evidence client. New clients must provide evidence.
+    if request.outcome is not None and request.answer_summary == "旧客户端未提交作答文本":
+        return request.outcome
+    return ReviewOutcome.NEEDS_REVIEW
 
 
 class InMemoryMistakeRepository:
     def __init__(self) -> None:
         self._records: dict[UUID, MistakeWithSchedule] = {}
         self._receipts: dict[tuple[UUID, str, str], tuple[str, UUID]] = {}
+        self._review_attempts: list[ReviewAttempt] = []
+        self._closeout_results: dict[UUID, MistakeCloseoutResult] = {}
+
+    def closeout(
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        request: MistakeCloseoutRequest,
+        idempotency_key: str,
+    ) -> tuple[MistakeCloseoutResult, bool]:
+        operation = f"mistake_closeout:{request.session_id}"
+        fingerprint = _fingerprint(request)
+        key = (household_id, operation, idempotency_key)
+        existing = self._receipts.get(key)
+        if existing is not None:
+            if existing[0] != fingerprint:
+                raise IdempotencyConflictError
+            return self._closeout_results[existing[1]], True
+        current = next(
+            (
+                value
+                for value in self._records.values()
+                if value.mistake.session_id == request.session_id
+                and value.mistake.child_id == child_id
+                and value.mistake.verified_question_id == request.verified_question_id
+            ),
+            None,
+        )
+        if request.outcome != "needs_review":
+            result = MistakeCloseoutResult(
+                session_id=request.session_id, outcome=request.outcome, mistake=current
+            )
+            result_id = uuid4()
+            self._closeout_results[result_id] = result
+            self._receipts[key] = (fingerprint, result_id)
+            return result, False
+        if current is None:
+            mistake_result, _ = self.create_mistake(
+                household_id,
+                child_id,
+                CreateMistakeRequest(
+                    verified_question_id=request.verified_question_id,
+                    session_id=request.session_id,
+                    reason=request.reason,
+                ),
+                f"{idempotency_key}:mistake",
+            )
+        else:
+            mistake_result = current
+        closeout = MistakeCloseoutResult(
+            session_id=request.session_id, outcome=request.outcome, mistake=mistake_result
+        )
+        result_id = uuid4()
+        self._closeout_results[result_id] = closeout
+        self._receipts[key] = (fingerprint, result_id)
+        return closeout, False
 
     def create_mistake(
         self,
@@ -185,8 +321,9 @@ class InMemoryMistakeRepository:
         if current is None or current.mistake.child_id != child_id:
             raise LookupError
         now = datetime.now(UTC)
-        interval = _next_interval(current.schedule.interval_days, request.outcome)
-        resolved = request.outcome is ReviewOutcome.CORRECT and current.schedule.repetitions >= 2
+        outcome = _determine_review_outcome(request, None)
+        interval = _next_interval(current.schedule.interval_days, outcome)
+        resolved = outcome is ReviewOutcome.CORRECT and current.schedule.repetitions >= 2
         mistake = current.mistake.model_copy(
             update={
                 "status": MistakeStatus.RESOLVED if resolved else MistakeStatus.OPEN,
@@ -198,15 +335,32 @@ class InMemoryMistakeRepository:
                 "due_at": now + timedelta(days=interval),
                 "interval_days": interval,
                 "repetitions": current.schedule.repetitions + 1
-                if request.outcome is ReviewOutcome.CORRECT
+                if outcome is ReviewOutcome.CORRECT
                 else 0,
-                "last_outcome": request.outcome,
+                "last_outcome": outcome,
                 "updated_at": now,
             }
         )
         result = MistakeWithSchedule(mistake=mistake, schedule=schedule)
         self._records[mistake_id] = result
         self._receipts[receipt_key] = (fingerprint, mistake_id)
+        self._review_attempts.append(
+            ReviewAttempt(
+                id=uuid4(),
+                household_id=household_id,
+                child_id=child_id,
+                mistake_id=mistake_id,
+                verified_question_id=current.mistake.verified_question_id,
+                answer_summary=request.answer_summary,
+                submitted_answer=request.submitted_answer,
+                evidence_confirmed=request.evidence_confirmed,
+                outcome=outcome,
+                policy_version=REVIEW_POLICY_VERSION
+                if request.evidence_confirmed
+                else "review-policy.legacy-compat",
+                created_at=now,
+            )
+        )
         return result, False
 
 
@@ -224,6 +378,8 @@ class PostgresMistakeRepository:
         self._sessions = Table("study_sessions", metadata, autoload_with=self._engine)
         self._idempotency = Table("idempotency_records", metadata, autoload_with=self._engine)
         self._audits = Table("audit_events", metadata, autoload_with=self._engine)
+        self._attempts = Table("attempts", metadata, autoload_with=self._engine)
+        self._review_attempts = Table("review_attempts", metadata, autoload_with=self._engine)
 
     @property
     def engine(self) -> Engine:
@@ -258,9 +414,25 @@ class PostgresMistakeRepository:
         schedule_values = {
             column.name: row[f"schedule_{column.name}"] for column in self._schedules.columns
         }
+        question_row = connection.execute(
+            select(self._questions).where(
+                self._questions.c.id == mistake_values["verified_question_id"],
+                self._questions.c.household_id == mistake_values["household_id"],
+                self._questions.c.child_id == mistake_values["child_id"],
+            )
+        ).mappings().one_or_none()
+        question = None
+        if question_row is not None:
+            question = ReviewQuestion(
+                id=question_row["id"],
+                question_text=question_row["question_text"],
+                options=tuple(question_row["options"]),
+                formulas=tuple(question_row["formulas"]),
+            )
         return MistakeWithSchedule(
             mistake=MistakeRecord.model_validate(mistake_values),
             schedule=ReviewSchedule.model_validate(schedule_values),
+            question=question,
         )
 
     def create_mistake(
@@ -361,6 +533,151 @@ class PostgresMistakeRepository:
             )
             return self._read(connection, mistake_id), False
 
+    def closeout(
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        request: MistakeCloseoutRequest,
+        idempotency_key: str,
+    ) -> tuple[MistakeCloseoutResult, bool]:
+        """Complete a capture session and persist a qualifying mistake atomically."""
+
+        operation = f"mistake_closeout:{request.session_id}"
+        fingerprint = _fingerprint(request)
+        now = datetime.now(UTC)
+        with self._engine.begin() as connection:
+            receipt = (
+                connection.execute(
+                    select(self._idempotency).where(
+                        self._idempotency.c.household_id == household_id,
+                        self._idempotency.c.operation == operation,
+                        self._idempotency.c.idempotency_key == idempotency_key,
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if receipt is not None:
+                if receipt["fingerprint"] != fingerprint:
+                    raise IdempotencyConflictError
+                replayed_mistake = (
+                    self._read(connection, receipt["resource_id"])
+                    if request.outcome == "needs_review"
+                    else None
+                )
+                return MistakeCloseoutResult(
+                    session_id=request.session_id, outcome=request.outcome, mistake=replayed_mistake
+                ), True
+
+            session = (
+                connection.execute(
+                    select(self._sessions)
+                    .where(
+                        self._sessions.c.id == request.session_id,
+                        self._sessions.c.household_id == household_id,
+                        self._sessions.c.child_id == child_id,
+                        self._sessions.c.status == "active",
+                    )
+                    .with_for_update()
+                )
+                .mappings()
+                .one_or_none()
+            )
+            question = (
+                connection.execute(
+                    select(self._questions).where(
+                        self._questions.c.id == request.verified_question_id,
+                        self._questions.c.household_id == household_id,
+                        self._questions.c.child_id == child_id,
+                        self._questions.c.evidence_confirmed.is_(True),
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if session is None or question is None:
+                raise LookupError
+            evidence = connection.execute(
+                select(self._attempts.c.id).where(
+                    self._attempts.c.session_id == request.session_id,
+                    self._attempts.c.household_id == household_id,
+                    self._attempts.c.child_id == child_id,
+                    self._attempts.c.evidence_confirmed.is_(True),
+                    self._attempts.c.answer_state.in_(("worked", "blank")),
+                )
+            ).first()
+            if evidence is None:
+                raise ValueError("confirmed answer evidence is required")
+
+            connection.execute(
+                update(self._sessions)
+                .where(self._sessions.c.id == request.session_id)
+                .values(status="completed", completed_at=now, outcome=request.outcome)
+            )
+            mistake: MistakeWithSchedule | None = None
+            resource_id = request.session_id
+            if request.outcome == "needs_review":
+                mistake_id = connection.execute(
+                    select(self._mistakes.c.id).where(
+                        self._mistakes.c.household_id == household_id,
+                        self._mistakes.c.child_id == child_id,
+                        self._mistakes.c.verified_question_id == request.verified_question_id,
+                    )
+                ).scalar_one_or_none()
+                if mistake_id is None:
+                    mistake_id, schedule_id = uuid4(), uuid4()
+                    connection.execute(
+                        insert(self._mistakes).values(
+                            id=mistake_id,
+                            household_id=household_id,
+                            child_id=child_id,
+                            verified_question_id=request.verified_question_id,
+                            session_id=request.session_id,
+                            reason=request.reason,
+                            status=MistakeStatus.OPEN.value,
+                            created_at=now,
+                        )
+                    )
+                    connection.execute(
+                        insert(self._schedules).values(
+                            id=schedule_id,
+                            household_id=household_id,
+                            child_id=child_id,
+                            mistake_id=mistake_id,
+                            due_at=now + timedelta(days=1),
+                            interval_days=1,
+                            repetitions=0,
+                            last_outcome=None,
+                            created_at=now,
+                            updated_at=now,
+                        )
+                    )
+                resource_id = mistake_id
+                mistake = self._read(connection, mistake_id)
+            connection.execute(
+                insert(self._idempotency).values(
+                    household_id=household_id,
+                    operation=operation,
+                    idempotency_key=idempotency_key,
+                    fingerprint=fingerprint,
+                    resource_type="mistake_closeout",
+                    resource_id=resource_id,
+                    created_at=now,
+                )
+            )
+            connection.execute(
+                insert(self._audits).values(
+                    id=uuid4(),
+                    household_id=household_id,
+                    event_name="mistake_closeout",
+                    resource_id=resource_id,
+                    recorded_at=now,
+                )
+            )
+            return MistakeCloseoutResult(
+                session_id=request.session_id, outcome=request.outcome, mistake=mistake
+            ), False
+
     def list_mistakes(
         self, household_id: UUID, child_id: UUID, due_before: datetime | None = None
     ) -> list[MistakeWithSchedule]:
@@ -423,8 +740,16 @@ class PostgresMistakeRepository:
             if current is None:
                 raise LookupError
             repetitions = int(current["repetitions"])
-            interval = _next_interval(int(current["interval_days"]), request.outcome)
-            resolved = request.outcome is ReviewOutcome.CORRECT and repetitions >= 2
+            expected_answer = connection.execute(
+                select(self._questions.c.answer_text).where(
+                    self._questions.c.id == current["verified_question_id"],
+                    self._questions.c.household_id == household_id,
+                    self._questions.c.child_id == child_id,
+                )
+            ).scalar_one_or_none()
+            outcome = _determine_review_outcome(request, expected_answer)
+            interval = _next_interval(int(current["interval_days"]), outcome)
+            resolved = outcome is ReviewOutcome.CORRECT and repetitions >= 2
             connection.execute(
                 update(self._mistakes)
                 .where(self._mistakes.c.id == mistake_id)
@@ -439,9 +764,28 @@ class PostgresMistakeRepository:
                 .values(
                     due_at=now + timedelta(days=interval),
                     interval_days=interval,
-                    repetitions=repetitions + 1 if request.outcome is ReviewOutcome.CORRECT else 0,
-                    last_outcome=request.outcome.value,
+                    repetitions=repetitions + 1 if outcome is ReviewOutcome.CORRECT else 0,
+                    last_outcome=outcome.value,
                     updated_at=now,
+                )
+            )
+            connection.execute(
+                insert(self._review_attempts).values(
+                    id=uuid4(),
+                    household_id=household_id,
+                    child_id=child_id,
+                    mistake_id=mistake_id,
+                    verified_question_id=current["verified_question_id"],
+                    answer_summary=request.answer_summary,
+                    submitted_answer=request.submitted_answer,
+                    evidence_confirmed=request.evidence_confirmed,
+                    outcome=outcome.value,
+                    policy_version=(
+                        REVIEW_POLICY_VERSION
+                        if request.evidence_confirmed
+                        else "review-policy.legacy-compat"
+                    ),
+                    created_at=now,
                 )
             )
             connection.execute(

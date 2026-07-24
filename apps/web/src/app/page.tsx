@@ -1,6 +1,28 @@
 import {
+  ArrowRight,
+  BookOpenText,
+  CheckCircle,
+  ClipboardText,
+  ClockCounterClockwise,
+  DeviceMobile,
+  Flag,
+  Lightbulb,
+  Target,
+  WarningCircle,
+} from "@phosphor-icons/react/dist/ssr";
+import Link from "next/link";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+
+import { AdminShell } from "@/app/components/admin-shell";
+import {
+  LearningTrendChart,
+  type LearningTrendPoint,
+} from "@/app/components/learning-trend-chart";
+import {
   loadChildren,
   loadDevices,
+  loadLearningDetails,
   loadMistakes,
   loadTasks,
   loadWeeklyReport,
@@ -9,9 +31,59 @@ import {
   readNumber,
   readString,
 } from "@/lib/household-data";
-import Link from "next/link";
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+
+function answerStateLabel(state: string) {
+  if (state === "worked") return "有作答";
+  if (state === "blank") return "确认空白";
+  if (state === "answer_area_missing") return "未拍到作答区";
+  return "作答不清楚";
+}
+
+function shanghaiDateKey(date: Date) {
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "Asia/Shanghai",
+  }).format(date);
+}
+
+function buildTrend(learningDetails: unknown[]): LearningTrendPoint[] {
+  const today = new Date();
+  const points = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - (6 - index));
+    return {
+      key: shanghaiDateKey(date),
+      label: new Intl.DateTimeFormat("zh-CN", {
+        weekday: "short",
+        timeZone: "Asia/Shanghai",
+      }).format(date),
+      questions: 0,
+      hints: 0,
+    };
+  });
+  const pointByDate = new Map(points.map((point) => [point.key, point]));
+  for (const detail of learningDetails) {
+    const question =
+      typeof detail === "object" && detail !== null && "question" in detail
+        ? (detail as { question?: unknown }).question
+        : null;
+    const verifiedAt = readString(question, "verified_at");
+    if (!verifiedAt) continue;
+    const date = new Date(verifiedAt);
+    if (Number.isNaN(date.getTime())) continue;
+    const point = pointByDate.get(shanghaiDateKey(date));
+    if (!point) continue;
+    point.questions += 1;
+    point.hints += readArray(detail, "tutor_turns").length;
+  }
+  return points.map(({ label, questions, hints }) => ({
+    label,
+    questions,
+    hints,
+  }));
+}
 
 export default async function HomePage({
   searchParams,
@@ -20,269 +92,335 @@ export default async function HomePage({
 }) {
   const session = (await cookies()).get("study_session");
   if (!session) redirect("/login");
+
   const children = await loadChildren();
   const requestedChildId = (await searchParams)?.child;
   const selectedChild =
     children.find((child) => readString(child, "id") === requestedChildId) ??
     children[0];
   const selectedChildId = readString(selectedChild, "id");
-  const [tasks, devices, weeklyReport, mistakes] = await Promise.all([
-    loadTasks(selectedChildId ?? undefined),
-    loadDevices(),
-    selectedChildId ? loadWeeklyReport(selectedChildId) : Promise.resolve(null),
-    selectedChildId ? loadMistakes(selectedChildId, true) : Promise.resolve([]),
-  ]);
-  const firstTask = tasks[0];
-  const childName = readString(selectedChild, "display_name") ?? "合成孩子";
-  const taskTitle = readString(firstTask, "title") ?? "今天的数学小任务";
-  const taskDate = readDateLabel(firstTask, "scheduled_for");
+  const [tasks, devices, weeklyReport, mistakes, learningDetails] =
+    await Promise.all([
+      loadTasks(selectedChildId ?? undefined),
+      loadDevices(),
+      selectedChildId
+        ? loadWeeklyReport(selectedChildId)
+        : Promise.resolve(null),
+      selectedChildId
+        ? loadMistakes(selectedChildId, true)
+        : Promise.resolve([]),
+      selectedChildId
+        ? loadLearningDetails(selectedChildId)
+        : Promise.resolve([]),
+    ]);
+
+  const childName = readString(selectedChild, "display_name") ?? "家庭空间";
   const grade = readNumber(selectedChild, "grade");
-  const apiConnected =
-    children.length > 0 || tasks.length > 0 || devices.length > 0;
-  const tasksAssigned = readNumber(weeklyReport, "tasks_assigned") ?? 0;
+  const childMeta = grade ? `小学${grade}年级` : "当前孩子";
+  const tasksAssigned =
+    readNumber(weeklyReport, "tasks_assigned") ?? tasks.length;
   const tasksCompleted = readNumber(weeklyReport, "tasks_completed") ?? 0;
-  const tasksSkipped = readNumber(weeklyReport, "tasks_skipped") ?? 0;
-  const needsReview = readNumber(weeklyReport, "needs_review") ?? 0;
+  const needsReview =
+    readNumber(weeklyReport, "needs_review") ?? mistakes.length;
   const tutorTurns = readNumber(weeklyReport, "tutor_turns") ?? 0;
   const completionRate = readNumber(weeklyReport, "completion_rate") ?? 0;
-  const reviewItems = readArray(weeklyReport, "review_items");
+  const trend = buildTrend(learningDetails);
+  const firstTask = tasks[0];
+  const apiConnected =
+    children.length > 0 || tasks.length > 0 || devices.length > 0;
+  const childOptions = children.flatMap((child) => {
+    const id = readString(child, "id");
+    if (!id) return [];
+    const childGrade = readNumber(child, "grade");
+    return [
+      {
+        id,
+        name: readString(child, "display_name") ?? "孩子",
+        meta: childGrade ? `小学${childGrade}年级` : "孩子档案",
+      },
+    ];
+  });
 
   return (
-    <main className="shell">
-      <header className="topbar">
-        <Link className="brand" href="/" aria-label="家庭 AI 学习助手首页">
-          <span className="brand-mark" aria-hidden="true">
-            禾
-          </span>
-          <span>家庭 AI 学习助手</span>
-        </Link>
-        <div
-          className="connection-status"
-          aria-label={apiConnected ? "API 已连接" : "API 未连接"}
-        >
-          <span className={apiConnected ? "status-dot online" : "status-dot"} />
-          {apiConnected ? "本地数据已连接" : "等待本地 API"}
-        </div>
-      </header>
-
-      <section className="hero" aria-labelledby="welcome-heading">
+    <AdminShell
+      active="overview"
+      childOptions={childOptions}
+      childMeta={childMeta}
+      childName={childName}
+      childSwitchBaseHref="/"
+      connectionLabel={apiConnected ? "本地服务已连接" : "等待本地服务"}
+      selectedChildId={selectedChildId ?? undefined}
+    >
+      <div className="page-header">
         <div>
-          <p className="eyebrow">家长工作台 · 今天</p>
-          <h1 id="welcome-heading">
-            陪 {childName}，<br />
-            <span>一步一步学会。</span>
-          </h1>
-          <p className="hero-copy">看见进度，也给孩子留一点自己思考的空间。</p>
+          <p className="page-eyebrow">家长工作台</p>
+          <h1>今天，先关注这几件事</h1>
+          <p>查看 {childName} 的学习进度，把需要处理的事情放在最前面。</p>
         </div>
-        <div className="hero-orbit" aria-hidden="true">
-          <span className="orbit-sun">☼</span>
-          <span className="orbit-leaf">✦</span>
-        </div>
-      </section>
+      </div>
 
-      <section className="summary-grid" aria-label="学习概览">
-        <article className="summary-card accent-green">
-          <span className="card-icon">◒</span>
+      <section className="dashboard-panel attention-panel" id="today-focus">
+        <div className="section-heading">
           <div>
-            <strong>{children.length || "—"}</strong>
-            <span>个孩子档案</span>
+            <p className="section-kicker">优先事项</p>
+            <h2>今日需要关注</h2>
           </div>
-        </article>
-        <article className="summary-card accent-yellow">
-          <span className="card-icon">▣</span>
-          <div>
-            <strong>{tasks.length || "—"}</strong>
-            <span>今日学习任务</span>
-          </div>
-        </article>
-        <article className="summary-card accent-blue">
-          <span className="card-icon">⌁</span>
-          <div>
-            <strong>{devices.length || "—"}</strong>
-            <span>已连接设备</span>
-          </div>
-        </article>
-      </section>
-
-      <section className="content-grid">
-        <article className="panel task-panel" aria-labelledby="task-heading">
-          <div className="panel-heading">
-            <div>
-              <p className="section-kicker">今日安排</p>
-              <h2 id="task-heading">学习任务</h2>
-            </div>
-            <span className="soft-badge">数学</span>
-          </div>
-          {children.length > 1 ? (
-            <nav className="child-switcher" aria-label="切换当前孩子">
-              {children.map((child) => {
-                const id = readString(child, "id");
-                const name = readString(child, "display_name") ?? "孩子";
-                return id ? (
-                  <Link
-                    className={id === selectedChildId ? "active" : ""}
-                    href={`/?child=${encodeURIComponent(id)}`}
-                    key={id}
-                  >
-                    {name}
-                  </Link>
-                ) : null;
-              })}
-            </nav>
-          ) : null}
-          {firstTask ? (
-            <div className="task-row">
-              <div className="task-check" aria-hidden="true">
-                ✓
-              </div>
-              <div className="task-details">
-                <strong>{taskTitle}</strong>
-                <span>
-                  {grade ? `小学${grade}年级` : "数学练习"}
-                  {taskDate ? ` · ${taskDate}` : ""}
-                </span>
-              </div>
-              <span className="task-state">待开始</span>
-            </div>
-          ) : (
-            <div className="empty-state">
-              <span className="empty-icon">☁</span>
-              <p>
-                还没有今天的任务
-                <br />
-                <small>启动 API 后会显示真实家庭数据</small>
-              </p>
-            </div>
-          )}
-          <div className="panel-footer">
-            <span>完成进度</span>
-            <span>{firstTask ? "0%" : "—"}</span>
-          </div>
-          <div className="progress-track">
-            <span style={{ width: firstTask ? "8%" : "0%" }} />
-          </div>
-        </article>
-
-        <article className="panel child-panel" aria-labelledby="child-heading">
-          <div className="panel-heading">
-            <div>
-              <p className="section-kicker">家庭成员</p>
-              <h2 id="child-heading">孩子档案</h2>
-            </div>
-            <Link className="text-button" href="/accounts">
-              管理
-            </Link>
-          </div>
-          {selectedChild ? (
-            <Link className="child-row" href="/accounts#profiles">
-              <div className="avatar" aria-hidden="true">
-                {childName.slice(0, 1)}
-              </div>
-              <div>
-                <strong>{childName}</strong>
-                <span>{grade ? `小学${grade}年级` : "数学学习"}</span>
-              </div>
-              <span className="chevron">›</span>
-            </Link>
-          ) : (
-            <div className="empty-state compact">
-              <span className="empty-icon">◎</span>
-              <p>暂无档案</p>
-            </div>
-          )}
-          <div className="privacy-note">
-            <span aria-hidden="true">⌁</span>
-            <p>孩子的学习记录只在家庭空间内使用。</p>
-          </div>
-        </article>
-      </section>
-
-      <section className="panel weekly-panel" aria-labelledby="weekly-heading">
-        <div className="panel-heading">
-          <div>
-            <p className="section-kicker">本周回顾</p>
-            <h2 id="weekly-heading">学习周报</h2>
-          </div>
-          <span className="soft-badge">
-            {weeklyReport
-              ? `${Math.round(completionRate * 100)}% 完成`
-              : "暂无数据"}
+          <span className="section-count">
+            {mistakes.length + tasks.length + 1} 项
           </span>
         </div>
-        {weeklyReport ? (
-          <>
-            <div className="weekly-metrics">
-              <div>
-                <strong>{tasksCompleted}</strong>
-                <span>已完成</span>
-              </div>
-              <div>
-                <strong>{tasksSkipped}</strong>
-                <span>已跳过</span>
-              </div>
-              <div>
-                <strong>{needsReview}</strong>
-                <span>待复习</span>
-              </div>
-              <div>
-                <strong>{tutorTurns}</strong>
-                <span>分步提示</span>
-              </div>
+
+        <div className="attention-list">
+          <div className="attention-row" id="review">
+            <span className="attention-icon warning">
+              <WarningCircle size={24} weight="duotone" />
+            </span>
+            <div className="attention-copy">
+              <strong>待复习错题</strong>
+              <span>
+                {mistakes.length > 0
+                  ? `${mistakes.length} 道题已到复习时间，建议今天回顾`
+                  : "目前没有到期错题，可以按今天的任务继续学习"}
+              </span>
             </div>
-            <div className="review-list">
-              <strong>复习建议</strong>
-              {mistakes.length > 0 ? (
-                mistakes.map((item, index) => {
-                  const mistake =
-                    typeof item === "object" &&
-                    item !== null &&
-                    "mistake" in item
-                      ? (item as { mistake?: unknown }).mistake
-                      : null;
-                  const schedule =
-                    typeof item === "object" &&
-                    item !== null &&
-                    "schedule" in item
-                      ? (item as { schedule?: unknown }).schedule
-                      : null;
-                  return (
-                    <p key={readString(mistake, "id") ?? index}>
-                      错题待复习 ·{" "}
-                      {readString(mistake, "reason") ?? "需要再想一想"}
-                      {readDateLabel(schedule, "due_at")
-                        ? ` · 到期 ${readDateLabel(schedule, "due_at")}`
-                        : ""}
-                    </p>
-                  );
-                })
-              ) : reviewItems.length > 0 ? (
-                reviewItems.map((item, index) => (
-                  <p key={readString(item, "session_id") ?? index}>
-                    {readString(item, "task_title") ?? "数学任务"}
-                    ：孩子主动标记为还需复习。
-                  </p>
-                ))
-              ) : (
-                <p>
-                  {tasksAssigned > 0
-                    ? "本周暂未标记需复习任务。"
-                    : "完成一次学习后，这里会生成可追溯建议。"}
-                </p>
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="empty-state compact">
-            <span className="empty-icon">◌</span>
-            <p>尚无周报，完成一次真实学习后会自动出现。</p>
+            <span
+              className={
+                mistakes.length > 0 ? "status-pill amber" : "status-pill"
+              }
+            >
+              {mistakes.length > 0 ? `${mistakes.length} 题` : "已清空"}
+            </span>
+            <Link className="row-action" href="#learning-details">
+              查看记录 <ArrowRight size={16} />
+            </Link>
           </div>
-        )}
+
+          <div className="attention-row">
+            <span className="attention-icon success">
+              <ClipboardText size={24} weight="duotone" />
+            </span>
+            <div className="attention-copy">
+              <strong>今日学习任务</strong>
+              <span>
+                {firstTask
+                  ? (readString(firstTask, "title") ?? "今天的数学任务")
+                  : "还没有安排今天的学习任务"}
+              </span>
+            </div>
+            <span className="status-pill">{tasks.length} 项</span>
+            <Link className="row-action" href="/accounts#tasks">
+              安排任务 <ArrowRight size={16} />
+            </Link>
+          </div>
+
+          <div className="attention-row">
+            <span className="attention-icon neutral">
+              <Target size={24} weight="duotone" />
+            </span>
+            <div className="attention-copy">
+              <strong>本周学习目标</strong>
+              <span>
+                已完成 {tasksCompleted} / {tasksAssigned || 0}{" "}
+                项任务，继续保持稳定节奏
+              </span>
+            </div>
+            <span
+              className={
+                completionRate >= 0.8 ? "status-pill" : "status-pill amber"
+              }
+            >
+              {weeklyReport ? `${Math.round(completionRate * 100)}%` : "待积累"}
+            </span>
+            <Link className="row-action" href="#weekly-report">
+              查看周报 <ArrowRight size={16} />
+            </Link>
+          </div>
+        </div>
       </section>
 
-      <footer className="footer-note">
-        <span className="footer-spark">✦</span> 今天也只专注一小步{" "}
-        <span className="footer-spark">✦</span>
-      </footer>
-    </main>
+      <section className="dashboard-grid" id="weekly-report">
+        <article className="dashboard-panel trend-panel">
+          <div className="section-heading">
+            <div>
+              <p className="section-kicker">本周回顾</p>
+              <h2>本周学习趋势</h2>
+            </div>
+            <span className="quiet-label">过去 7 天</span>
+          </div>
+          <div className="trend-metrics">
+            <div>
+              <span className="metric-icon">
+                <CheckCircle size={20} />
+              </span>
+              <p>完成任务</p>
+              <strong>{tasksCompleted}</strong>
+            </div>
+            <div>
+              <span className="metric-icon">
+                <Lightbulb size={20} />
+              </span>
+              <p>分步提示</p>
+              <strong>{tutorTurns}</strong>
+            </div>
+            <div>
+              <span className="metric-icon">
+                <Flag size={20} />
+              </span>
+              <p>待复习</p>
+              <strong>{Math.max(needsReview, mistakes.length)}</strong>
+            </div>
+          </div>
+          <LearningTrendChart data={trend} />
+        </article>
+
+        <article
+          className="dashboard-panel activity-panel"
+          id="learning-details"
+        >
+          <div className="section-heading">
+            <div>
+              <p className="section-kicker">逐题记录</p>
+              <h2>最近学习记录</h2>
+            </div>
+            <span className="quiet-label">
+              最近 {learningDetails.length} 题
+            </span>
+          </div>
+
+          {learningDetails.length > 0 ? (
+            <div
+              className="activity-table"
+              role="table"
+              aria-label="最近学习记录"
+            >
+              <div className="activity-table-head" role="row">
+                <span role="columnheader">时间</span>
+                <span role="columnheader">题目</span>
+                <span role="columnheader">作答</span>
+                <span role="columnheader">提示</span>
+                <span role="columnheader">状态</span>
+              </div>
+              {learningDetails.slice(0, 7).map((detail, detailIndex) => {
+                const question =
+                  typeof detail === "object" &&
+                  detail !== null &&
+                  "question" in detail
+                    ? (detail as { question?: unknown }).question
+                    : null;
+                const turns = readArray(detail, "tutor_turns");
+                const state = readString(question, "answer_state") ?? "unclear";
+                return (
+                  <details
+                    className="activity-record"
+                    key={readString(question, "id") ?? detailIndex}
+                  >
+                    <summary role="row">
+                      <span className="record-time" role="cell">
+                        {readDateLabel(question, "verified_at") ?? "最近"}
+                      </span>
+                      <span className="record-question" role="cell">
+                        {readString(question, "question_text") ??
+                          "已确认数学题"}
+                      </span>
+                      <span role="cell">
+                        <span className={`answer-state state-${state}`}>
+                          {answerStateLabel(state)}
+                        </span>
+                      </span>
+                      <span role="cell">{turns.length} 次</span>
+                      <span role="cell">
+                        <span className="review-state">
+                          {state === "worked" || state === "blank"
+                            ? "已记录"
+                            : "需确认"}
+                        </span>
+                      </span>
+                    </summary>
+                    <div className="record-expanded">
+                      {readString(question, "answer_text") ? (
+                        <p>
+                          <strong>识别作答：</strong>
+                          {readString(question, "answer_text")}
+                        </p>
+                      ) : null}
+                      {turns.length > 0 ? (
+                        turns.map((turn, turnIndex) => {
+                          const steps = readArray(turn, "solution_steps");
+                          return (
+                            <div
+                              className="tutor-summary"
+                              key={readString(turn, "id") ?? turnIndex}
+                            >
+                              <strong>
+                                第 {readNumber(turn, "level") ?? turnIndex + 1}{" "}
+                                级讲解
+                              </strong>
+                              <p>{readString(turn, "prompt")}</p>
+                              {steps.length > 0 ? (
+                                <ol>
+                                  {steps.map((step, stepIndex) => (
+                                    <li key={stepIndex}>{String(step)}</li>
+                                  ))}
+                                </ol>
+                              ) : null}
+                              {readString(turn, "direct_answer") ? (
+                                <p className="final-answer">
+                                  答案：{readString(turn, "direct_answer")}
+                                </p>
+                              ) : null}
+                              {readString(turn, "verification") ? (
+                                <p className="verification">
+                                  验算：{readString(turn, "verification")}
+                                </p>
+                              ) : null}
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <p className="muted-copy">
+                          题目已确认，尚未产生讲解记录。
+                        </p>
+                      )}
+                    </div>
+                  </details>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="empty-dashboard-state">
+              <ClockCounterClockwise size={30} weight="duotone" />
+              <div>
+                <strong>还没有逐题记录</strong>
+                <p>
+                  完成一次拍题和讲解后，这里会显示作答状态、提示与完整解答。
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div className="panel-note">
+            <DeviceMobile size={18} />
+            {devices.length > 0
+              ? `${devices.length} 台家庭设备已连接，记录会自动同步。`
+              : "孩子端连接后，学习记录会自动同步到这里。"}
+          </div>
+        </article>
+      </section>
+
+      <section className="dashboard-panel curriculum-callout">
+        <span className="attention-icon success">
+          <BookOpenText size={24} weight="duotone" />
+        </span>
+        <div>
+          <strong>教材范围已接入任务推荐</strong>
+          <p>
+            已发布小节会进入家长审批的任务推荐；文档正文解析和讲解引用尚未启用。
+          </p>
+        </div>
+        <Link className="secondary-button" href="/curriculum">
+          教材与任务 <ArrowRight size={16} />
+        </Link>
+      </section>
+    </AdminShell>
   );
 }

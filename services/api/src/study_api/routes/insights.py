@@ -1,4 +1,4 @@
-"""Household-scoped learning reports without question or answer content."""
+"""Household-scoped parent learning reports and detailed traces."""
 
 from datetime import date
 from typing import Annotated
@@ -16,6 +16,7 @@ from study_api.auth import (
 from study_api.domain.insights_repository import (
     ChildDataExport,
     InsightsRepository,
+    LearningDetail,
     WeeklyReport,
 )
 from study_api.domain.models import AccountRole
@@ -53,6 +54,28 @@ def get_weekly_report(
     if profiles.get_child(household_id, child_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
     return insights.weekly_report(household_id, child_id, week_start)
+
+
+@router.get(
+    "/children/{child_id}/learning-details",
+    response_model=list[LearningDetail],
+)
+def get_learning_details(
+    household_id: UUID,
+    child_id: UUID,
+    principal: Principal,
+    profiles: ProfileRepo,
+    insights: InsightsRepo,
+    limit: int = 20,
+) -> tuple[LearningDetail, ...]:
+    role = require_household(principal, household_id)
+    if role is not AccountRole.PARENT:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="parent required")
+    if profiles.get_child(household_id, child_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
+    if limit < 1 or limit > 100:
+        raise HTTPException(status_code=422, detail="limit must be between 1 and 100")
+    return insights.learning_details(household_id, child_id, limit)
 
 
 @router.post("/children/{child_id}/exports", response_model=ChildDataExport)

@@ -7,10 +7,14 @@ detection, and Provider payloads deliberately do not appear in the contracts.
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from study_api.domain.models import AnswerState
+
+AnswerStep = Annotated[str, Field(min_length=1, max_length=500)]
 
 
 def _no_control_characters(value: str | None) -> str | None:
@@ -114,6 +118,9 @@ class QuestionExtraction(BaseModel):
     has_diagram: bool
     has_handwriting: bool
     detected_answer: str | None = Field(default=None, max_length=1000)
+    answer_state: AnswerState = AnswerState.UNCLEAR
+    answer_state_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    answer_steps: tuple[AnswerStep, ...] = Field(default=(), max_length=30)
     question_region_count: int = Field(ge=0, le=256)
     confidence: float = Field(ge=0.0, le=1.0)
     needs_confirmation: Literal[True] = True
@@ -121,7 +128,7 @@ class QuestionExtraction(BaseModel):
     _question_text_has_no_controls = field_validator("question_text", "detected_answer")(
         _no_control_characters
     )
-    _options_have_no_controls = field_validator("options", "formulas")(
+    _options_have_no_controls = field_validator("options", "formulas", "answer_steps")(
         lambda values: tuple(_no_control_characters(value) for value in values)
     )
 
@@ -151,11 +158,15 @@ class VerifyQuestionRequest(BaseModel):
     has_diagram: bool = False
     has_handwriting: bool = False
     answer_text: str | None = Field(default=None, max_length=1000)
+    answer_state: AnswerState = AnswerState.UNCLEAR
+    answer_state_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    answer_steps: tuple[AnswerStep, ...] = Field(default=(), max_length=30)
+    evidence_confirmed: bool = False
 
     _question_text_has_no_controls = field_validator("question_text", "answer_text")(
         _no_control_characters
     )
-    _options_have_no_controls = field_validator("options", "formulas")(
+    _options_have_no_controls = field_validator("options", "formulas", "answer_steps")(
         lambda values: tuple(_no_control_characters(value) for value in values)
     )
 
@@ -176,12 +187,16 @@ class VerifiedQuestion(BaseModel):
     has_diagram: bool
     has_handwriting: bool
     answer_text: str | None = Field(default=None, max_length=1000)
+    answer_state: AnswerState = AnswerState.UNCLEAR
+    answer_state_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    answer_steps: tuple[AnswerStep, ...] = Field(default=(), max_length=30)
+    evidence_confirmed: bool = False
     verified_by: Literal["child", "parent"]
     verified_at: datetime
 
     _question_text_has_no_controls = field_validator("question_text", "answer_text")(
         _no_control_characters
     )
-    _options_have_no_controls = field_validator("options", "formulas")(
+    _options_have_no_controls = field_validator("options", "formulas", "answer_steps")(
         lambda values: tuple(_no_control_characters(value) for value in values)
     )
