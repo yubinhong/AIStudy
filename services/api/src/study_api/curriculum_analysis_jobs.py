@@ -76,6 +76,17 @@ class CurriculumKnowledgeRepository(Protocol):
         self, household_id: UUID, child_id: UUID, snapshot_id: UUID
     ) -> list[StoredCurriculumPageAsset]: ...
 
+    def clone_approved_public_map(
+        self,
+        source_snapshot_id: UUID,
+        target_material_id: UUID,
+        target_snapshot_id: UUID,
+        target_household_id: UUID,
+        target_child_id: UUID,
+    ) -> CurriculumKnowledgeMap: ...
+
+    def has_other_asset_reference(self, object_key: str, snapshot_id: UUID) -> bool: ...
+
     def close(self) -> None: ...
 
 
@@ -189,6 +200,76 @@ class InMemoryCurriculumKnowledgeRepository:
     def save_asset_for_testing(self, asset: StoredCurriculumPageAsset) -> None:
         self._assets[(asset.metadata.snapshot_id, asset.metadata.page_number)] = asset
 
+    def clone_approved_public_map(
+        self,
+        source_snapshot_id: UUID,
+        target_material_id: UUID,
+        target_snapshot_id: UUID,
+        target_household_id: UUID,
+        target_child_id: UUID,
+    ) -> CurriculumKnowledgeMap:
+        source = self._maps.get(source_snapshot_id)
+        if source is None or source.status is not KnowledgeMapStatus.APPROVED:
+            raise LookupError
+        now = datetime.now(UTC)
+        points = tuple(
+            point.model_copy(
+                update={
+                    "id": uuid4(),
+                    "household_id": target_household_id,
+                    "child_id": target_child_id,
+                    "material_id": target_material_id,
+                    "snapshot_id": target_snapshot_id,
+                    "knowledge_map_id": uuid4(),
+                    "status": "draft",
+                    "created_at": now,
+                    "updated_at": now,
+                }
+            )
+            for point in source.knowledge_points
+        )
+        # The map id must be consistent with every copied point.
+        map_id = points[0].knowledge_map_id if points else uuid4()
+        points = tuple(point.model_copy(update={"knowledge_map_id": map_id}) for point in points)
+        target = source.model_copy(
+            update={
+                "id": map_id,
+                "household_id": target_household_id,
+                "child_id": target_child_id,
+                "material_id": target_material_id,
+                "snapshot_id": target_snapshot_id,
+                "status": KnowledgeMapStatus.NEEDS_REVIEW,
+                "reviewed_at": None,
+                "created_at": now,
+                "updated_at": now,
+                "knowledge_points": points,
+            }
+        )
+        self._maps[target_snapshot_id] = target
+        for (stored_snapshot_id, page), asset in list(self._assets.items()):
+            if stored_snapshot_id != source_snapshot_id:
+                continue
+            metadata = asset.metadata.model_copy(
+                update={
+                    "id": uuid4(),
+                    "household_id": target_household_id,
+                    "child_id": target_child_id,
+                    "material_id": target_material_id,
+                    "snapshot_id": target_snapshot_id,
+                    "created_at": now,
+                }
+            )
+            self._assets[(target_snapshot_id, page)] = StoredCurriculumPageAsset(
+                metadata=metadata, object_key=asset.object_key
+            )
+        return target
+
+    def has_other_asset_reference(self, object_key: str, snapshot_id: UUID) -> bool:
+        return any(
+            stored_snapshot_id != snapshot_id and asset.object_key == object_key
+            for (stored_snapshot_id, _), asset in self._assets.items()
+        )
+
     def close(self) -> None:
         return None
 
@@ -202,6 +283,10 @@ class CurriculumAnalysisJob:
     snapshot_id: UUID
     object_key: str
     attempt: int
+
+
+class CurriculumBookReferenceError(ValueError):
+    """The consolidated book map points outside the validated page evidence."""
 
 
 class PostgresCurriculumKnowledgeRepository:
@@ -633,7 +718,107 @@ class PostgresCurriculumKnowledgeRepository:
                 .mappings()
                 .all()
             )
-        return [_read_asset(dict(row)) for row in rows]
+            return [_read_asset(dict(row)) for row in rows]
+
+    def clone_approved_public_map(
+        self,
+        source_snapshot_id: UUID,
+        target_material_id: UUID,
+        target_snapshot_id: UUID,
+        target_household_id: UUID,
+        target_child_id: UUID,
+    ) -> CurriculumKnowledgeMap:
+        """Copy approved public derived facts into a local review draft.
+
+        This never exposes source tenant IDs in a response. The copied map is
+        deliberately `needs_review`: each family independently approves it.
+        """
+
+        now = datetime.now(UTC)
+        with self._engine.begin() as connection:
+            source_map = (
+                connection.execute(
+                    select(self._maps)
+                    .where(self._maps.c.snapshot_id == source_snapshot_id)
+                    .with_for_update()
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if source_map is None or source_map["status"] != KnowledgeMapStatus.APPROVED.value:
+                raise LookupError
+            map_id = uuid4()
+            map_values = dict(source_map)
+            map_values.update(
+                id=map_id,
+                household_id=target_household_id,
+                child_id=target_child_id,
+                material_id=target_material_id,
+                snapshot_id=target_snapshot_id,
+                status=KnowledgeMapStatus.NEEDS_REVIEW.value,
+                reviewed_at=None,
+                created_at=now,
+                updated_at=now,
+            )
+            connection.execute(insert(self._maps).values(**map_values))
+            for table in (self._pages, self._points):
+                rows = (
+                    connection.execute(
+                        select(table).where(table.c.knowledge_map_id == source_map["id"])
+                    )
+                    .mappings()
+                    .all()
+                )
+                for row in rows:
+                    values = dict(row)
+                    values.update(
+                        id=uuid4(),
+                        household_id=target_household_id,
+                        child_id=target_child_id,
+                        material_id=target_material_id,
+                        snapshot_id=target_snapshot_id,
+                        knowledge_map_id=map_id,
+                        created_at=now,
+                    )
+                    if table is self._points:
+                        values.update(status="draft", updated_at=now)
+                    connection.execute(insert(table).values(**values))
+            assets = (
+                connection.execute(
+                    select(self._assets).where(self._assets.c.snapshot_id == source_snapshot_id)
+                )
+                .mappings()
+                .all()
+            )
+            for row in assets:
+                values = dict(row)
+                values.update(
+                    id=uuid4(),
+                    household_id=target_household_id,
+                    child_id=target_child_id,
+                    material_id=target_material_id,
+                    snapshot_id=target_snapshot_id,
+                    created_at=now,
+                )
+                connection.execute(insert(self._assets).values(**values))
+        value = self.get_map(target_household_id, target_child_id, target_snapshot_id)
+        if value is None:  # pragma: no cover - transactional invariant
+            raise RuntimeError("copied curriculum map was not saved")
+        return value
+
+    def has_other_asset_reference(self, object_key: str, snapshot_id: UUID) -> bool:
+        with self._engine.connect() as connection:
+            return (
+                connection.execute(
+                    select(self._assets.c.id)
+                    .where(
+                        self._assets.c.object_key == object_key,
+                        self._assets.c.snapshot_id != snapshot_id,
+                    )
+                    .limit(1)
+                ).scalar_one_or_none()
+                is not None
+            )
 
 
 def _read_asset(row: dict[str, Any]) -> StoredCurriculumPageAsset:
@@ -772,14 +957,12 @@ def _page_payloads(
 
 
 def _validate_book_coverage(book: ProviderBookAnalysis, known_pages: set[int]) -> None:
-    covered_pages: set[int] = set()
     for chapter in book.chapters:
-        covered_pages.update(range(chapter.start_page, chapter.end_page + 1))
+        if any(page not in known_pages for page in range(chapter.start_page, chapter.end_page + 1)):
+            raise CurriculumBookReferenceError("book analysis chapter references an unknown page")
         for point in chapter.knowledge_points:
             if any(page not in known_pages for page in point.page_numbers):
-                raise ValueError("book analysis references an unknown page")
-    if covered_pages != known_pages:
-        raise ValueError("book analysis omitted or invented curriculum pages")
+                raise CurriculumBookReferenceError("book analysis references an unknown page")
 
 
 def run_once(
@@ -860,6 +1043,8 @@ def run_once(
         repository.fail(job, error.code)
     except ObjectStorageError:
         repository.fail(job, "curriculum_storage_unavailable")
+    except CurriculumBookReferenceError:
+        repository.fail(job, "curriculum_book_reference_invalid")
     except ValueError:
         repository.fail(job, "curriculum_analysis_invalid")
     except Exception:  # noqa: BLE001 - worker persists a stable failure code

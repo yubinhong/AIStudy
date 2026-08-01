@@ -1,12 +1,13 @@
 import { NextRequest } from "next/server";
-
-const householdId = "00000000-0000-0000-0000-000000000001";
+import { currentHouseholdId } from "../../../../lib/current-household";
 
 async function forward(
   request: NextRequest,
   method: "PATCH" | "DELETE",
   childId: string,
 ) {
+  const householdId = await currentHouseholdId(request);
+  if (!householdId) return new Response(null, { status: 401 });
   const headers: Record<string, string> =
     method === "PATCH" ? { "content-type": "application/json" } : {};
   const cookie = request.headers.get("cookie");

@@ -1,6 +1,6 @@
 """Household-scoped parent learning reports and detailed traces."""
 
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
@@ -12,6 +12,7 @@ from study_api.auth import (
     get_principal,
     require_bound_child,
     require_household,
+    require_parent,
 )
 from study_api.domain.insights_repository import (
     ChildDataExport,
@@ -37,6 +38,16 @@ def get_profile_repository(request: Request) -> ProfileRepository:
 
 InsightsRepo = Annotated[InsightsRepository, Depends(get_insights_repository)]
 ProfileRepo = Annotated[ProfileRepository, Depends(get_profile_repository)]
+
+LEARNING_HISTORY_DEFAULT_WINDOW = timedelta(days=30)
+LEARNING_HISTORY_MAX_QUERY_WINDOW = timedelta(days=31)
+LEARNING_HISTORY_RETENTION = timedelta(days=180)
+
+
+def _aware_utc(value: datetime, name: str) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise HTTPException(status_code=422, detail=f"{name} must include a timezone")
+    return value.astimezone(UTC)
 
 
 @router.get("/reports/weekly", response_model=WeeklyReport)
@@ -66,16 +77,34 @@ def get_learning_details(
     principal: Principal,
     profiles: ProfileRepo,
     insights: InsightsRepo,
-    limit: int = 20,
+    from_at: Annotated[datetime | None, Query()] = None,
+    to_at: Annotated[datetime | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 200,
 ) -> tuple[LearningDetail, ...]:
     role = require_household(principal, household_id)
-    if role is not AccountRole.PARENT:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="parent required")
+    require_parent(role)
     if profiles.get_child(household_id, child_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
-    if limit < 1 or limit > 100:
-        raise HTTPException(status_code=422, detail="limit must be between 1 and 100")
-    return insights.learning_details(household_id, child_id, limit)
+    now = datetime.now(UTC)
+    effective_to = _aware_utc(to_at, "to_at") if to_at is not None else now
+    effective_from = (
+        _aware_utc(from_at, "from_at")
+        if from_at is not None
+        else effective_to - LEARNING_HISTORY_DEFAULT_WINDOW
+    )
+    if effective_from >= effective_to:
+        raise HTTPException(status_code=422, detail="from_at must be before to_at")
+    if effective_to - effective_from > LEARNING_HISTORY_MAX_QUERY_WINDOW:
+        raise HTTPException(status_code=422, detail="learning history range cannot exceed 31 days")
+    if effective_from < now - LEARNING_HISTORY_RETENTION:
+        raise HTTPException(status_code=422, detail="learning history is retained for 180 days")
+    return insights.learning_details(
+        household_id,
+        child_id,
+        from_at=effective_from,
+        to_at=effective_to,
+        limit=limit,
+    )
 
 
 @router.post("/children/{child_id}/exports", response_model=ChildDataExport)
@@ -88,8 +117,7 @@ def export_child_data(
     insights: InsightsRepo,
 ) -> JSONResponse:
     role = require_household(principal, household_id)
-    if role is not AccountRole.PARENT:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="parent required")
+    require_parent(role)
     if profiles.get_child(household_id, child_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
     try:

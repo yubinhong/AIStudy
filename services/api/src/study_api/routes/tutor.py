@@ -1,5 +1,6 @@
-"""Safe, provider-free Tutor hint route."""
+"""Tutor hints and solutions bounded by approved curriculum knowledge."""
 
+from difflib import SequenceMatcher
 from typing import Annotated
 from uuid import UUID
 
@@ -12,8 +13,9 @@ from study_api.auth import (
     require_bound_child,
     require_household,
 )
+from study_api.curriculum_analysis_jobs import CurriculumKnowledgeRepository
 from study_api.domain.capture_repository import CaptureRepository
-from study_api.domain.curriculum_repository import CurriculumRepository
+from study_api.domain.curriculum_knowledge import CurriculumKnowledgePoint
 from study_api.domain.learning_repository import ChildAssignmentError
 from study_api.domain.models import AnswerState, CaptureStatus
 from study_api.domain.repository import IdempotencyConflictError
@@ -53,11 +55,81 @@ VerifiedRepo = Annotated[VerifiedQuestionRepository, Depends(get_verified_questi
 TutorTurnRepo = Annotated[TutorTurnRepository, Depends(get_tutor_turn_repository)]
 
 
-def get_curriculum_repository(request: Request) -> CurriculumRepository:
-    return request.app.state.curriculum_repository
+def get_curriculum_knowledge_repository(request: Request) -> CurriculumKnowledgeRepository:
+    return request.app.state.curriculum_knowledge_repository
 
 
-CurriculumRepo = Annotated[CurriculumRepository, Depends(get_curriculum_repository)]
+KnowledgeRepo = Annotated[
+    CurriculumKnowledgeRepository, Depends(get_curriculum_knowledge_repository)
+]
+
+
+def _compact(value: str) -> str:
+    return "".join(value.lower().split())
+
+
+def _similarity(left: str, right: str) -> float:
+    if not left or not right:
+        return 0.0
+    if left in right or right in left:
+        return 1.0
+    return SequenceMatcher(None, left, right).ratio()
+
+
+def _scope_score(question_text: str, point: CurriculumKnowledgePoint) -> float:
+    """Prefer an exact approved exercise; otherwise require meaningful overlap."""
+
+    question = _compact(question_text)
+    exercise_score = max(
+        (_similarity(question, _compact(exercise.question_text)) for exercise in point.exercises),
+        default=0.0,
+    )
+    scope_text = _compact(
+        " ".join(
+            (
+                point.chapter_title,
+                point.section_title,
+                point.title,
+                point.summary,
+                *point.learning_objectives,
+                *point.prerequisites,
+            )
+        )
+    )
+    lexical_score = _similarity(question, scope_text)
+    if "/" in question and "分数" in scope_text:
+        lexical_score = max(lexical_score, 0.36)
+    return max(exercise_score, lexical_score * 0.75)
+
+
+def _select_curriculum_scope(
+    knowledge: CurriculumKnowledgeRepository,
+    household_id: UUID,
+    child_id: UUID,
+    question_text: str,
+) -> CurriculumKnowledgePoint | None:
+    points = knowledge.list_approved_points(household_id, child_id)
+    scored = sorted(
+        ((_scope_score(question_text, point), point) for point in points),
+        key=lambda value: (value[0], value[1].confidence),
+        reverse=True,
+    )
+    if not scored or scored[0][0] < 0.55:
+        return None
+    return scored[0][1]
+
+
+def _provider_scope(point: CurriculumKnowledgePoint) -> dict[str, object]:
+    return {
+        "knowledge_key": point.knowledge_key,
+        "title": point.title,
+        "chapter_title": point.chapter_title,
+        "section_title": point.section_title,
+        "summary": point.summary,
+        "learning_objectives": list(point.learning_objectives),
+        "allowed_prerequisites": list(point.prerequisites),
+        "source_pages": list(point.page_numbers),
+    }
 
 
 @router.post("/tutor/hints", response_model=TutorHintResponse)
@@ -70,7 +142,7 @@ def create_tutor_hint(
     captures: CaptureRepo,
     verified_questions: VerifiedRepo,
     tutor_turns: TutorTurnRepo,
-    curriculum: CurriculumRepo,
+    knowledge: KnowledgeRepo,
 ) -> JSONResponse:
     require_household(principal, household_id)
     child_id = require_bound_child(principal)
@@ -126,23 +198,23 @@ def create_tutor_hint(
         )
     )
     try:
-        chunks = curriculum.search_chunks(
-            household_id, child_id, verified_question.question_text, limit=3
+        grounded_point = _select_curriculum_scope(
+            knowledge, household_id, child_id, verified_question.question_text
         )
-    except Exception:  # noqa: BLE001 - curriculum grounding is optional and must degrade safely
-        chunks = []
-    grounded_chunks = tuple(chunk for chunk in chunks if chunk.confidence >= 0.6)
-    if grounded_chunks:
+    except Exception:  # noqa: BLE001 - retain the non-provider hint fallback on read failure
+        grounded_point = None
+    provider_scope = _provider_scope(grounded_point) if grounded_point is not None else None
+    if grounded_point is not None:
         content = content.model_copy(
             update={
                 "curriculum_sources": tuple(
                     CurriculumSource(
-                        snapshot_id=chunk.snapshot_id,
-                        page_number=chunk.page_number,
-                        title=chunk.title,
-                        confidence=chunk.confidence,
+                        snapshot_id=grounded_point.snapshot_id,
+                        page_number=page_number,
+                        title=grounded_point.title,
+                        confidence=grounded_point.confidence,
                     )
-                    for chunk in grounded_chunks
+                    for page_number in grounded_point.page_numbers[:5]
                 )
             }
         )
@@ -169,14 +241,8 @@ def create_tutor_hint(
                 answer_text=verified_question.answer_text,
                 answer_steps=verified_question.answer_steps,
                 previous_hint=previous_payload,
-                curriculum_excerpts=tuple(
-                    {
-                        "page_number": chunk.page_number,
-                        "title": chunk.title,
-                        "text": chunk.text[:1200],
-                    }
-                    for chunk in grounded_chunks
-                ),
+                curriculum_excerpts=(),
+                curriculum_scope=provider_scope,
             )
             validate_generated_hint(
                 generated,
@@ -226,6 +292,7 @@ def create_tutor_hint(
                 answer_state=answer_state.value,
                 answer_text=verified_question.answer_text,
                 answer_steps=verified_question.answer_steps,
+                curriculum_scope=provider_scope,
             )
         except NewApiProviderError as error:
             raise HTTPException(
@@ -234,10 +301,19 @@ def create_tutor_hint(
             ) from error
         content = content.model_copy(
             update={
-                "policy_version": "verified-solution-policy.v1",
+                "policy_version": (
+                    "verified-solution-policy.v1"
+                    if provider_scope is not None
+                    else "general-solution-policy.v1"
+                ),
                 "provider": "newapi",
                 "model": provider_config.vision_model,
-                "prompt": "下面给出完整解答，请逐步对照题目和自己的作答。",
+                "prompt": (
+                    "下面给出完整解答，请逐步对照题目和自己的作答。"
+                    if provider_scope is not None
+                    else "下面给出完整解答。当前没有匹配到教材知识点，"
+                    "先用适龄的基础方法讲清楚这道题。"
+                ),
                 "next_step": "看完后用自己的话复述关键一步，并用验算再次确认。",
                 "requires_child_response": False,
                 "direct_answer": solution.final_answer,

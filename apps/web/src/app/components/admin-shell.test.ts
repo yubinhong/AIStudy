@@ -8,7 +8,7 @@ describe("admin shell information architecture", () => {
       adminNavigationGroups.flatMap((group) =>
         group.items.map((item) => item.label),
       ),
-    ).toEqual(["家长工作台", "教材与任务", "孩子管理"]);
+    ).toEqual(["家长工作台", "学习记录", "教材管理", "孩子管理"]);
   });
 
   it("preserves the selected child while navigating top-level pages", () => {

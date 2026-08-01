@@ -77,15 +77,16 @@ def test_page_payload_preserves_visual_semantics_and_opaque_exercise_key() -> No
     assert exercises[exercise["exercise_key"]].page_number == 1
 
 
-def test_book_map_must_cover_every_rendered_page_without_inventing_pages() -> None:
+def test_book_map_allows_nonknowledge_pages_but_rejects_invented_pages() -> None:
     _validate_book_coverage(_book(), {1, 2})
+    _validate_book_coverage(_book(start_page=1, end_page=1), {1, 2})
 
     try:
-        _validate_book_coverage(_book(start_page=1, end_page=1), {1, 2})
+        _validate_book_coverage(_book(start_page=1, end_page=3), {1, 2})
     except ValueError as error:
-        assert "omitted or invented" in str(error)
+        assert "unknown page" in str(error)
     else:
-        raise AssertionError("missing page must reject the entire knowledge map")
+        raise AssertionError("invented page must reject the entire knowledge map")
 
 
 def test_one_shot_worker_exits_cleanly_when_newapi_is_disabled(

@@ -4,7 +4,7 @@
 
 - 状态：`DRAFT（v1.0 目标架构；P0 家庭/孩子/设备合成切片已实现）`
 - Owner：`TBD（技术负责人确认）`
-- 最后更新：`2026-07-23`
+- 最后更新：`2026-07-29`
 - 设计基线：`家庭AI学习助手_架构设计_v1.0.docx`
 - 相关决策：`DECISIONS.md`（ADR-0001～0011、0013～0018、0020～0023 已 Accepted，ADR-0019 Proposed；ADR-0012 已被 ADR-0015 替代。ADR-0017 已替代 ADR-0005 的孩子 PIN/设备凭证默认方案和 ADR-0016 的 HMAC 认证部分；NewAPI 决策继续有效）
 
@@ -24,6 +24,10 @@
 Web 孩子管理修订（2026-07-18）：PLAN-0013 的孩子管理聚合已实现 API/Web 首版并部署 Ubuntu：家长通过一个幂等命令创建 ChildProfile 与唯一 child Account，列表返回联合视图，删除档案同时清理 child Account；首页支持 query 选择当前孩子并按孩子过滤任务/周报。认证与档案仍保持物理分表；浏览器 E2E、旧数据审计和双孩子实体验收仍待完成。
 
 产品主线修订（2026-07-24）：ADR-0023/PLAN-0018 已在本地及 Ubuntu `0025` 将 PDF 文本抽取降为辅助信息，新增私有原页、多模态页级分析、全书知识图谱、家长批准和知识点任务。真实 PDF/Provider/设备和发布质量门槛未完成。
+
+英语插件修订（2026-07-29）：ADR-0025 在 Flutter 登录后增加学科选择，并在 FastAPI 模块化单体内新增独立 EnglishPractice 设置/摘要仓储、Policy、Provider Adapter 和 WebSocket 中继。它不修改数学 `Subject`、`StudyTask`、`StudySession`，不拆服务。App 只发送 Bearer Session 与 PCM16 分片；Provider Key/URL 留在服务端边界。当前只有 `disabled` 和显式测试 `fake`，不包含 Gemini Adapter，默认部署锁定。
+
+实时英语数据流：`Flutter 前台按住说话 → API Session/孩子/同意/配额门禁 → 20/40 ms PCM16 中继 → 单一获批 Provider Adapter → 24 kHz PCM 播放`。PostgreSQL 只保存设置与摘要指标；音频、完整转写、Provider 消息和恢复缓存均不持久化。应用后台、权限撤销、账号切换、Session 撤销、空闲或断线立即停止录音并关闭通道。
 
 ## 2. 系统上下文
 
@@ -183,7 +187,7 @@ PLAN-0013 的目标聚合不改变上述认证边界：家长通过一个带幂�
 | 同步事件批次 | Flutter | API | `packages/contracts/schemas` | 每事件有 ID/版本/幂等键；追加新事件类型 | `TBD` |
 | AuditEvent | 所有服务端模块 | 审计/可观测性 | `packages/contracts/schemas` | 稳定事件名；字段按敏感级别控制 | `TBD` |
 
-契约目录和结构检查已建立；SDK 生成器和自动兼容检查命令仍未固定。`0.11.0` 在 `0.10.0` 的来源任务上增加受鉴权教材页图、知识图谱、知识点引用和视觉题上下文。图片上传保持单一 Session 流式操作；Ubuntu 已成对升级到 `0.11.0`/`0025`。
+契约目录和结构检查已建立；SDK 生成器和自动兼容检查命令仍未固定。本地 `0.13.0` 在既有教材/英语合同上增加家长学习详情的有界时间查询；Ubuntu 仍为 `0.11.0`/`0028`。图片上传继续保持单一 Session 流式操作。
 
 ## 6. 数据架构
 
@@ -192,11 +196,12 @@ PLAN-0013 的目标聚合不改变上述认证边界：家长通过一个带幂�
 | Household/Account/AuthSession/ChildProfile/Device | PostgreSQL | UUID；全部业务行含 Household 边界；孩子账号复合外键绑定档案，PLAN-0013 目标增加每档案最多一个 child Account 的唯一约束；会话只存 SHA-256 摘要 | 账号期 + 批准的删除策略；会话最长 30 天并可即时撤销 | PostgreSQL custom dump 已完成隔离恢复演练 | Confidential/Restricted |
 | CurriculumAssignment/Material/Ingestion/Snapshot/Knowledge | PostgreSQL + 私有对象存储 | UUID + Household/Child/Subject/版本；材料随机对象键；Snapshot 发布后不可变 | 原材料/解析草稿/已发布知识精确期限 `TBD`；撤销授权后停止新检索 | 必须纳入 PostgreSQL/对象一致备份与恢复 | Internal/Confidential；教材原文受版权控制 |
 | Plan/TaskRecommendation/Task/Session/Attempt | PostgreSQL | UUID；Attempt/审批事实追加写，Task 保存来源/策略 | 学习记录期限 `TBD`；被拒建议可按短期策略清理 | `TBD` | Confidential |
-| MistakeRecord/ReviewSchedule | PostgreSQL | UUID + Household/Child；错题引用 VerifiedQuestion/Attempt/Snapshot；Review 带 policy version | 与学习记录/孩子删除一致；派生 schedule 可重算 | PostgreSQL 备份恢复 | Confidential |
+| MistakeRecord/ReviewSchedule | PostgreSQL | UUID + Household/Child；错题引用 VerifiedQuestion/Attempt/Snapshot；Review 带 policy version | 开放错题及其题目持续保留；已解决且超过 180 天的错题/派生复习链路由生命周期 worker 分批清理 | PostgreSQL 备份恢复 | Confidential |
 | Capture 元数据 | PostgreSQL | Capture UUID | 与图片策略联动 | `TBD` | Confidential |
 | 单题图片 | 私有 MinIO / S3 Adapter | 随机对象键，不含儿童身份 | 原图 24 小时；旧 OCR/后续脱敏处理失败最多 7 天；裁剪题目 30 天，家长可保存/删除 | 默认不做长期业务备份，备份擦除待真实数据前确定 | Restricted |
 | 临时脱敏副本 | 私有 MinIO 临时对象或受控内存 | 随机对象键 + 不可逆哈希，不含儿童身份 | 云端响应后立即删除；失败最多 24 小时；不可长期保存 | 不进入业务备份 | Restricted |
-| TutorTurn/AI 审计 | PostgreSQL | UUID + 版本字段；TutorTurn 追加写 | 原始敏感内容最小化；期限 `TBD` | PostgreSQL custom dump 已恢复验证 | Confidential |
+| VerifiedQuestion/TutorTurn | PostgreSQL | UUID + Household/Child + 版本字段；TutorTurn 追加写 | 详细内容固定 180 天；仍被开放错题引用时保护，其他业务事实不随本策略删除 | PostgreSQL custom dump 已恢复验证 | Confidential |
+| AI/AuditEvent 审计 | PostgreSQL | UUID + 稳定事件/最小字段 | 不在 ADR-0026 清理范围；正式期限仍为 `TBD` | PostgreSQL custom dump 已恢复验证 | Confidential |
 | Mistake/Review/Mastery/Report | PostgreSQL | UUID；报告按时间窗口聚合 | 与源记录/家庭删除保持一致 | PostgreSQL custom dump 已恢复验证 | Confidential |
 | 家庭数据导出 | PostgreSQL JSONB 快照 | UUID + Household/Child；幂等重放返回同一快照 | 24 小时后生命周期 worker 删除；孩子删除级联 | 不作为长期归档 | Restricted |
 | 缓存/队列 | Redis | 非业务主键 | 短期 TTL；可重建 | 不作为恢复源 | Internal/Confidential |

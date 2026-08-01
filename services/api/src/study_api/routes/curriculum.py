@@ -38,7 +38,9 @@ from study_api.domain.curriculum_repository import (
     CurriculumSnapshot,
     ImportCurriculumRequest,
 )
+from study_api.domain.models import AccountRole
 from study_api.domain.repository import IdempotencyConflictError
+from study_api.material_parser import provisional_textbook_title
 from study_api.object_storage import CaptureObjectStorage, ObjectStorageError
 
 router = APIRouter(prefix="/households/{household_id}", tags=["curriculum"])
@@ -70,8 +72,15 @@ def get_knowledge_repository(request: Request) -> CurriculumKnowledgeRepository:
 KnowledgeRepository = Annotated[CurriculumKnowledgeRepository, Depends(get_knowledge_repository)]
 
 
-def _require_child(request: Request, household_id: UUID, child_id: UUID) -> None:
-    if request.app.state.profile_repository.get_child(household_id, child_id) is None:
+def _require_child(
+    principal: AuthenticatedPrincipal, request: Request, household_id: UUID, child_id: UUID
+) -> None:
+    child = request.app.state.profile_repository.get_child(household_id, child_id)
+    if child is None or (
+        principal.role is AccountRole.CHILD and principal.child_id != child_id
+    ) or (
+        principal.role is not AccountRole.CHILD and child.owner_account_id != principal.account_id
+    ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
 
 
@@ -90,7 +99,7 @@ def import_curriculum(
     repository: Repository,
 ) -> JSONResponse:
     require_parent(require_household(principal, household_id))
-    _require_child(app_request, household_id, child_id)
+    _require_child(principal, app_request, household_id, child_id)
     try:
         result, replayed = repository.import_draft(household_id, child_id, request, idempotency_key)
     except IdempotencyConflictError as error:
@@ -159,16 +168,18 @@ async def import_curriculum_files(
     principal: Principal,
     repository: Repository,
     object_storage: ObjectStorage,
+    knowledge_repository: KnowledgeRepository,
     files: Annotated[list[UploadFile], File(min_length=1)],
     grade: Annotated[int, Form(ge=1, le=6)],
-    textbook_version: Annotated[str, Form(min_length=1, max_length=120)],
-    term: Annotated[str, Form(min_length=1, max_length=40)],
     authorization_statement: Annotated[str, Form(min_length=1, max_length=500)],
+    is_public_reusable: Annotated[bool, Form()] = False,
+    textbook_version: Annotated[str | None, Form(min_length=1, max_length=120)] = None,
+    term: Annotated[str | None, Form(min_length=1, max_length=40)] = None,
 ) -> list[CurriculumImportResult]:
-    """Upload several private documents and create one reviewable draft per file."""
+    """Upload files or reuse a parent-declared public textbook by exact hash."""
 
     require_parent(require_household(principal, household_id))
-    _require_child(app_request, household_id, child_id)
+    _require_child(principal, app_request, household_id, child_id)
     if not files:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -209,9 +220,10 @@ async def import_curriculum_files(
             byte_size=byte_size,
             content_sha256=content_sha256,
             authorization_statement=authorization_statement,
+            is_public_reusable=is_public_reusable,
             grade=grade,
-            textbook_version=textbook_version,
-            term=term,
+            textbook_version=textbook_version or provisional_textbook_title(safe_name),
+            term=term or "待识别",
             sections=(
                 CurriculumSection(
                     title=section_title,
@@ -224,12 +236,52 @@ async def import_curriculum_files(
         object_key = f"curriculum/{household_id}/{child_id}/{content_sha256}-{name_hash}"
         file_key = sha256(f"{idempotency_key}:{content_sha256}:{safe_name}".encode()).hexdigest()
         try:
+            reusable_source = (
+                repository.find_public_reusable_snapshot(import_request)
+                if is_public_reusable
+                else None
+            )
+            if reusable_source is not None:
+                source_map = knowledge_repository.get_map(
+                    reusable_source.snapshot.household_id,
+                    reusable_source.snapshot.child_id,
+                    reusable_source.snapshot.id,
+                )
+                if source_map is None or source_map.status is not KnowledgeMapStatus.APPROVED:
+                    reusable_source = None
+            if reusable_source is not None and reusable_source.material.object_key is not None:
+                result, _ = repository.import_draft(
+                    household_id,
+                    child_id,
+                    import_request,
+                    file_key,
+                    object_key=reusable_source.material.object_key,
+                    reused_from_snapshot_id=reusable_source.snapshot.id,
+                )
+                repository.clone_parsed_content(reusable_source.snapshot.id, result)
+                knowledge_repository.clone_approved_public_map(
+                    reusable_source.snapshot.id,
+                    result.material.id,
+                    result.snapshot.id,
+                    household_id,
+                    child_id,
+                )
+                result = result.model_copy(
+                    update={
+                        "material": result.material.model_copy(update={"status": "needs_review"}),
+                        "snapshot": result.snapshot.model_copy(
+                            update={
+                                "sections": reusable_source.snapshot.sections,
+                                "textbook_version": reusable_source.snapshot.textbook_version,
+                                "term": reusable_source.snapshot.term,
+                            }
+                        ),
+                    }
+                )
+                results.append(result)
+                continue
             await object_storage.stream_document_upload(
-                object_key,
-                media_type,
-                byte_size,
-                content_sha256,
-                _upload_chunks(upload),
+                object_key, media_type, byte_size, content_sha256, _upload_chunks(upload)
             )
             result, _ = repository.import_draft(
                 household_id,
@@ -273,7 +325,7 @@ def list_curriculum(
     app_request: Request,
 ) -> list[CurriculumSnapshot]:
     role = require_household(principal, household_id)
-    _require_child(app_request, household_id, child_id)
+    _require_child(principal, app_request, household_id, child_id)
     published_only = role.value == "child"
     return repository.list_snapshots(household_id, child_id, published_only)
 
@@ -294,7 +346,7 @@ def list_curriculum_snapshot_pages(
     """Return parent-only, page-scoped text for a readable review document."""
 
     require_parent(require_household(principal, household_id))
-    _require_child(app_request, household_id, child_id)
+    _require_child(principal, app_request, household_id, child_id)
     if repository.get_material_for_snapshot(household_id, child_id, snapshot_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
     pages: list[CurriculumParsedPage] = []
@@ -334,7 +386,7 @@ def get_curriculum_analysis(
     app_request: Request,
 ) -> CurriculumKnowledgeMap:
     role = require_household(principal, household_id)
-    _require_child(app_request, household_id, child_id)
+    _require_child(principal, app_request, household_id, child_id)
     if role.value == "child" and principal.child_id != child_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
     if repository.get_material_for_snapshot(household_id, child_id, snapshot_id) is None:
@@ -363,7 +415,7 @@ def enqueue_curriculum_analysis(
     app_request: Request,
 ) -> CurriculumKnowledgeMap:
     require_parent(require_household(principal, household_id))
-    _require_child(app_request, household_id, child_id)
+    _require_child(principal, app_request, household_id, child_id)
     material = repository.get_material_for_snapshot(household_id, child_id, snapshot_id)
     if material is None or material.object_key is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
@@ -388,7 +440,7 @@ def approve_curriculum_analysis(
     app_request: Request,
 ) -> CurriculumKnowledgeMap:
     require_parent(require_household(principal, household_id))
-    _require_child(app_request, household_id, child_id)
+    _require_child(principal, app_request, household_id, child_id)
     del idempotency_key
     try:
         return knowledge_repository.approve(household_id, child_id, snapshot_id)
@@ -416,7 +468,7 @@ def get_curriculum_page_image(
     app_request: Request,
 ) -> Response:
     role = require_household(principal, household_id)
-    _require_child(app_request, household_id, child_id)
+    _require_child(principal, app_request, household_id, child_id)
     if role.value == "child":
         if principal.child_id != child_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
@@ -461,7 +513,7 @@ def publish_curriculum(
     app_request: Request,
 ) -> JSONResponse:
     require_parent(require_household(principal, household_id))
-    _require_child(app_request, household_id, child_id)
+    _require_child(principal, app_request, household_id, child_id)
     material = repository.get_material_for_snapshot(household_id, child_id, snapshot_id)
     if (
         material is not None
@@ -514,9 +566,24 @@ def delete_curriculum_snapshot(
     """Delete one parent-owned material, its parsed chunks, and private source object."""
 
     require_parent(require_household(principal, household_id))
-    _require_child(app_request, household_id, child_id)
+    _require_child(principal, app_request, household_id, child_id)
     existing_material = repository.get_material_for_snapshot(household_id, child_id, snapshot_id)
-    for asset in knowledge_repository.list_page_assets(household_id, child_id, snapshot_id):
+    assets_to_delete = [
+        asset
+        for asset in knowledge_repository.list_page_assets(household_id, child_id, snapshot_id)
+        if not knowledge_repository.has_other_asset_reference(asset.object_key, snapshot_id)
+    ]
+    material_object_should_delete = bool(
+        existing_material
+        and existing_material.object_key
+        and not repository.has_other_material_reference(
+            existing_material.object_key, existing_material.id
+        )
+    )
+    # Delete only objects whose final reference is this snapshot. References
+    # are checked before the DB cascade so one family cannot delete a public
+    # textbook or page image still used by another family.
+    for asset in assets_to_delete:
         try:
             object_storage.delete_object(asset.object_key)
         except ObjectStorageError as error:
@@ -524,7 +591,11 @@ def delete_curriculum_snapshot(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="curriculum page images could not be deleted from private storage",
             ) from error
-    if existing_material is not None and existing_material.object_key:
+    if (
+        material_object_should_delete
+        and existing_material is not None
+        and existing_material.object_key
+    ):
         try:
             object_storage.delete_object(existing_material.object_key)
         except ObjectStorageError as error:

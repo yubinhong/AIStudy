@@ -1,6 +1,5 @@
 import { NextRequest } from "next/server";
-
-const householdId = "00000000-0000-0000-0000-000000000001";
+import { currentHouseholdId } from "../../../../../../../../../lib/current-household";
 
 export async function GET(
   request: NextRequest,
@@ -12,6 +11,8 @@ export async function GET(
     }>;
   },
 ) {
+  const householdId = await currentHouseholdId(request);
+  if (!householdId) return new Response(null, { status: 401 });
   const { childId, snapshotId, pageNumber } = await context.params;
   if (!/^[1-9]\d{0,2}$/.test(pageNumber)) {
     return Response.json({ message: "invalid page number" }, { status: 400 });

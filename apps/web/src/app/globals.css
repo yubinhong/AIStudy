@@ -339,10 +339,110 @@ summary:focus-visible {
   box-shadow: 0 0 0 0.2rem #e3f4e9;
 }
 
-.account-shortcut {
+.account-menu {
+  position: relative;
+}
+
+.account-menu > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.48rem;
+  min-width: 8.8rem;
+  padding: 0.32rem 0.48rem;
+  border-radius: 0.65rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.account-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.account-menu > summary:hover,
+.account-menu[open] > summary {
+  background: var(--green-soft);
+}
+
+.account-menu-avatar {
   display: grid;
   place-items: center;
-  color: var(--muted);
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 50%;
+  background: #dcefe3;
+  color: var(--green-dark);
+}
+
+.account-menu-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.1rem;
+}
+
+.account-menu-copy strong,
+.account-menu-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-menu-copy strong {
+  color: var(--ink-strong);
+  font-size: 0.76rem;
+}
+
+.account-menu-copy small {
+  color: var(--muted-soft);
+  font-size: 0.64rem;
+}
+
+.account-menu-caret {
+  margin-left: auto;
+  color: var(--muted-soft);
+  transition: transform 140ms ease;
+}
+
+.account-menu[open] .account-menu-caret {
+  transform: rotate(180deg);
+}
+
+.account-menu-panel {
+  position: absolute;
+  top: calc(100% + 0.55rem);
+  right: 0;
+  z-index: 30;
+  display: grid;
+  width: 13.5rem;
+  padding: 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: white;
+  box-shadow: 0 1rem 2.5rem rgba(22, 55, 41, 0.14);
+}
+
+.account-menu-panel a,
+.account-menu-panel button {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 2.4rem;
+  padding: 0 0.6rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 680;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.account-menu-panel a:hover,
+.account-menu-panel button:hover {
+  background: var(--green-soft);
+  color: var(--green-dark);
 }
 
 .admin-main {
@@ -533,6 +633,46 @@ summary:focus-visible {
   text-overflow: ellipsis;
 }
 
+.due-question-copy {
+  padding: 0.8rem 0;
+}
+
+.due-question-list {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.due-question-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: baseline;
+  padding-top: 0.45rem;
+  border-top: 1px dashed var(--line-soft);
+}
+
+.due-question-list li > span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 650;
+  line-height: 1.5;
+  text-overflow: initial;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.due-question-list small {
+  color: var(--muted-soft);
+  font-size: 0.65rem;
+  white-space: nowrap;
+}
+
 .status-pill,
 .review-state,
 .answer-state {
@@ -584,6 +724,10 @@ summary:focus-visible {
 
 .management-grid {
   grid-template-columns: minmax(18rem, 0.72fr) minmax(30rem, 1.28fr);
+}
+
+.full-grid-panel {
+  grid-column: 1 / -1;
 }
 
 .curriculum-grid {
@@ -644,6 +788,100 @@ summary:focus-visible {
 .activity-table {
   margin-top: 1rem;
   border-top: 1px solid var(--line-soft);
+}
+
+.learning-history-header {
+  margin-bottom: 1rem;
+}
+
+.learning-history-panel {
+  min-height: 28rem;
+}
+
+.learning-history-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.learning-history-toolbar h2 {
+  margin: 0.15rem 0 0;
+  color: var(--ink-strong);
+  font-size: 1.1rem;
+}
+
+.date-filter {
+  display: flex;
+  align-items: end;
+  gap: 0.55rem;
+}
+
+.date-filter label {
+  align-self: center;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.date-filter input[type="date"] {
+  min-height: 2.5rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.45rem;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.date-filter .secondary-button,
+.date-filter .date-reset {
+  min-height: 2.5rem;
+}
+
+.date-filter .date-reset {
+  padding: 0 0.35rem;
+}
+
+.learning-history-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin-top: 1rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.learning-history-summary strong {
+  color: var(--ink-strong);
+  font-size: 1.35rem;
+}
+
+.learning-history-panel .activity-table-head,
+.learning-history-panel .activity-record summary {
+  grid-template-columns: 6.5rem minmax(14rem, 1fr) 5.5rem 4rem 4.5rem;
+}
+
+.learning-history-panel .record-question {
+  font-size: 0.8rem;
+}
+
+.record-question-full {
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.record-question-full p {
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
+.learning-history-empty {
+  min-height: 16rem;
 }
 
 .activity-table-head,
@@ -953,6 +1191,41 @@ summary:focus-visible {
   background: transparent;
   color: var(--muted);
   font-size: 0.68rem;
+}
+
+.profile-subject-settings {
+  grid-column: 2 / -1;
+  display: grid;
+  grid-template-columns: minmax(9rem, 1fr) auto minmax(12rem, auto) auto;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.7rem 0 0.15rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.profile-subject-settings > div,
+.profile-subject-settings label {
+  display: grid;
+  gap: 0.22rem;
+}
+
+.profile-subject-settings span,
+.profile-subject-settings label {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.profile-subject-settings select {
+  min-width: 5.8rem;
+  min-height: 2rem;
+}
+
+.profile-subject-settings .profile-consent-control {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  line-height: 1.35;
 }
 
 .account-row,
@@ -1439,6 +1712,20 @@ summary:focus-visible {
     padding: 1.5rem 1rem 2rem;
   }
 
+  .learning-history-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .date-filter {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .date-filter label {
+    width: 100%;
+  }
+
   .document-reader-layout {
     grid-template-columns: 1fr;
   }
@@ -1465,6 +1752,15 @@ summary:focus-visible {
     gap: 0.7rem;
   }
 
+  .account-menu > summary {
+    min-width: auto;
+  }
+
+  .account-menu-copy,
+  .account-menu-caret {
+    display: none;
+  }
+
   .service-status {
     font-size: 0;
   }
@@ -1476,6 +1772,15 @@ summary:focus-visible {
 
   .attention-row .row-action {
     grid-column: 2 / -1;
+  }
+
+  .due-question-list li {
+    grid-template-columns: 1fr;
+    gap: 0.15rem;
+  }
+
+  .date-filter input[type="date"] {
+    flex: 1 1 10rem;
   }
 
   .trend-metrics,
@@ -1509,6 +1814,11 @@ summary:focus-visible {
 
   .profile-actions {
     grid-column: 2 / -1;
+  }
+
+  .profile-subject-settings {
+    grid-column: 1 / -1;
+    grid-template-columns: 1fr;
   }
 
   .curriculum-callout {

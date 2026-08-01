@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: 家庭 AI 学习助手 API
-  version: 0.11.0
-  description: Self-hosted Household account/session and learning contract vertical slices.
+  version: 0.13.0
+  description: Self-hosted Household account/session, learning, and gated English speaking contracts.
 servers:
   - url: http://localhost:8000
 paths:
@@ -143,6 +143,94 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/IdempotencyConflict'
+  /auth/households/{household_id}/accounts/parents:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+    post:
+      operationId: createParentAccount
+      summary: Create a non-administrative parent account
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateParentAccountRequest'}
+      responses:
+        '201':
+          description: Parent account created.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccountView'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/IdempotencyConflict'}
+  /auth/households:
+    post:
+      operationId: provisionHousehold
+      summary: Provision an isolated household and its first parent
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateHouseholdRequest'}
+      responses:
+        '201':
+          description: New household parent account.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccountView'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/IdempotencyConflict'}
+  /auth/family-parents:
+    get:
+      operationId: listFamilyParents
+      summary: List provisioned family parents for the instance super administrator
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      responses:
+        '200':
+          description: Ordinary parent accounts with their owned child count.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/FamilyParentView'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /auth/family-parents/{account_id}:
+    parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    delete:
+      operationId: deleteFamilyParent
+      summary: Delete an ordinary parent account with no owned children
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeleteParentAccountRequest'}
+      responses:
+        '204': {description: Parent account and its sessions were deleted.}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/IdempotencyConflict'}
   /auth/households/{household_id}/accounts/{account_id}/status:
     parameters:
       - $ref: '#/components/parameters/HouseholdId'
@@ -1581,16 +1669,17 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [files, authorization_statement, grade, textbook_version, term]
+              required: [files, authorization_statement, grade]
               properties:
                 files:
                   type: array
                   minItems: 1
                   items: {type: string, format: binary, description: PDF only}
                 authorization_statement: {type: string, minLength: 1, maxLength: 500}
+                is_public_reusable: {type: boolean, default: false}
                 grade: {type: integer, minimum: 1, maximum: 6}
-                textbook_version: {type: string, minLength: 1, maxLength: 120}
-                term: {type: string, minLength: 1, maxLength: 40}
+                textbook_version: {type: string, minLength: 1, maxLength: 120, description: Optional parent override. Omit to infer a title locally from the PDF cover/front matter after upload.}
+                term: {type: string, minLength: 1, maxLength: 40, description: Optional parent override. Omit to infer the volume from the PDF cover/front matter after upload.}
       responses:
         '201':
           description: One reviewable draft per uploaded document.
@@ -1620,13 +1709,13 @@ paths:
         schema: {type: string, format: uuid}
     get:
       operationId: listCurriculumSnapshots
-      summary: List child-visible published curriculum snapshots
+      summary: List all independently published curriculum snapshots visible to the child
       security:
         - SessionCookie: []
         - BearerSession: []
       responses:
         '200':
-          description: Curriculum snapshots.
+          description: Multiple published snapshots may coexist; each remains independently source-bound.
           content:
             application/json:
               schema:
@@ -1971,11 +2060,21 @@ paths:
       - name: limit
         in: query
         required: false
-        schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+        schema: {type: integer, minimum: 1, maximum: 500, default: 200}
+      - name: from_at
+        in: query
+        required: false
+        description: Inclusive timezone-aware start. Defaults to 30 days before to_at and cannot be older than the 180-day retention boundary.
+        schema: {type: string, format: date-time}
+      - name: to_at
+        in: query
+        required: false
+        description: Exclusive timezone-aware end. The requested range cannot exceed 31 days.
+        schema: {type: string, format: date-time}
     get:
       operationId: getLearningDetails
       summary: Read recent confirmed questions, answer evidence and Tutor turns
-      description: Parent-only, Household-scoped projection. It contains no image bytes, object keys or Provider payloads.
+      description: Parent-only, Household-scoped projection for a bounded range within the 180-day detailed-history retention window. Open mistakes remain protected from lifecycle deletion. It contains no image bytes, object keys or Provider payloads.
       security:
         - SessionCookie: []
         - BearerSession: []
@@ -1990,6 +2089,172 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /households/{household_id}/children/{child_id}/english-practice/settings:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: getEnglishPracticeSettings
+      summary: Read one child's gated English speaking settings
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      responses:
+        '200':
+          description: Settings plus provider and consent availability.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnglishPracticeSettings'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    put:
+      operationId: updateEnglishPracticeSettings
+      summary: Parent owner enables or locks guided English practice
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateEnglishPracticeSettings'}
+      responses:
+        '200':
+          description: Updated settings.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnglishPracticeSettings'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/IdempotencyConflict'}
+  /households/{household_id}/children/{child_id}/english-practice/scenarios:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: listEnglishPracticeScenarios
+      summary: List the three bounded guided speaking scenarios
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      responses:
+        '200':
+          description: Fixed scenario catalog.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/EnglishScenario'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /households/{household_id}/children/{child_id}/english-practice/sessions:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: listEnglishPracticeSessions
+      summary: Read at most ten privacy-minimized session summaries
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 10, default: 10}
+      responses:
+        '200':
+          description: Recent summaries without audio or transcript.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/EnglishPracticeSession'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      operationId: startEnglishPracticeSession
+      summary: Start one child-bound guided speaking session
+      security:
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StartEnglishPracticeSessionRequest'}
+      responses:
+        '201':
+          description: Session summary created after all gates pass.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnglishPracticeSession'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/IdempotencyConflict'}
+        '429':
+          description: Daily practice limit reached.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+  /households/{household_id}/children/{child_id}/english-practice/sessions/{session_id}/complete:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: session_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      operationId: completeEnglishPracticeSession
+      summary: Idempotently finish one guided speaking session
+      security:
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CompleteEnglishPracticeSessionRequest'}
+      responses:
+        '200':
+          description: Completed privacy-minimized summary.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnglishPracticeSession'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /households/{household_id}/children/{child_id}/english-practice/sessions/{session_id}/stream:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: session_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    x-websocket:
+      summary: Bearer Session protected PCM16 relay
+      security:
+        - BearerSession: []
+      input-audio: {encoding: pcm_s16le, sample-rate: 16000, channels: 1, frame-ms: [20, 40]}
+      output-audio: {encoding: pcm_s16le, sample-rate: 24000, channels: 1, frame-ms: [20, 40]}
+      client-control-schema: ./schemas/english-live-client-event.v1.json
+      server-control-schema: ./schemas/english-live-server-event.v1.json
   /households/{household_id}/captures/{capture_id}/ocr-results/{result_id}:
     parameters:
       - $ref: '#/components/parameters/HouseholdId'
@@ -2158,7 +2423,7 @@ components:
           type: string
         role:
           type: string
-          enum: [parent, child]
+          enum: [super_admin, parent, child]
         child_id:
           type: string
           format: uuid
@@ -2171,6 +2436,13 @@ components:
         created_at:
           type: string
           format: date-time
+    FamilyParentView:
+      type: object
+      additionalProperties: false
+      required: [account, child_count]
+      properties:
+        account: {$ref: '#/components/schemas/AccountView'}
+        child_count: {type: integer, minimum: 0}
     ChangePasswordRequest:
       type: object
       additionalProperties: false
@@ -2200,6 +2472,26 @@ components:
         child_id:
           type: string
           format: uuid
+    CreateParentAccountRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username: {type: string, minLength: 3, maxLength: 80}
+        password: {type: string, minLength: 1, maxLength: 128}
+    CreateHouseholdRequest:
+      type: object
+      additionalProperties: false
+      required: [parent_username, parent_password]
+      properties:
+        parent_username: {type: string, minLength: 3, maxLength: 80}
+        parent_password: {type: string, minLength: 1, maxLength: 128}
+    DeleteParentAccountRequest:
+      type: object
+      additionalProperties: false
+      required: [current_password]
+      properties:
+        current_password: {type: string, minLength: 1, maxLength: 128}
     CreateChildManagementRequest:
       type: object
       additionalProperties: false
@@ -2279,7 +2571,7 @@ components:
           const: study-api
         version:
           type: string
-          const: 0.11.0
+          const: 0.13.0
     CreateChildRequest:
       type: object
       additionalProperties: false
@@ -2309,12 +2601,15 @@ components:
     ChildProfile:
       type: object
       additionalProperties: false
-      required: [id, household_id, display_name, grade, curriculum_version, subjects, created_at]
+      required: [id, household_id, owner_account_id, display_name, grade, curriculum_version, subjects, created_at]
       properties:
         id:
           type: string
           format: uuid
         household_id:
+          type: string
+          format: uuid
+        owner_account_id:
           type: string
           format: uuid
         display_name:
@@ -2514,6 +2809,117 @@ components:
           type: string
           enum: [learned, needs_review, skipped]
           nullable: true
+    EnglishScenario:
+      type: object
+      additionalProperties: false
+      required: [id, title, description, target_minutes]
+      properties:
+        id:
+          type: string
+          enum: [greetings, school, food_order]
+        title: {type: string}
+        description: {type: string}
+        target_minutes: {type: integer, minimum: 5, maximum: 8}
+    EnglishPracticeSettings:
+      type: object
+      additionalProperties: false
+      required:
+        - household_id
+        - child_id
+        - enabled
+        - level
+        - version
+        - provider_available
+        - required_consent_version
+        - daily_limit_minutes
+      properties:
+        household_id: {type: string, format: uuid}
+        child_id: {type: string, format: uuid}
+        enabled: {type: boolean}
+        level: {type: string, enum: [pre_a1, a1, a2]}
+        consent_version: {type: [string, 'null'], maxLength: 64}
+        version: {type: integer, minimum: 0}
+        updated_by: {type: [string, 'null'], format: uuid}
+        updated_at: {type: [string, 'null'], format: date-time}
+        provider_available: {type: boolean}
+        required_consent_version: {type: string, maxLength: 64}
+        daily_limit_minutes: {type: integer, const: 10}
+    EnglishPracticeSettingsRecord:
+      type: object
+      additionalProperties: false
+      required: [household_id, child_id, enabled, level, version]
+      properties:
+        household_id: {type: string, format: uuid}
+        child_id: {type: string, format: uuid}
+        enabled: {type: boolean}
+        level: {type: string, enum: [pre_a1, a1, a2]}
+        consent_version: {type: [string, 'null'], maxLength: 64}
+        version: {type: integer, minimum: 0}
+        updated_by: {type: [string, 'null'], format: uuid}
+        updated_at: {type: [string, 'null'], format: date-time}
+    UpdateEnglishPracticeSettings:
+      type: object
+      additionalProperties: false
+      required: [enabled, level, expected_version]
+      properties:
+        enabled: {type: boolean}
+        level: {type: string, enum: [pre_a1, a1, a2]}
+        consent_version: {type: [string, 'null'], maxLength: 64}
+        expected_version: {type: integer, minimum: 0}
+    StartEnglishPracticeSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [scenario_id]
+      properties:
+        scenario_id: {type: string, enum: [greetings, school, food_order]}
+    CompleteEnglishPracticeSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: {type: string, enum: [completed, interrupted]}
+    EnglishPracticeSession:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - household_id
+        - child_id
+        - scenario_id
+        - level
+        - status
+        - provider
+        - model_version
+        - policy_version
+        - started_at
+        - duration_seconds
+        - turn_count
+        - input_audio_ms
+        - output_audio_ms
+        - cost_micros
+        - feedback_tags
+      properties:
+        id: {type: string, format: uuid}
+        household_id: {type: string, format: uuid}
+        child_id: {type: string, format: uuid}
+        scenario_id: {type: string, enum: [greetings, school, food_order]}
+        level: {type: string, enum: [pre_a1, a1, a2]}
+        status: {type: string, enum: [active, completed, interrupted, failed]}
+        provider: {type: string, maxLength: 32}
+        model_version: {type: string, maxLength: 64}
+        policy_version: {type: string, maxLength: 64}
+        started_at: {type: string, format: date-time}
+        completed_at: {type: [string, 'null'], format: date-time}
+        duration_seconds: {type: integer, minimum: 0, maximum: 480}
+        turn_count: {type: integer, minimum: 0}
+        input_audio_ms: {type: integer, minimum: 0}
+        output_audio_ms: {type: integer, minimum: 0}
+        cost_micros: {type: integer, minimum: 0}
+        feedback_tags:
+          type: array
+          maxItems: 3
+          items: {type: string, maxLength: 64}
+        failure_code: {type: [string, 'null'], maxLength: 64}
     CreateCaptureRequest:
       type: object
       additionalProperties: false
@@ -2923,6 +3329,7 @@ components:
         byte_size: {type: integer, minimum: 0, maximum: 52428800}
         content_sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
         authorization_statement: {type: string, minLength: 1, maxLength: 500}
+        is_public_reusable: {type: boolean, default: false}
         grade: {type: integer, minimum: 1, maximum: 6}
         textbook_version: {type: string, minLength: 1, maxLength: 120}
         term: {type: string, minLength: 1, maxLength: 40}
@@ -2944,6 +3351,7 @@ components:
         byte_size: {type: integer, minimum: 0}
         content_sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
         authorization_statement: {type: string}
+        is_public_reusable: {type: boolean}
         status: {type: string, enum: [draft, uploaded, queued, parsing, needs_review, needs_ocr, failed, quarantined, unsupported_for_learning_content, parsed, published, rejected]}
         created_at: {type: string, format: date-time}
     CurriculumSnapshot:
@@ -3314,7 +3722,7 @@ components:
     ChildDataExport:
       type: object
       additionalProperties: false
-      required: [schema_version, generated_at, child, tasks, sessions, attempts, verified_questions, tutor_turns, mistakes, review_schedules]
+      required: [schema_version, generated_at, child, tasks, sessions, attempts, verified_questions, tutor_turns, mistakes, review_schedules, english_practice_sessions]
       properties:
         schema_version:
           type: string
@@ -3352,6 +3760,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ReviewSchedule'
+        english_practice_settings:
+          oneOf:
+            - $ref: '#/components/schemas/EnglishPracticeSettingsRecord'
+            - type: 'null'
+        english_practice_sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/EnglishPracticeSession'
     OcrJobReceipt:
       type: object
       additionalProperties: false

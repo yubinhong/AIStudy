@@ -4,7 +4,11 @@ from uuid import UUID
 from auth_helpers import session_headers
 from fastapi.testclient import TestClient
 
-from study_api.domain.insights_repository import ChildDataExport, EmptyInsightsRepository
+from study_api.domain.insights_repository import (
+    ChildDataExport,
+    EmptyInsightsRepository,
+    LearningDetail,
+)
 from study_api.domain.models import ChildProfile, Subject
 from study_api.main import create_app
 
@@ -31,6 +35,7 @@ class ExportInsightsRepository(EmptyInsightsRepository):
                 child=ChildProfile(
                     id=child_id,
                     household_id=household_id,
+                    owner_account_id=UUID("00000000-0000-0000-0000-000000000001"),
                     display_name="Synthetic Child A",
                     grade=3,
                     curriculum_version="math-demo-2026",
@@ -45,6 +50,24 @@ class ExportInsightsRepository(EmptyInsightsRepository):
             )
             self._exports[idempotency_key] = export
         return export, replayed
+
+
+class RecordingInsightsRepository(EmptyInsightsRepository):
+    def __init__(self) -> None:
+        self.calls: list[tuple[datetime, datetime, int]] = []
+
+    def learning_details(
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+        limit: int = 200,
+    ) -> tuple[LearningDetail, ...]:
+        del household_id, child_id
+        self.calls.append((from_at, to_at, limit))
+        return ()
 
 
 def test_weekly_report_is_household_and_child_scoped_without_content() -> None:
@@ -94,6 +117,61 @@ def test_parent_learning_details_are_scoped_and_children_cannot_read_them() -> N
     assert parent.status_code == 200
     assert parent.json() == []
     assert child.status_code == 403
+
+
+def test_learning_details_default_to_a_bounded_30_day_window() -> None:
+    repository = RecordingInsightsRepository()
+    client = TestClient(create_app(insights_repository=repository))
+
+    response = client.get(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/learning-details",
+        headers=session_headers(client, role="parent"),
+    )
+
+    assert response.status_code == 200
+    assert len(repository.calls) == 1
+    from_at, to_at, limit = repository.calls[0]
+    assert to_at - from_at == timedelta(days=30)
+    assert from_at.tzinfo is UTC
+    assert to_at.tzinfo is UTC
+    assert limit == 200
+
+
+def test_learning_details_accept_one_timezone_aware_day_and_normalizes_to_utc() -> None:
+    repository = RecordingInsightsRepository()
+    client = TestClient(create_app(insights_repository=repository))
+    query = "from_at=2026-07-29T00:00:00%2B08:00&to_at=2026-07-30T00:00:00%2B08:00"
+
+    response = client.get(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/learning-details?{query}&limit=500",
+        headers=session_headers(client, role="parent"),
+    )
+
+    assert response.status_code == 200
+    from_at, to_at, limit = repository.calls[0]
+    assert from_at == datetime(2026, 7, 28, 16, tzinfo=UTC)
+    assert to_at == datetime(2026, 7, 29, 16, tzinfo=UTC)
+    assert limit == 500
+
+
+def test_learning_details_reject_invalid_or_expired_ranges() -> None:
+    client = TestClient(create_app(insights_repository=RecordingInsightsRepository()))
+    headers = session_headers(client, role="parent")
+    path = f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/learning-details"
+
+    reversed_range = client.get(
+        f"{path}?from_at=2026-07-30T00:00:00Z&to_at=2026-07-29T00:00:00Z",
+        headers=headers,
+    )
+    expired = client.get(
+        f"{path}?from_at=2025-01-01T00:00:00Z&to_at=2025-01-02T00:00:00Z",
+        headers=headers,
+    )
+
+    assert reversed_range.status_code == 422
+    assert reversed_range.json()["message"] == "from_at must be before to_at"
+    assert expired.status_code == 422
+    assert expired.json()["message"] == "learning history is retained for 180 days"
 
 
 def test_parent_can_export_child_data_with_exact_idempotent_replay() -> None:

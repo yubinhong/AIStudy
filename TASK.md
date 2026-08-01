@@ -1,15 +1,58 @@
-# TASK.md — TASK-0010 教材原页、知识图谱与可用任务整改
+# TASK.md — TASK-0011 英语学科与合规口语练习框架
 
 ## 当前任务元数据
 
-- 状态：`IN_PROGRESS（PLAN-0018 已部署 Ubuntu 0.11.0/0025；真实教材/NewAPI/E2E 待验收）`
+- 状态：`IN_PROGRESS（框架、自动化、双平台 release 和 Ubuntu 禁用态部署已完成；PostgreSQL 并发/级联集成与实体设备验收待完成）`
+- 类型：`FEATURE / API CONTRACT / PRIVACY / DEVICE`
+- 优先级：`P1`
+- Owner：Codex（执行）；项目 Owner（批准 2026-07-29 实施计划）
+- 创建/更新：`2026-07-29`
+- 关联：`PLAN-0022`、`ADR-0025`、`TODO-218`
+
+## 当前目标与验收
+
+- [x] 首页固定显示数学与英语，数学路由和模型不变；英语锁定态始终可见。
+- [x] 家长逐孩子设置启用、`Pre-A1/A1/A2` 与同意版本；Provider 不可用时不能开启。
+- [x] API/OpenAPI `0.12.0`、`0029`、摘要导出/删除、Bearer WebSocket 与 PCM16 合同已实现。
+- [x] Flutter 三情景、摘要、按住说话、打断和后台/销毁关麦；`record 7.1.1`、`flutter_soloud 4.0.13` 与权限已锁定。
+- [x] 不包含 Gemini SDK/Adapter/Key；默认 `disabled`，`fake` 仅测试。
+- [x] API 定向、Flutter 全量、Web 全量、契约引用、迁移静态 SQL、双平台 release 与固定英语安全 eval 已通过。
+- [ ] PostgreSQL 集成、API 全量两个既有失败的后续修复，以及 iPad/Nova 9 实体验收。
+- [ ] 合规 Provider、正式同意文本和真实质量/成本/儿童安全评测未批准；入口不得开放。
+
+回滚：关闭全局英语开关并保留附加表/摘要；禁止为回滚删除儿童记录。Ubuntu 运行态已确认为关闭、Provider 为 `disabled`。
+
+## 2026-07-30 用户明确增量：家长学习记录
+
+- 状态：`COMPLETE（本地交付并已部署 Ubuntu 0.13.0/0030）`
+- 结果：工作台直接显示每道到期错题的题干与到期日；新增独立“学习记录”页，默认最近 30 个上海自然日，可选择 180 天窗口内单日。API/OpenAPI 增加带时区半开区间、31 天/500 条上限和 Household/Child 授权。
+- 生命周期：`0030_learning_history_retention` 增加清理索引；DataLifecycle worker 固定清理超过 180 天且不再被开放错题引用的 VerifiedQuestion/TutorTurn 和已结束复习链路。Attempt、AuditEvent、账号、教材和开放错题不删除；可用 `LEARNING_HISTORY_CLEANUP_ENABLED=false` 暂停后续清理。
+- 验证：API 定向 `9 passed`、PostgreSQL 生命周期集成 `1 passed`、Mypy 58 files；Web `32 passed`、Lint、TypeScript、Prettier 和生产构建；Alembic 单 head/离线 SQL、OpenAPI 解析与 `git diff --check` 通过。API 全量非集成为 `218 passed, 2 failed, 28 deselected`，两个失败与本轮前已记录的 Owner 作用域/孩子删除幂等回归一致。
+- 发布/风险：2026-07-31 已在 Ubuntu 备份并隔离恢复 PostgreSQL/MinIO，备份路径为 `/home/syin/study-backups/20260731T020739Z`；远端已前滚到 API/OpenAPI `0.13.0` 与 `0030`，API/Web/四个常驻 worker 健康、迁移服务成功退出，生命周期 worker 首轮清理计数均为 0。仍未执行浏览器登录态 E2E；本地 PostgreSQL 未前滚，集成测试只写入并清理独立 synthetic 行。已经按策略删除的数据不能通过应用回滚恢复。
+- 回滚：关闭生命周期开关并回退 API/Web；保留 `0030` 的附加索引，采用前向修复，不执行破坏性 downgrade。
+
+## 2026-07-29 本地交付记录
+
+- 结果：完成两学科首页、家长设置、三情景英语页、Bearer WebSocket、供应商中立流式 Provider 会话、PCM16 分片、终态不可变摘要、导出/删除和英语安全 Policy；`fake` 只能由测试依赖注入，部署环境无法启用。未加入 Google SDK、Gemini Adapter、密钥或 Provider URL。
+- 验证：英语/导出定向 `20 passed`，Ruff、Mypy（58 source files）、英语安全 eval `7/7`；OpenAPI `0.12.0` 为 60 paths/92 refs，8 个 JSON Schema 可解析，Alembic head/`0028 → 0029` 离线 SQL 通过；Web `29 passed`、Lint、TypeScript、Prettier、生产构建；Flutter `50 passed`、Analyze、格式、Android release APK（64.1 MB）和 iOS 无签名 `Runner.app`（24.0 MB）通过。
+- 未执行：本机无 Docker daemon 或 PostgreSQL 16，故 `0029` 真实前滚/从零建库/并发与级联集成测试未运行；实体设备连接检查未获授权，iPad mini 6/Nova 9 麦克风、扬声器、弱网、打断和后台生命周期未验收。
+- 既有失败：API 非集成全量为 `214 passed, 2 failed, 27 deselected`；失败仍是拍题确认 Owner 作用域 `404` 和孩子删除幂等重放 `404`，均来自本轮开始前的多家庭/所有者改动，本轮未扩大范围修复。
+- 回滚：保持 `STUDY_ENGLISH_LIVE_ENABLED=false`、`STUDY_ENGLISH_LIVE_PROVIDER=disabled` 并保留摘要表。2026-07-31 已随 `0.13.0`/`0030` 部署 Ubuntu，运行态仍为关闭且 Provider 为 `disabled`；不得为回滚删除附加表或摘要。
+
+---
+
+## 保留任务：TASK-0010 教材原页、知识图谱与可用任务整改
+
+### TASK-0010 元数据
+
+- 状态：`IN_PROGRESS（PLAN-0018 已随 Ubuntu 0.13.0/0030 运行；最新 iPad 包已安装，设备信任与真实教材/NewAPI/E2E 待验收）`
 - 类型：`FEATURE / API CONTRACT / DEVICE`
 - 优先级：`P0`
 - Owner：Codex（执行）；项目 Owner（用户，要求教材图片语义、整本知识归纳和错题任务立即可用）
 - 创建/更新：`2026-07-18`
 - 关联：`PLAN-0018`、`ADR-0020`、`ADR-0021`、`ADR-0022`、`ADR-0023`
 
-## 当前目标与验收
+### TASK-0010 目标与验收
 
 修复教材 PDF 丢失图片语义和任务推荐使用残缺文字的问题：保留受鉴权原页，云端分批理解页面并归纳整本知识图谱，家长批准后才允许发布和推荐；推荐只使用开放错题与已批准知识点/具体练习。
 
@@ -20,16 +63,85 @@
 - [x] 推荐不再读取 `CurriculumChunk.text` 抽题，只使用批准知识点中的来源题与全部开放错题。
 - [x] OpenAPI `0.11.0`、API 非集成测试、mypy/相关 ruff、Web test/build、Flutter test/analyze、迁移 offline SQL 和本机 PostgreSQL 前滚已通过。
 - [x] 依赖教材图片的任务在 Flutter 显示视觉说明，并通过孩子 Session 受鉴权打开对应原页；客户端限制 JPEG/2 MiB。
+- [x] `needs_review` 只在 `mistake-closeout` 返回错题记录后完成并回学习桌；题目/作答未确认时不伪造“已加入复习”。完整解答可靠匹配已批准知识图谱时只使用该知识点范围；无匹配仍在确认门禁后给出适龄基础解法，响应不附教材来源也不伪造知识点。
+- [x] 教材与任务页的顶栏孩子切换以有效 `?child=` 为唯一当前孩子来源；切换时清除旧孩子的教材、知识图谱、推荐和预览瞬态数据，过期请求不得回写覆盖新孩子页面。
 - [ ] 真实 118 页 PDF/NewAPI 输出质量、费用和失败重试验收；浏览器/设备 E2E。
+- [x] 多家庭会话作用域、唯一超级管理员和显式公开教材复用：`0028` 将最早 `parent_admin` 迁移为唯一 `super_admin`，其余迁移为普通家长；孩子档案绑定创建它的家长，普通家长只能管理自己的孩子。超级管理员可创建新家庭的普通家长，其他家庭不再有管理员角色。教材复用仍只发生在显式公开、精确内容指纹匹配且来源已批准的 PDF，目标仍独立审核。2026-07-28 已完成 Ubuntu 备份、隔离恢复、迁移与运行态验证；真实普通家长越权和浏览器流程待后续验收。
+- [x] 家长 Web 的管理员可发现性：修复 `/curriculum` 缺失 Suspense 导致生产构建失败、旧 Web 镜像继续运行的问题；通过会话代理读取当前账号，顶栏显示用户名/角色并提供账户管理与注销入口。Ubuntu Web 已无缓存后重建，浏览器以 `admin` 会话验证当前身份、退出登录入口、家长账号与独立家庭表单；未创建测试家庭或账号。
 
 回滚：停止 `curriculum-analysis-worker` 并禁用知识图谱推荐；保留原 PDF、已生成私有页图和既有学习事实。`0025` 只新增表/可空外键，可在无新引用时 downgrade；不得恢复残缺文字抽题。
 
+## 2026-07-28 Web 拍题聚焦与家庭权限整改记录
+
+- 结果：家长首页已移除今日学习任务与本周学习目标；教材页仅保留上传、知识图谱审核/发布和教材快照，移除手工小节与任务推荐；孩子管理页仅保留孩子档案和账号管理，移除今日安排。
+- 权限：新增超级管理员专属的 `/family` 页面与导航。服务端新增家长列表和删除合同，普通家长直接请求仍被拒绝。开通仍创建“新家庭 + 首个普通家长”；删除仅允许目标为普通家长、没有所属孩子且超级管理员重新验证当前密码时执行，成功会撤销目标会话。
+- 数据与回滚：没有删除既有任务、推荐、教材或学习事实，也未更改孩子端错题/复习闭环。恢复入口应通过前向修复，禁止用删除用户或孩子来回滚。
+- 验证：API 定向 `34 passed`、Ruff、Mypy（56 source files）；Web `27` 项测试、Lint、TypeScript、Prettier、生产构建通过。本机 Node `20.17`/pnpm `9.10` 不满足锁定引擎，仅作为带 warning 的本地验证。2026-07-28 已部署 Ubuntu，锁定 Node `24.18`/pnpm `11.7` 的 Web 构建通过；API/Web 与四个 worker 健康，Alembic current/head 为 `0028_super_admin_ownership`，未认证家庭权限 API 返回 `401`，`/family` 返回 `200`。普通家长/超级管理员浏览器人工流程待执行。
+
+## 2026-07-29 iPad Release 覆盖安装记录
+
+- 设备：iPad mini 6（iPad14,1）已配对、开发者模式启用。通过 Flutter `3.44.6` 生成 21.2 MB 的 Release `Runner.app`，并注入首次服务地址 `http://192.168.1.4:8000`。
+- 交付：使用项目 Team `VZ59988J63` 自动签名构建，`devicectl` 覆盖安装并启动 `com.example.studyChild`；设备应用列表确认 `Study Child 0.1.0 (1)`。
+- 未执行：不读取设备上的账号或学习数据；真实登录、相机/相册权限、局域网连接、拍题、错题 closeout 与复习闭环仍需用户在设备上操作验收。
+
+## 2026-07-29 完整解答教材匹配降级记录
+
+- 结果：第 3 级完整解答不再把知识图谱未命中作为 `409` 阻断。可靠命中时仍仅使用批准知识点的最小范围；未命中时 Provider 只收到已确认题目、作答证据和 `not_matched` 标记，必须使用适龄基础方法，且 API 返回空教材来源与独立策略版本。
+- 验证：API Tutor/NewAPI 定向 `23 passed`、相关 Ruff 与 Mypy（58 source files）通过；Flutter `capture_api_client_test.dart` `15 passed`、全量 `50 passed`、Analyze、Dart 格式化与 `git diff --check` 通过。Ubuntu API 与教材分析 worker 已重建健康，运行态已确认加载 `not_matched` 降级策略；修复版已自动签名、覆盖安装并启动 iPad。未做真实题目或 Provider 输出质量验证。
+- 回滚：若出现安全或教学质量问题，使用前向修复；不得删除已有 TutorTurn、VerifiedQuestion、错题或复习事实。
+
+- 部署修正：首次发布把 `routes/tutor.py` 错同步到远端包根目录，导致运行中的旧路由仍以 `409` 阻断未匹配的完整解答；L1/L2 的 `200` 与 L3 的 `409` 日志证实该差异。已将文件同步到正确路由目录、删除该未引用副本并仅重建 API；健康检查和容器内路由源码确认 `general-solution-policy.v1` 已加载。未读取题目、作答或账号内容。
+
 ## 2026-07-24 Ubuntu 前滚记录
+
+## 2026-07-28 多孩子教材范围整改记录
+
+- 结果：定位到 `/curriculum` 为客户端页面，只在初次挂载读取 URL `child` 参数，顶栏切换虽然更新 URL 但不会更新页面的 `childId`。现在该页由 `?child=` 与已授权孩子列表直接推导当前孩子，切换时使旧网络请求失效并清空旧教材、知识图谱、推荐和预览状态，再加载新孩子作用域的数据。
+- 教材复用审计：当前 PDF 对象键包含 `household_id` 和 `child_id`，同一家庭不同孩子上传相同 PDF 会保存、渲染和分析两次，尚无复用。已建立 PLAN-0019 和 Proposed ADR-0024：先做同 Household 不可见原件引用复用与最后引用删除；孩子审核/发布/任务事实不共用；跨家庭去重、多家庭注册/邀请与公网开放不在当前单家庭认证范围。
+- 验证：新增 URL 选择回归；Web 定向 `4` 项、TypeScript、ESLint 和 Prettier 通过。本机 Node `20.17`/pnpm `9.10` 低于锁定 Node `24.18`/pnpm `11.7`，命令仅产生 engine warning，Ubuntu 构建仍使用锁定版本。
+
+## 2026-07-28 多家庭与公开教材复用记录
+
+## 2026-07-28 超级管理员与孩子归属整改记录
+
+- 结果：按项目 Owner 最新确认，取消“每个家庭一个管理员”。新增 `0028_super_admin_ownership`：最早 `parent_admin` 升级为唯一 `super_admin`，其他既有家庭管理员降为普通 `parent`；新家庭仅创建普通家长。孩子档案新增不可空 `owner_account_id`，历史数据按家庭内最早可用成人回填；孩子用户名继续全局唯一。家长管理、孩子档案、孩子账号、教材和推荐入口按所有者重新校验，越权返回不可枚举的 `404`。
+- 恢复：新增 `services/api/scripts/reset_super_admin_password.py`，仅能在受信 API 容器/服务器控制台使用，要求交互式二次输入密码并撤销旧会话；本轮没有读取或重置任何真实密码。
+- 验证：API 定向 `33 passed`、Ruff、Mypy、Python compile、Alembic head 与从零生成静态 SQL；Web 会话/家庭代理/账号菜单 `3 passed`、TypeScript 与 Prettier通过。Ubuntu 备份 `/home/syin/study-backups/20260728T082318Z` 已通过隔离恢复（32 个 PostgreSQL public 表、341 个 MinIO 文件）；`0028_super_admin_ownership`、`admin=super_admin`、全库 1 个超级管理员、0 个未归属孩子及 API/Web 健康均已验证。PostgreSQL 本机集成与真实普通家长浏览器越权流程仍待后续验收。
+
+- 结果：首次 `admin` 迁移为 `parent_admin`，每个家庭管理员可创建普通家长，也可为亲戚开通完全隔离的新家庭及其首个管理员。用户名在自托管实例中全局唯一，普通家长和孩子不能创建家长或家庭；Web BFF 与孩子 Flutter 从已认证 `/auth/me` 获取当前 Household，不再写死默认家庭。
+- 教材：默认保持私有且不复用。只有家长在上传时显式声明国家公开教材可复用，并完整匹配 SHA-256、MIME、字节数且来源知识图谱已批准时，系统才复用私有 PDF/页图和派生解析为目标家庭的待审核草稿；不会返回来源家庭、对象键或命中信息。删除会保留仍被其他材料/Snapshot 引用的对象。
+- 验证：API 定向 `25` 项、Ruff、Mypy、迁移 head；Web `23` 项、TypeScript、Prettier；Flutter `48` 项和 Analyze 通过。未部署 Ubuntu，未在真实 PostgreSQL、浏览器或设备上验收本项。
+
+## 2026-07-28 Ubuntu 与 iPad 交付记录
+
+- 结果：保留 Ubuntu `infra/compose/.env`、PostgreSQL/MinIO/Redis 数据卷和远端配置，使用 `rsync` 同步当前工作区后以 `DOCKER_BUILDKIT=0 docker compose ... up -d --build` 成对重建 API、Web、迁移和五个 worker。所有服务运行中，API `/healthz` 返回 `0.11.0`，Alembic current 为 `0026_parallel_curriculum`。
+- iPad：无线设备 `00008110-0011356E0E41801E` 已识别；Release `Runner.app` 使用 Xcode 自动签名并安装到设备，构建时注入初始服务地址 `http://192.168.1.4:8000`。设备服务列出 `Study Child 0.1.0 (1)`，但首次启动被 iOS 拒绝，原因是开发者签名尚未在该 iPad 上显式信任；需在 iPad“设置 → 通用 → VPN 与设备管理”信任 Team `VZ59988J63` 后再启动验证。
+- 未执行：真实教材/Provider 质量、费用和设备拍题闭环；本次 Flutter `run` 的编译成功，安装成功，启动因设备信任门禁未完成。
 
 - 结果：在不读取家庭或教材内容的前提下，Ubuntu 单家庭 Compose 已从 API `0.10.0`/Alembic `0024_intelligent_recommendations` 成对前滚到 API `0.11.0`/`0025_curriculum_knowledge_map`；API、Web、ImageAnalysis、MaterialParse、CurriculumAnalysis 和 DataLifecycle worker 均健康，MinIO `9000` 仍无宿主端口映射。
 - 发布前：修复备份脚本遗漏教材 worker 且使用 `docker compose start` 无法满足已完成 migrate 依赖的问题。脚本现在冻结所有实际存在的写入 worker，并直接恢复其原容器；`/home/syin/study-backups/20260724T015356Z` 已通过 SHA-256、隔离 PostgreSQL 恢复（28 张 public 表）和 29 个 MinIO 文件快照校验。
 - 烟雾：远端 API `/healthz` 返回 `0.11.0`，Alembic current/head 都是 `0025_curriculum_knowledge_map`；教材分析和受鉴权原页 OpenAPI 路径存在，所有 Compose 服务健康。未上传、解析或发送真实教材。
 - 本地复核：API 非集成 `189 passed, 24 deselected`、迁移表结构断言、从初始版本到 `0025` 的 Alembic 静态 SQL、Mypy（56 source files）、教材相关 Ruff lint/format、Tutor Policy synthetic eval（5 cases）、Flutter `43` 项和 Analyze、OpenAPI/JSON Schema 结构检查均通过。Web 复跑受本机缺少锁定 Node `24.18`（仅有 Node 16/20/22）阻塞，未把 Node 20 的 engine warning 结果计为通过。
+- 2026-07-24 教材分析兼容修复：一个已解析的 110 页 PDF 在 NewAPI 返回 `provider_curriculum_page_schema_invalid` 后暴露网关兼容问题。API 现在依次尝试 `json_schema`、`json_object`、无 `response_format`，每次仍在服务端以固定 Pydantic Schema 校验；Schema 无效只记录版本/字段路径，不记录教材内容，并在同一 Provider 上最多重试一次。Ubuntu API/教材 worker 已重建，1 像素合成图经当前 `gemini-3.1-flash-lite` 实测在 `json_object` 回退后通过页级 Schema。真实 PDF 未自动重试，需家长从页面点击“重新理解”；仍待人工核对知识图谱质量、费用和浏览器/设备验收。
+- 2026-07-24 难度枚举修复：真实 Provider 对第 4 页两个练习返回了不在 `basic/medium/advanced` 中的难度标签。页级提示升级为 `curriculum-page-visual.v2` 并明确这三个值；服务端只将明确中英文同义词归一化，未知值仍严格拒绝。Ubuntu API/教材 worker 已重建；运行中 Worker 用合成“基础题”响应验证为 `basic`，未读取或重试真实教材。
+- 2026-07-24 置信度标度修复：后续 Provider 响应在页、知识观察和练习层返回了百分比/分值形式的 `confidence`，不满足 `[0,1]` Schema。页级提示升级为 `curriculum-page-visual.v3`，全书提示也明确只接受 JSON 数值 `0`～`1`；服务端只将有限的百分比、`分` 和 `0`～`100` 数值标度归一化，文字/超范围/非有限值仍拒绝。Ubuntu API/教材 worker 已重建；运行中 Worker 用合成 `91`、`90分`、`92%` 验证为 `0.91`、`0.90`、`0.92`，未读取或重试真实教材。
+- 2026-07-24 小节标题修复：Provider 对首个页面返回了无效 `section_title`。页级提示升级为 `curriculum-page-visual.v4`，并要求没有独立小节时重复章节标题；服务端仅在同页 `chapter_title` 非空时回填该值，否则仍拒绝。Ubuntu API/教材 worker 已重建；运行中 Worker 用合成空小节标题验证回填为同页章节标题，未读取或重试真实教材。
+- 2026-07-26 稀疏页证据修复：真实 Provider 在第 4 页知识观察中遗漏 `learning_objectives`。该字段在页级中间证据改为可为空，提示升级为 `curriculum-page-visual.v5`，要求没有可靠依据时保留空数组而非编造目标；整书 `ProviderBookKnowledgePoint` 仍要求至少一个学习目标，家长批准门禁不变。Ubuntu API/教材 worker 已重建，运行中 Worker 用合成缺字段响应验证接受为空；既有真实教材不自动重试。
+- 2026-07-26 临时网关失败修复：真实 98 页教材的第 4 次人工尝试在前三个页批次完成 JSON object 回退后，因 NewAPI `provider_http_5xx` 失败；该失败此前会立即终止整本作业。现在同一请求只对 `429`/`5xx`/网络/超时按 1 秒、2 秒退避，最多三次；失败状态继续可见，页面准确显示“AI 理解失败 · 可安全重试”，不会刷新即自动重试。Ubuntu API、教材 worker 与 Web 已重建并健康，运行中 Worker 已验证三次上限；真实教材未自动重试。
+- 2026-07-26 长任务状态修复：Worker 只在整本图谱完成时写入 `analyzed_page_count`，此前 Web 不轮询，`0/98` 会持续到刷新而看似卡住。分析中现在显示“全文处理中（共 N 页）”，每 8 秒读取一次服务端状态；完成或失败自动反映，当前作业不会因前端轮询重新入队。Ubuntu Web 已重建并健康。
+- 2026-07-26 整书范围修复：第 5 次真实 98 页尝试已完成页级批次和整书 Provider 调用，却在服务端把整书章节范围要求为精确覆盖全部页面时失败为 `curriculum_analysis_invalid`。该约束错误地将封面、目录和空白页当作必须归属知识章节；现在只拒绝章节范围或知识点页码引用未分析页面，并将此类失败码细化为 `curriculum_book_reference_invalid`。整书 Prompt 升级为 `curriculum-book-consolidation.v2`，明确非知识页可省略。真实教材未自动重试。
+- 2026-07-26 审核发布状态修复：真实教材知识图谱已批准并有 8 个知识点，但 Web 继续依据旧“待审核知识图谱”占位小节显示“AI 理解准备中”，从而隐藏“审核发布”。占位判断现在只在没有知识图谱时生效；已批准图谱会显示发布按钮，发布后知识范围可供讲解和来源受限任务推荐使用。Ubuntu Web 已重建并健康。
+- 2026-07-26 发布解析状态修复：已发布教材仍显示“未解析正文”，但远端元数据已确认其有 98 条正文片段、98 张私有原页、98 页分析和已批准知识图谱。Web 现以已批准且有分析页的知识图谱判断解析可用性，发布状态显示“已发布 · 知识图谱已启用”，任务推荐也据此区分真实无题与旧未解析范围。Ubuntu Web 已重建并健康。
+- 2026-07-27 教材名称与一年级整书兼容修复：PDF 上传不再读取手工小节的“数学教材-本地版/上学期”默认值，而先显示按文件名生成的待识别名；本地解析仅在前四页明确匹配数学、年级和上/下册时回填如“数学一年级上册”，显式 API 家长名称不被替换。整书 Prompt 升级为 `curriculum-book-consolidation.v3`，封面/目录/单元过渡章节可为空，`exercise_keys`/`prerequisites` 的 `null` 仅规范为 `[]`；知识点的目标、页码、来源边界和批准门禁不放宽。定向 Provider/解析/上传 37 项、完整 API 非集成 197 项、Ruff/Mypy 和 Web `tsc`/20 项测试通过；Ubuntu API、Web、MaterialParse/CurriculumAnalysis Worker 已重建且 healthy，当前失败作业仍需家长显式“重新理解”才会以新规则重试。
+- 2026-07-27 一年级整书二次兼容修复：真实 Provider 仍会把 `exercise_keys` 返回为非数组，或为少数不确定知识点遗漏 `learning_objectives`。整书 Prompt 升级为 `curriculum-book-consolidation.v4`；服务端把任何非数组的可选练习/先修引用丢弃为空数组，并过滤所有缺失、为空或含空字符串目标的知识点，不补造学习目标。若过滤后整书没有完整知识点仍失败并要求家长重试；否则保留完整点进入审核。完整 API 非集成 197 项、Ruff/Mypy 通过；Ubuntu API 与 CurriculumAnalysis Worker 已重建且健康，运行容器确认 Prompt v4，家长可显式重试当前失败作业。
+- 2026-07-27 一年级整书三次兼容修复：真实 Provider 可返回合法字符串数组但超过 `ProviderBookAnalysis` 的固定集合上限，导致 `exercise_keys` 等字段在最终 Schema 校验失败。整书 Prompt 升级为 `curriculum-book-consolidation.v5`；服务端仅对已有有效项截取既有上限（章节/知识点 `40`、目标/先修项 `10`、练习引用 `30`），不补造事实；缺失目标、无效页码和未知练习来源的拒绝路径不放宽。新增 `31` 条练习引用、`11` 条目标和先修项的回归测试。验证通过：Provider/分析定向 19 项、API 非集成全量、Ruff、Mypy（56 个源文件）；Ubuntu API 与 CurriculumAnalysis Worker 已重建，API health 正常且运行容器确认 Prompt v5。既有失败任务不自动重跑，须由家长明确“重新理解”。
+- 2026-07-27 多教材并行发布修复：旧发布操作会把同一孩子已有 `published` 快照静默改为 `rejected`，页面因此显示“已替换”，推荐也只读取最新一份教材。发布仓储现保留全部已发布快照；推荐聚合每一份已发布且已批准知识图谱的知识点，并继续按 `snapshot_id` 绑定来源。新增 `0026_parallel_curriculum` 将旧自动替换造成的 `rejected` 快照恢复为 `published`，不删除或改写教材内容。API 定向 14 项、API 非集成全量、Ruff/Mypy、迁移离线 SQL、Web 20 项测试/类型/格式/Lint 通过；Ubuntu 已在备份后前滚，API/Web 健康且教材状态汇总为两份 `published`。首次超长 Alembic revision ID 在提交前整体回滚，无数据修改；短 ID 修正后迁移成功。回滚采取匹配 API/Web 回退，保留 `0026` 的已恢复发布状态，禁止再引入自动停用旧教材的逻辑。
+- 2026-07-27 Nova 9 客户端连接/账号修复：定位 release APK 的 `INTERNET` 权限只存在于 debug/profile 清单，生产 APK 因而不能访问 Ubuntu API；发布清单现声明该权限，并允许用户显式配置的家庭 LAN HTTP 地址。旧安全会话恢复时会从 `/auth/me` 读取、保存并显示实际孩子用户名，连接错误页面保留服务端地址/网络原因且可返回改地址。Flutter `43` 项、Analyze、格式和 release APK 合并清单检查通过；`aapt` 确认权限和 `usesCleartextTraffic` 生效。Ubuntu API 本机健康为 `0.11.0`，不需服务端发布；release APK 已于 `2026-07-27 16:21:21` 覆盖安装并启动 Nova 9，Android 日志未见网络权限/明文 HTTP 拒绝，近端 API 日志有初始化认证/档案请求。设备侧仍须确认真实用户名和学习桌已加载。
+- 2026-07-27 推荐计划日可见性修复：截图中的批准计划日期为 `2026-08-01`，孩子端原实现仅渲染 `scheduled_for == 今天`，所以未来题目并未丢失而是没有当前可开始入口。孩子端现在读取最近未来 `assigned` 计划并只读提示标题/日期；当天和过期未完成的 `assigned/in_progress` 任务可开始，未来任务仍不能提前启动。Web 批准消息和已批准标签明确“将在计划日的今日任务显示”。不变更 API、任务数据、来源题或授权。Flutter `45` 项/Analyze、Web `20` 项/类型/Lint/格式通过；Ubuntu Node `24.18`/pnpm `11.7` Web 已重建并通过 `/healthz`，release APK SHA-256 为 `b182359d70cee99ab7bf7dad70f31d5e242ec0c8b7ca7d3a0e3cb85985e5d273`，已于 `2026-07-27 16:47:48` 覆盖安装 Nova 9。仍待用未来计划/过期计划做设备界面人工验收。
+- 2026-07-27 任务入口临时隐藏：Nova 9 体验确认“今日任务”会堆叠多个已分配计划，且进入“计算题”仍跳转通用拍题，说明来源题已入库但没有孩子端任务执行流。学习桌现不请求或渲染任务列表、未来计划提示、今日任务按钮和“稍后再做”，保留错题讲解/复习错题；不删除 Task、Recommendation、来源题、家长审批或 API 合同。Flutter `44` 项与 Analyze 通过，包含任务隐藏和账号切换修复的 release APK 已于 `2026-07-27 17:36:38` 覆盖安装 Nova 9。任务重新开放前须完成 `TODO-215` 的单任务直接执行、完成/跳过和离线状态设计。
+- 2026-07-27 账号切换显示修复：孩子端 `ChildAuthGate` 在账号切换时已正确更换 Session/用户名，但 `ChildProfileScreen` 只在 `initState` 获取孩子档案，导致 A→B→A 可能继续复用 B 的内存档案和显示状态。档案页现在在服务端地址、授权 Session 或用户名变化时重新调用目标账号的加载器；不改写已保存账号、服务端会话或任何学习数据。新增 A→B→A Widget 回归，Flutter `44` 项/Analyze 和 release APK 构建通过；APK 已于 `2026-07-27 17:36:38` 覆盖安装 Nova 9，待设备侧完成 A→B→A 手工复核。
+- 2026-07-27 题目完成返回修复：`TutorHintScreen` 在“我会了，完成本题”后只显示完成消息，完整解答的“返回首页”也仅 `pop()` 一层；拍题链路有多个中间页时不能回学习桌。完成状态现在展示“返回学习桌”，并与完整解答共用 `Navigator.popUntil(route.isFirst)` 返回根学习桌，不修改 Attempt、Session 或 MistakeRecord 写入。新增“完成题目后返回学习桌” Widget 回归，Flutter `45` 项/Analyze 和 release APK 构建通过；安装时 Nova 9 未保持 ADB 连接，待重新连接后覆盖安装。
+- 2026-07-27 复习 closeout 与教材范围解题修复：孩子端“还没完全会，加入复习”此前未确认服务端是否实际创建复习事实，成功后也停留在讲解页。现在客户端只有在已确认 `worked/blank` 作答且 `mistake-closeout` 返回 `mistake` 后才视为成功，并立即回学习桌；未确认题目或作答状态会显示可操作提示。Tutor 不再以旧页级文字片段作为完整解答依据：服务端从当前孩子全部已批准知识图谱选择可靠匹配点，向 NewAPI 仅传该点的标题、目标、先修范围和来源页；没有匹配点时完整解答返回 `409`，不会外发给 Provider。API Tutor/NewAPI 定向 `22` 项、Flutter 全量 `48` 项、Flutter Analyze、Mypy 和相关 Ruff 已通过；API 全量非集成套件在本机两次于约 `72%` 后无结果结束，未计为通过。尚未部署 Ubuntu 或安装 Nova 9，真实教材匹配质量和设备验证仍待执行。
 
 ## 2026-07-23 PLAN-0018 本地完成记录
 

@@ -18,11 +18,11 @@
 
 ## 2. 当前仓库阶段
 
-- 当前 P0/P1 基础脚手架已存在：`apps/`、`services/`、`packages/`、`evals/`、`infra/compose/`、三类锁文件、CI 草案、本地 OpenAPI `0.11.0`、迁移至 `0025_curriculum_knowledge_map`、Profile/Learning/Capture/Identity/VerifiedQuestion/Tutor/Report/Export/Mistake/Review 和 Ubuntu 自用 Compose 均有实现/验收记录；Ubuntu 仍运行 `0.10.0`/`0024`，正式 production、浏览器 E2E 和最终设备回归仍不存在或未完成。PLAN-0018 的私有原页预览、分批多模态教材分析、整本知识图谱、家长审核和已审核知识点/具体练习推荐已在本地实现，真实 Provider/PDF/设备与远端部署仍待验收。
+- 当前 P0/P1 基础脚手架已存在：`apps/`、`services/`、`packages/`、`evals/`、`infra/compose/`、三类锁文件、CI 草案、OpenAPI `0.13.0`、迁移至 `0030_learning_history_retention`、Profile/Learning/Capture/Identity/VerifiedQuestion/Tutor/Report/Export/Mistake/Review 和 Ubuntu 自用 Compose 均有实现/验收记录；Ubuntu 运行 `0.13.0`/`0030`，正式 production、登录态浏览器 E2E 和最终设备回归仍不存在或未完成。PLAN-0018 的私有原页预览、分批多模态教材分析、整本知识图谱、家长审核和已审核知识点/具体练习推荐已部署，真实 Provider/PDF/设备质量验收仍待完成。
 - ADR-0017 已接受以账号密码和可撤销会话替换 HMAC/PIN；TASK-0007 进一步删除 HMAC、Demo Header 和 Web 免登录旁路。API/Web/Flutter/Compose 运行时只允许用户名密码登录后的 Cookie/Bearer Session；Flutter 在登录前配置服务端地址，地址变更必须清理旧会话。真实 PostgreSQL、浏览器 E2E 和设备生命周期仍需验收。
-- ADR-0018 已接受以“App 携带 Session → API 有界流式校验/转发 → 私有 MinIO”替代 ADR-0010/0014 的预签名直传。目标 OpenAPI 不返回对象存储 URL，MinIO `9000` 不向宿主/LAN 暴露，且删除 `OBJECT_STORAGE_PUBLIC_ENDPOINT_URL`；当前本地 `0.11.0` 代码和 Ubuntu `0.10.0` 均已切换到新链路，最终设备回归仍待完成。
+- ADR-0018 已接受以“App 携带 Session → API 有界流式校验/转发 → 私有 MinIO”替代 ADR-0010/0014 的预签名直传。目标 OpenAPI 不返回对象存储 URL，MinIO `9000` 不向宿主/LAN 暴露，且删除 `OBJECT_STORAGE_PUBLIC_ENDPOINT_URL`；当前本地与 Ubuntu `0.13.0` 均已切换到新链路，最终设备回归仍待完成。
 - PLAN-0013/Proposed ADR-0019 已实现 Web 将孩子档案与唯一登录账号作为一个管理聚合并支持首页当前孩子选择；`Account`/`ChildProfile` 仍安全分表，聚合创建使用事务和 `0016` 唯一约束。浏览器 E2E 和双孩子回归仍待完成。
-- ADR-0020/0023 已接受以“教材范围 → 多模态知识图谱 → 错题讲解 → 错题沉淀 → 到期复习 → 今日任务”为数学首科产品主线；本地已实现拍题 closeout、实际题目复习/ReviewAttempt、PDF-only 私有原页渲染、云端 L1/L2 递进和来源受限智能推荐。新推荐必须遍历全部开放错题和已批准知识图谱中的具体练习，不得再从残缺页级文字规则抽题；只把有界候选与不透明来源键交给 NewAPI。模型引用不存在来源、忽略已有错题/教材或未把到期错题排到当天时必须整体拒绝。Ubuntu 部署、真实 PDF/Provider/设备和固定质量评测仍待完成，不得把本地实现描述为已上线。
+- ADR-0020/0023 已接受以“教材范围 → 多模态知识图谱 → 错题讲解 → 错题沉淀 → 到期复习”为数学首科产品主线；已部署拍题 closeout、实际题目复习/ReviewAttempt、PDF-only 私有原页渲染、云端 L1/L2 递进和来源受限智能推荐。今日任务入口因指定题目执行体验不完整而暂时隐藏。新推荐必须遍历全部开放错题和已批准知识图谱中的具体练习，不得再从残缺页级文字规则抽题；只把有界候选与不透明来源键交给 NewAPI。模型引用不存在来源、忽略已有错题/教材或未把到期错题排到当天时必须整体拒绝。真实 PDF/Provider/设备和固定质量评测仍待完成，不得把自用 Ubuntu 部署描述为公网或商业生产上线。
 - `PROJECT.md` 中的模块路径和命令在实际命令运行成功前不得声称对应能力已经存在；当前状态以 `TASK.md` 和 `TESTING.md` 的逐项验证记录为准。
 - 初始化每个子项目时必须同时提交依赖清单、锁文件、最小测试、标准脚本/命令和忽略规则，并同步 `TESTING.md`、`AI_CONTEXT.md` 和本文件。
 - 未经 ADR 或用户批准，不得用临时单文件实现替代目标模块边界，也不得为了快速演示跳过儿童数据、安全、契约或离线同步约束。

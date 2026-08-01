@@ -7,16 +7,21 @@ describe("curriculum parsed-page proxy", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("forwards the parent session to the page-scoped review endpoint", async () => {
-    const fetchMock = vi.fn(async () =>
-      Response.json([
-        {
-          page_number: 1,
-          title: "第一单元",
-          text: "数一数。",
-          confidence: 1,
-        },
-      ]),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({ household_id: "00000000-0000-0000-0000-000000000001" }),
+      )
+      .mockResolvedValueOnce(
+        Response.json([
+          {
+            page_number: 1,
+            title: "第一单元",
+            text: "数一数。",
+            confidence: 1,
+          },
+        ]),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const childId = "00000000-0000-0000-0000-000000000101";
     const snapshotId = "00000000-0000-0000-0000-000000000201";

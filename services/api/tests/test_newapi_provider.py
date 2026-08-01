@@ -1,6 +1,8 @@
 import base64
 import io
 import json
+import logging
+from collections.abc import Mapping
 from typing import Any
 from uuid import UUID
 
@@ -13,6 +15,7 @@ from study_api.newapi_provider import (
     NewApiConfigurationError,
     NewApiProviderError,
     NewApiVisionProvider,
+    _validated_curriculum_book,
 )
 from study_api.recommendation_engine import RecommendationSource
 
@@ -88,6 +91,76 @@ def test_newapi_provider_bounds_whole_book_observation_payload() -> None:
     assert error.value.code == "provider_curriculum_book_input_too_large"
 
 
+def test_curriculum_book_discards_incomplete_points_and_invalid_optional_references() -> None:
+    response = {
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "schema_version": "curriculum-book-analysis.v1",
+                            "book_summary": "一年级数学教材的知识结构。",
+                            "chapters": [
+                                {
+                                    "title": "封面与目录",
+                                    "start_page": 1,
+                                    "end_page": 2,
+                                    "summary": "不包含可审核的知识点。",
+                                    "knowledge_points": None,
+                                },
+                                {
+                                    "title": "第一单元",
+                                    "start_page": 3,
+                                    "end_page": 4,
+                                    "summary": "认识数字。",
+                                    "knowledge_points": [
+                                        {
+                                            "knowledge_key": "kp-counting",
+                                            "section_title": "数一数",
+                                            "title": "认识 1 到 5",
+                                            "summary": "根据实物数量认读数字。",
+                                            "learning_objectives": [],
+                                            "prerequisites": None,
+                                            "page_numbers": [3],
+                                            "exercise_keys": None,
+                                            "confidence": 0.9,
+                                        },
+                                        {
+                                            "knowledge_key": "kp-counting-complete",
+                                            "section_title": "数一数",
+                                            "title": "按数量分类",
+                                            "summary": "根据实物数量进行分类。",
+                                            "learning_objectives": ["能按数量分类"] * 11,
+                                            "prerequisites": ["已认识数量"] * 11,
+                                            "page_numbers": [4],
+                                            "exercise_keys": [
+                                                f"page:4:observation:0:exercise:{index}"
+                                                for index in range(31)
+                                            ],
+                                            "confidence": 0.9,
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                        ensure_ascii=False,
+                    )
+                }
+            }
+        ]
+    }
+
+    book = _validated_curriculum_book(response)
+
+    assert book.chapters[0].knowledge_points == ()
+    assert len(book.chapters[1].knowledge_points) == 1
+    assert book.chapters[1].knowledge_points[0].knowledge_key == "kp-counting-complete"
+    point = book.chapters[1].knowledge_points[0]
+    assert len(point.learning_objectives) == 10
+    assert len(point.exercise_keys) == 30
+    assert len(point.prerequisites) == 10
+
+
 def test_newapi_provider_uses_safe_configured_user_agent(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 
@@ -123,6 +196,26 @@ def test_newapi_provider_uses_safe_configured_user_agent(monkeypatch: pytest.Mon
     assert captured["timeout"] == 5
     assert captured["headers"]["User-agent"] == "study-api/0.5"
     assert captured["headers"]["Accept"] == "application/json"
+
+
+def test_newapi_provider_retries_transient_gateway_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = NewApiVisionProvider(_config())
+    calls = 0
+
+    def fake_post_once(_payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            raise NewApiProviderError("temporary gateway failure", code="provider_http_5xx")
+        return {"choices": []}
+
+    monkeypatch.setattr(provider, "_post_json_once", fake_post_once)
+    monkeypatch.setattr("study_api.newapi_provider.sleep", lambda _seconds: None)
+
+    assert provider._post_json({"model": "vision-model"}) == {"choices": []}
+    assert calls == 3
 
 
 @pytest.mark.parametrize("user_agent", ("", "study-api/0.5\r\nX-Injected: true", "测验"))
@@ -204,11 +297,58 @@ def test_newapi_provider_returns_validated_detailed_solution_without_image() -> 
         answer_state="blank",
         answer_text=None,
         answer_steps=(),
+        curriculum_scope={
+            "knowledge_key": "kp-subtraction",
+            "title": "两步减法解决问题",
+            "learning_objectives": ["先合并两次减少量，再求剩余"],
+            "allowed_prerequisites": ["20 以内加减法"],
+            "source_pages": [18],
+        },
     )
 
     assert result.final_answer == "还剩17只"
     assert len(result.steps) == 2
     assert "image_url" not in str(captured)
+    user_payload = json.loads(captured["messages"][1]["content"])
+    assert user_payload["curriculum_grounding"] == "approved"
+    assert user_payload["approved_curriculum_scope"]["knowledge_key"] == "kp-subtraction"
+
+
+def test_newapi_provider_solves_unmatched_questions_without_claiming_a_source() -> None:
+    provider = NewApiVisionProvider(_config())
+    captured: dict[str, Any] = {}
+
+    def fake_post(payload: dict[str, Any]) -> dict[str, Any]:
+        captured.update(payload)
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            '{"steps":["先看图中哪一段表示已经看过的页数。",'
+                            '"用总页数减去已经看过的页数表示剩余页数。"],'
+                            '"final_answer":"剩下的页数=总页数-已经看过的页数。",'
+                            '"verification":"已经看过的页数加上剩余页数应等于总页数。"}'
+                        )
+                    }
+                }
+            ]
+        }
+
+    provider._post_json = fake_post  # type: ignore[method-assign]
+    result = provider.create_detailed_solution(
+        question_text="根据线段图，剩下的页数该怎么表示？",
+        answer_state="blank",
+        answer_text=None,
+        answer_steps=(),
+        curriculum_scope=None,
+    )
+
+    assert result.final_answer == "剩下的页数=总页数-已经看过的页数。"
+    assert "image_url" not in str(captured)
+    user_payload = json.loads(captured["messages"][1]["content"])
+    assert user_payload["curriculum_grounding"] == "not_matched"
+    assert user_payload["approved_curriculum_scope"] is None
 
 
 def test_newapi_provider_plans_only_from_bounded_source_candidates() -> None:
@@ -271,27 +411,26 @@ def test_newapi_provider_understands_page_image_then_consolidates_book() -> None
                     {
                         "page_number": 14,
                         "chapter_title": "位置",
-                        "section_title": "上下前后",
+                        "section_title": None,
                         "summary": "借助图片认识物体之间的位置。",
                         "knowledge_observations": [
                             {
                                 "title": "上下位置",
                                 "summary": "根据两个物体判断上下关系。",
-                                "learning_objectives": ["能说出谁在谁的上面"],
                                 "prerequisites": [],
                                 "exercises": [
                                     {
                                         "question_text": "苹果的下面是什么？",
                                         "visual_description": "苹果在书本上方，小熊在书本下方",
                                         "requires_visual_context": True,
-                                        "difficulty": "basic",
-                                        "confidence": 0.92,
+                                        "difficulty": "基础题",
+                                        "confidence": "92%",
                                     }
                                 ],
-                                "confidence": 0.9,
+                                "confidence": "90分",
                             }
                         ],
-                        "confidence": 0.91,
+                        "confidence": 91,
                     }
                 ],
             }
@@ -315,7 +454,7 @@ def test_newapi_provider_understands_page_image_then_consolidates_book() -> None
                                 "prerequisites": [],
                                 "page_numbers": [14],
                                 "exercise_keys": ["page:14:observation:0:exercise:0"],
-                                "confidence": 0.91,
+                                "confidence": "91%",
                             }
                         ],
                     }
@@ -343,7 +482,155 @@ def test_newapi_provider_understands_page_image_then_consolidates_book() -> None
     )
 
     assert pages[0].knowledge_observations[0].exercises[0].requires_visual_context
+    assert pages[0].knowledge_observations[0].learning_objectives == ()
+    assert pages[0].section_title == "位置"
+    assert pages[0].knowledge_observations[0].exercises[0].difficulty == "basic"
+    assert pages[0].knowledge_observations[0].exercises[0].confidence == 0.92
+    assert pages[0].confidence == 0.91
     assert book.chapters[0].knowledge_points[0].page_numbers == (14,)
+    assert book.chapters[0].knowledge_points[0].confidence == 0.91
     transported = calls[0]["messages"][1]["content"]
     assert any(block["type"] == "image_url" for block in transported)
     assert "extracted_text" in transported[0]["text"]
+    assert (
+        "difficulty must be exactly one of basic, medium, advanced"
+        in calls[0]["messages"][0]["content"]
+    )
+    assert (
+        "Every confidence must be a JSON number from 0 to 1" in calls[0]["messages"][0]["content"]
+    )
+    assert "repeat its chapter_title as section_title" in calls[0]["messages"][0]["content"]
+    page_format = calls[0]["response_format"]
+    assert page_format["type"] == "json_schema"
+    assert page_format["json_schema"]["name"] == "curriculum_page_analysis"
+    assert page_format["json_schema"]["schema"]["title"] == "ProviderPageAnalysisBatch"
+    book_format = calls[1]["response_format"]
+    assert book_format["type"] == "json_schema"
+    assert book_format["json_schema"]["name"] == "curriculum_book_analysis"
+    assert book_format["json_schema"]["schema"]["title"] == "ProviderBookAnalysis"
+
+
+def test_curriculum_schema_failure_logs_only_safe_validation_metadata(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    provider = NewApiVisionProvider(_config())
+    image = Image.new("RGB", (20, 20), "white")
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG")
+    image.close()
+    provider._post_json = lambda _payload: {  # type: ignore[method-assign]
+        "choices": [
+            {
+                "message": {
+                    "content": (
+                        '{"schema_version":"curriculum-page-analysis.v1",'
+                        '"pages":[{"summary":"教材私密内容"}]}'
+                    )
+                }
+            }
+        ]
+    }
+
+    with caplog.at_level(logging.WARNING, logger="study_api.newapi_provider"):
+        with pytest.raises(NewApiProviderError, match="curriculum page schema") as error:
+            provider.analyze_curriculum_pages(
+                (
+                    CurriculumProviderPage(
+                        page_number=1,
+                        extracted_text="synthetic-only",
+                        image_bytes=buffer.getvalue(),
+                    ),
+                )
+            )
+
+    assert error.value.code == "provider_curriculum_page_schema_invalid"
+    assert "curriculum_provider_schema_invalid" in caplog.text
+    assert "validation_error" in caplog.text
+    assert "教材私密内容" not in caplog.text
+
+
+def test_curriculum_pages_fall_back_when_gateway_rejects_json_schema() -> None:
+    provider = NewApiVisionProvider(_config())
+    calls: list[dict[str, Any]] = []
+    image = Image.new("RGB", (20, 20), "white")
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG")
+    image.close()
+
+    def fake_post(payload: dict[str, Any]) -> dict[str, Any]:
+        calls.append(payload)
+        if len(calls) == 1:
+            raise NewApiProviderError("unsupported response format", code="provider_http_400")
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            '{"schema_version":"curriculum-page-analysis.v1",'
+                            '"pages":[{"page_number":1,"chapter_title":"第一单元",'
+                            '"section_title":"位置","summary":"认识位置。",'
+                            '"knowledge_observations":[],"confidence":0.9}]}'
+                        )
+                    }
+                }
+            ]
+        }
+
+    provider._post_json = fake_post  # type: ignore[method-assign]
+    pages = provider.analyze_curriculum_pages(
+        (
+            CurriculumProviderPage(
+                page_number=1,
+                extracted_text="synthetic-only",
+                image_bytes=buffer.getvalue(),
+            ),
+        )
+    )
+
+    assert len(pages) == 1
+    assert calls[0]["response_format"]["type"] == "json_schema"
+    assert calls[1]["response_format"] == {"type": "json_object"}
+
+
+def test_curriculum_pages_omit_response_format_when_gateway_rejects_json_object() -> None:
+    provider = NewApiVisionProvider(_config())
+    calls: list[dict[str, Any]] = []
+    image = Image.new("RGB", (20, 20), "white")
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG")
+    image.close()
+
+    def fake_post(payload: dict[str, Any]) -> dict[str, Any]:
+        calls.append(payload)
+        if len(calls) < 3:
+            raise NewApiProviderError("unsupported response format", code="provider_http_400")
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            '{"schema_version":"curriculum-page-analysis.v1",'
+                            '"pages":[{"page_number":1,"chapter_title":"第一单元",'
+                            '"section_title":"位置","summary":"认识位置。",'
+                            '"knowledge_observations":[],"confidence":0.9}]}'
+                        )
+                    }
+                }
+            ]
+        }
+
+    provider._post_json = fake_post  # type: ignore[method-assign]
+    pages = provider.analyze_curriculum_pages(
+        (
+            CurriculumProviderPage(
+                page_number=1,
+                extracted_text="synthetic-only",
+                image_bytes=buffer.getvalue(),
+            ),
+        )
+    )
+
+    assert len(pages) == 1
+    assert calls[0]["response_format"]["type"] == "json_schema"
+    assert calls[1]["response_format"] == {"type": "json_object"}
+    assert "response_format" not in calls[2]

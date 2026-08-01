@@ -1,9 +1,17 @@
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from auth_helpers import session_headers
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from study_api.curriculum_analysis_jobs import InMemoryCurriculumKnowledgeRepository
+from study_api.domain.curriculum_knowledge import (
+    CurriculumKnowledgeExercise,
+    CurriculumKnowledgeMap,
+    CurriculumKnowledgePoint,
+    KnowledgeMapStatus,
+)
 from study_api.main import create_app
 from study_api.newapi_provider import NewApiConfig, NewApiVisionProvider
 from study_api.privacy_models import VerifyQuestionRequest
@@ -86,6 +94,67 @@ def _verified_question(
         f"seed-verified-{uuid4()}",
     )
     return str(record.id)
+
+
+def _fraction_curriculum_repository() -> InMemoryCurriculumKnowledgeRepository:
+    repository = InMemoryCurriculumKnowledgeRepository()
+    now = datetime.now(UTC)
+    snapshot_id = UUID("00000000-0000-0000-0000-000000000401")
+    material_id = UUID("00000000-0000-0000-0000-000000000402")
+    knowledge_map_id = UUID("00000000-0000-0000-0000-000000000403")
+    point = CurriculumKnowledgePoint(
+        id=UUID("00000000-0000-0000-0000-000000000404"),
+        household_id=UUID(HOUSEHOLD_A),
+        child_id=UUID(CHILD_A),
+        material_id=material_id,
+        snapshot_id=snapshot_id,
+        knowledge_map_id=knowledge_map_id,
+        knowledge_key="kp-fraction-addition",
+        order_index=0,
+        chapter_title="分数",
+        section_title="同分母与异分母分数加法",
+        title="分数加法",
+        summary="通过统一分母后计算分数加法，结果要约成最简分数。",
+        learning_objectives=("理解分母不同不能直接相加", "会先统一分母再计算"),
+        prerequisites=("认识分子和分母",),
+        page_numbers=(42,),
+        exercises=(
+            CurriculumKnowledgeExercise(
+                source_key="page:42:exercise:0",
+                page_number=42,
+                question_text="3/4 + 1/8 = ?",
+                requires_visual_context=False,
+                difficulty="basic",
+                confidence=0.99,
+            ),
+        ),
+        confidence=0.99,
+        status="approved",
+        created_at=now,
+        updated_at=now,
+    )
+    repository.save_for_testing(
+        CurriculumKnowledgeMap(
+            id=knowledge_map_id,
+            household_id=UUID(HOUSEHOLD_A),
+            child_id=UUID(CHILD_A),
+            material_id=material_id,
+            snapshot_id=snapshot_id,
+            status=KnowledgeMapStatus.APPROVED,
+            attempt=1,
+            book_summary="分数教材。",
+            chapters=(),
+            page_count=80,
+            analyzed_page_count=80,
+            schema_version="curriculum-book-analysis.v1",
+            prompt_version="curriculum-book-v1",
+            created_at=now,
+            updated_at=now,
+            reviewed_at=now,
+            knowledge_points=(point,),
+        )
+    )
+    return repository
 
 
 def test_tutor_hint_requires_corrected_capture_and_returns_no_answer() -> None:
@@ -180,7 +249,7 @@ def test_tutor_hint_rejects_client_supplied_verified_question_payload() -> None:
 def test_level_three_returns_and_persists_complete_verified_solution(
     monkeypatch,
 ) -> None:
-    app = create_app()
+    app = create_app(curriculum_knowledge_repository=_fraction_curriculum_repository())
     app.state.newapi_config = NewApiConfig(
         True, "https://newapi.local", "key", "vision-model", 5, 100_000
     )
@@ -193,7 +262,12 @@ def test_level_three_returns_and_persists_complete_verified_solution(
         evidence_confirmed=True,
     )
 
-    def fake_solution(self, **_kwargs) -> DetailedSolution:
+    def fake_solution(self, *, curriculum_scope, **_kwargs) -> DetailedSolution:
+        assert curriculum_scope["knowledge_key"] == "kp-fraction-addition"
+        assert curriculum_scope["learning_objectives"] == [
+            "理解分母不同不能直接相加",
+            "会先统一分母再计算",
+        ]
         return DetailedSolution(
             steps=("先统一分母。", "再相加并约分。"),
             final_answer="7/8",
@@ -219,6 +293,60 @@ def test_level_three_returns_and_persists_complete_verified_solution(
     assert response.json()["direct_answer"] == "7/8"
     assert response.json()["verification"] == "把结果换回同分母后核对。"
     assert response.json()["requires_child_response"] is False
+    assert response.json()["curriculum_sources"] == [
+        {
+            "snapshot_id": "00000000-0000-0000-0000-000000000401",
+            "page_number": 42,
+            "title": "分数加法",
+            "confidence": 0.99,
+        }
+    ]
+
+
+def test_level_three_solves_a_question_without_an_approved_curriculum_scope(monkeypatch) -> None:
+    app = create_app()
+    app.state.newapi_config = NewApiConfig(
+        True, "https://newapi.local", "key", "vision-model", 5, 100_000
+    )
+    client = TestClient(app)
+    correction = _corrected_capture(client)
+    verified_question_id = _verified_question(
+        app,
+        str(correction["capture_id"]),
+        answer_state="blank",
+        evidence_confirmed=True,
+    )
+
+    def fake_solution(self, *, curriculum_scope, **_kwargs) -> DetailedSolution:
+        assert curriculum_scope is None
+        return DetailedSolution(
+            steps=("先找出图中已知的页数。", "用总页数减去已看的页数表示剩余页数。"),
+            final_answer="剩下的页数=总页数-已经看过的页数。",
+            verification="把已经看过的页数和剩余页数相加，应当等于总页数。",
+        )
+
+    monkeypatch.setattr(NewApiVisionProvider, "create_detailed_solution", fake_solution)
+    response = client.post(
+        f"/households/{HOUSEHOLD_A}/tutor/hints",
+        headers={
+            **_principal(client, role="child", child_id=CHILD_A),
+            "Idempotency-Key": "tutor-complete-solution-ungrounded",
+        },
+        json={
+            "verified_question_id": verified_question_id,
+            "level": 3,
+            "mode": "mistake_explanation",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["policy_version"] == "general-solution-policy.v1"
+    assert response.json()["curriculum_sources"] == []
+    assert response.json()["solution_steps"] == [
+        "先找出图中已知的页数。",
+        "用总页数减去已看的页数表示剩余页数。",
+    ]
+    assert response.json()["direct_answer"] == "剩下的页数=总页数-已经看过的页数。"
 
 
 def test_cloud_l1_and_l2_are_question_specific_and_progressive(monkeypatch) -> None:

@@ -71,6 +71,14 @@ from study_api.domain.verified_question_repository import (
     PostgresVerifiedQuestionRepository,
     VerifiedQuestionRepository,
 )
+from study_api.english_practice import (
+    EnglishLiveConfig,
+    EnglishLiveProvider,
+    EnglishPracticeRepository,
+    InMemoryEnglishPracticeRepository,
+    PostgresEnglishPracticeRepository,
+    build_english_provider,
+)
 from study_api.image_analysis_jobs import (
     ImageAnalysisJobRepository,
     InMemoryImageAnalysisJobRepository,
@@ -89,6 +97,7 @@ from study_api.ocr_jobs import InMemoryOcrJobQueue, OcrJobQueue, PostgresOcrJobQ
 from study_api.routes.authentication import router as authentication_router
 from study_api.routes.captures import router as capture_router
 from study_api.routes.curriculum import router as curriculum_router
+from study_api.routes.english_practice import router as english_practice_router
 from study_api.routes.image_analysis import router as image_analysis_router
 from study_api.routes.insights import router as insights_router
 from study_api.routes.learning import router as learning_router
@@ -116,6 +125,9 @@ def create_app(
     recommendation_repository: TaskRecommendationRepository | None = None,
     material_parse_repository: MaterialParseRepository | None = None,
     curriculum_knowledge_repository: CurriculumKnowledgeRepository | None = None,
+    english_practice_repository: EnglishPracticeRepository | None = None,
+    english_live_config: EnglishLiveConfig | None = None,
+    english_live_provider: EnglishLiveProvider | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="家庭 AI 学习助手 API",
@@ -158,6 +170,13 @@ def create_app(
     app.state.curriculum_knowledge_repository = (
         curriculum_knowledge_repository or _default_curriculum_knowledge_repository()
     )
+    app.state.english_practice_repository = (
+        english_practice_repository or _default_english_practice_repository()
+    )
+    app.state.english_live_config = english_live_config or EnglishLiveConfig.from_environment()
+    app.state.english_live_provider = english_live_provider or build_english_provider(
+        app.state.english_live_config
+    )
     app.state.auth_service = AuthService(app.state.account_repository)
     app.state.child_management_repository = _default_child_management_repository(
         app.state.profile_repository,
@@ -174,6 +193,7 @@ def create_app(
     app.include_router(mistakes_router)
     app.include_router(curriculum_router)
     app.include_router(recommendations_router)
+    app.include_router(english_practice_router)
 
     @app.exception_handler(HTTPException)
     async def http_error_handler(_: Request, exception: HTTPException) -> JSONResponse:
@@ -331,6 +351,12 @@ def _default_curriculum_knowledge_repository() -> CurriculumKnowledgeRepository:
     if os.environ.get("STUDY_API_LEARNING_REPOSITORY") == "postgres":
         return PostgresCurriculumKnowledgeRepository()
     return InMemoryCurriculumKnowledgeRepository()
+
+
+def _default_english_practice_repository() -> EnglishPracticeRepository:
+    if os.environ.get("STUDY_API_LEARNING_REPOSITORY") == "postgres":
+        return PostgresEnglishPracticeRepository()
+    return InMemoryEnglishPracticeRepository()
 
 
 class _NoopMaterialParseRepository:

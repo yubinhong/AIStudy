@@ -6,13 +6,14 @@ from typing import Protocol
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import MetaData, Table, create_engine, delete, func, insert, select
+from sqlalchemy import MetaData, Table, create_engine, delete, exists, func, insert, select
 from sqlalchemy.engine import Engine, RowMapping
 
 from study_api.database import database_url
 from study_api.domain.mistake_repository import MistakeRecord, ReviewSchedule
 from study_api.domain.models import Attempt, AuditEvent, ChildProfile, StudySession, StudyTask
 from study_api.domain.repository import IdempotencyConflictError
+from study_api.english_practice import EnglishPracticeSession, EnglishPracticeSettings
 from study_api.privacy_models import VerifiedQuestion
 from study_api.tutor_policy import TutorHintResponse
 
@@ -58,6 +59,8 @@ class ChildDataExport(BaseModel):
     tutor_turns: tuple[TutorHintResponse, ...]
     mistakes: tuple[MistakeRecord, ...] = ()
     review_schedules: tuple[ReviewSchedule, ...] = ()
+    english_practice_settings: EnglishPracticeSettings | None = None
+    english_practice_sessions: tuple[EnglishPracticeSession, ...] = ()
 
 
 class LearningDetail(BaseModel):
@@ -67,6 +70,16 @@ class LearningDetail(BaseModel):
 
     question: VerifiedQuestion
     tutor_turns: tuple[TutorHintResponse, ...]
+
+
+class LearningHistoryCleanup(BaseModel):
+    """Counts from one bounded detailed-learning-history cleanup pass."""
+
+    model_config = ConfigDict(frozen=True)
+
+    resolved_mistakes_deleted: int = Field(ge=0)
+    tutor_turns_deleted: int = Field(ge=0)
+    verified_questions_deleted: int = Field(ge=0)
 
 
 class InsightsRepository(Protocol):
@@ -82,7 +95,13 @@ class InsightsRepository(Protocol):
     ) -> tuple[ChildDataExport, bool]: ...
 
     def learning_details(
-        self, household_id: UUID, child_id: UUID, limit: int = 20
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+        limit: int = 200,
     ) -> tuple[LearningDetail, ...]: ...
 
 
@@ -116,9 +135,15 @@ class EmptyInsightsRepository:
         raise LookupError
 
     def learning_details(
-        self, household_id: UUID, child_id: UUID, limit: int = 20
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+        limit: int = 200,
     ) -> tuple[LearningDetail, ...]:
-        del household_id, child_id, limit
+        del household_id, child_id, from_at, to_at, limit
         return ()
 
 
@@ -136,6 +161,13 @@ class PostgresInsightsRepository:
         self._exports = Table("child_data_exports", metadata, autoload_with=self._engine)
         self._mistakes = Table("mistake_records", metadata, autoload_with=self._engine)
         self._schedules = Table("review_schedules", metadata, autoload_with=self._engine)
+        self._review_attempts = Table("review_attempts", metadata, autoload_with=self._engine)
+        self._english_settings = Table(
+            "english_practice_settings", metadata, autoload_with=self._engine
+        )
+        self._english_sessions = Table(
+            "english_practice_sessions", metadata, autoload_with=self._engine
+        )
         self._idempotency = Table("idempotency_records", metadata, autoload_with=self._engine)
         self._audits = Table("audit_events", metadata, autoload_with=self._engine)
 
@@ -276,7 +308,13 @@ class PostgresInsightsRepository:
         return TutorHintResponse.model_validate(payload)
 
     def learning_details(
-        self, household_id: UUID, child_id: UUID, limit: int = 20
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+        limit: int = 200,
     ) -> tuple[LearningDetail, ...]:
         with self._engine.connect() as connection:
             question_rows = (
@@ -285,6 +323,8 @@ class PostgresInsightsRepository:
                     .where(
                         self._verified_questions.c.household_id == household_id,
                         self._verified_questions.c.child_id == child_id,
+                        self._verified_questions.c.verified_at >= from_at,
+                        self._verified_questions.c.verified_at < to_at,
                     )
                     .order_by(
                         self._verified_questions.c.verified_at.desc(),
@@ -322,6 +362,109 @@ class PostgresInsightsRepository:
             )
             for row in question_rows
         )
+
+    def cleanup_expired_learning_history(
+        self,
+        cutoff: datetime,
+        *,
+        batch_size: int = 500,
+    ) -> LearningHistoryCleanup:
+        """Delete expired detail rows while preserving every open mistake.
+
+        The parent question rows are locked before their dependants are removed. A
+        concurrent mistake closeout therefore either completes first and protects
+        the question, or waits and fails cleanly instead of being cascade-deleted.
+        """
+
+        if cutoff.tzinfo is None:
+            raise ValueError("cutoff must include a timezone")
+        if batch_size < 1 or batch_size > 2000:
+            raise ValueError("batch_size must be between 1 and 2000")
+
+        with self._engine.begin() as connection:
+            resolved_mistake_ids = list(
+                connection.scalars(
+                    select(self._mistakes.c.id)
+                    .where(
+                        self._mistakes.c.status == "resolved",
+                        self._mistakes.c.resolved_at.is_not(None),
+                        self._mistakes.c.resolved_at < cutoff,
+                    )
+                    .order_by(self._mistakes.c.resolved_at, self._mistakes.c.id)
+                    .limit(batch_size)
+                    .with_for_update(skip_locked=True)
+                )
+            )
+            if resolved_mistake_ids:
+                connection.execute(
+                    delete(self._idempotency).where(
+                        self._idempotency.c.resource_type.in_(
+                            ("mistake_record", "review_schedule")
+                        ),
+                        self._idempotency.c.resource_id.in_(resolved_mistake_ids),
+                    )
+                )
+                # Schedules and review attempts cascade from mistake_records.
+                connection.execute(
+                    delete(self._mistakes).where(self._mistakes.c.id.in_(resolved_mistake_ids))
+                )
+
+            protected_by_mistake = exists(
+                select(self._mistakes.c.id).where(
+                    self._mistakes.c.verified_question_id == self._verified_questions.c.id
+                )
+            )
+            question_ids = list(
+                connection.scalars(
+                    select(self._verified_questions.c.id)
+                    .where(
+                        self._verified_questions.c.verified_at < cutoff,
+                        ~protected_by_mistake,
+                    )
+                    .order_by(
+                        self._verified_questions.c.verified_at,
+                        self._verified_questions.c.id,
+                    )
+                    .limit(batch_size)
+                    .with_for_update(skip_locked=True)
+                )
+            )
+            if not question_ids:
+                return LearningHistoryCleanup(
+                    resolved_mistakes_deleted=len(resolved_mistake_ids),
+                    tutor_turns_deleted=0,
+                    verified_questions_deleted=0,
+                )
+
+            turn_ids = list(
+                connection.scalars(
+                    select(self._tutor_turns.c.id).where(
+                        self._tutor_turns.c.verified_question_id.in_(question_ids)
+                    )
+                )
+            )
+            receipt_resource_ids = question_ids + turn_ids
+            connection.execute(
+                delete(self._idempotency).where(
+                    self._idempotency.c.resource_type.in_(("verified_question", "tutor_turn")),
+                    self._idempotency.c.resource_id.in_(receipt_resource_ids),
+                )
+            )
+            if turn_ids:
+                connection.execute(
+                    delete(self._tutor_turns).where(self._tutor_turns.c.id.in_(turn_ids))
+                )
+            # All remaining mistake references were excluded above.
+            connection.execute(
+                delete(self._verified_questions).where(
+                    self._verified_questions.c.id.in_(question_ids)
+                )
+            )
+            return LearningHistoryCleanup(
+                resolved_mistakes_deleted=len(resolved_mistake_ids),
+                tutor_turns_deleted=len(turn_ids),
+                verified_questions_deleted=len(question_ids),
+            )
 
     def cleanup_expired_exports(self, now: datetime | None = None) -> int:
         effective_now = now or datetime.now(UTC)
@@ -476,16 +619,38 @@ class PostgresInsightsRepository:
                 .mappings()
                 .all()
             )
+            english_settings_row = (
+                connection.execute(
+                    select(self._english_settings).where(
+                        self._english_settings.c.household_id == household_id,
+                        self._english_settings.c.child_id == child_id,
+                    )
+                )
+                .mappings()
+                .one_or_none()
+            )
+            english_session_rows = (
+                connection.execute(
+                    select(self._english_sessions)
+                    .where(
+                        self._english_sessions.c.household_id == household_id,
+                        self._english_sessions.c.child_id == child_id,
+                    )
+                    .order_by(
+                        self._english_sessions.c.started_at,
+                        self._english_sessions.c.id,
+                    )
+                )
+                .mappings()
+                .all()
+            )
             child_payload = dict(child_row)
             child_payload["subjects"] = list(child_payload["subjects"])
             child_payload.pop("updated_at", None)
             verified = []
             for row in verified_rows:
                 verified.append(self._verified_question(row))
-            tutor_turns = tuple(
-                self._tutor_turn(row)
-                for row in tutor_rows
-            )
+            tutor_turns = tuple(self._tutor_turn(row) for row in tutor_rows)
             export = ChildDataExport(
                 generated_at=now,
                 child=ChildProfile.model_validate(child_payload),
@@ -497,6 +662,17 @@ class PostgresInsightsRepository:
                 mistakes=tuple(MistakeRecord.model_validate(dict(row)) for row in mistake_rows),
                 review_schedules=tuple(
                     ReviewSchedule.model_validate(dict(row)) for row in schedule_rows
+                ),
+                english_practice_settings=(
+                    EnglishPracticeSettings.model_validate(dict(english_settings_row))
+                    if english_settings_row is not None
+                    else None
+                ),
+                english_practice_sessions=tuple(
+                    EnglishPracticeSession.model_validate(
+                        {**dict(row), "feedback_tags": tuple(row["feedback_tags"] or ())}
+                    )
+                    for row in english_session_rows
                 ),
             )
             export_id = uuid4()

@@ -84,7 +84,7 @@ def list_children(
     if role is AccountRole.CHILD:
         child = repository.get_child(household_id, require_bound_child(principal))
         return [child] if child is not None else []
-    return repository.list_children(household_id)
+    return repository.list_children(household_id, owner_account_id=principal.account_id)
 
 
 def _management_view(request: Request, record) -> ChildManagementView:
@@ -102,7 +102,10 @@ def list_child_management(
     management: ChildManagementRepositoryDependency,
 ) -> list[ChildManagementView]:
     require_parent(require_household(principal, household_id))
-    return [_management_view(request, item) for item in management.list(household_id)]
+    return [
+        _management_view(request, item)
+        for item in management.list(household_id, principal.account_id)
+    ]
 
 
 @router.post(
@@ -120,7 +123,9 @@ def create_child_management(
 ) -> JSONResponse:
     require_parent(require_household(principal, household_id))
     try:
-        record, replayed = management.create(household_id, body, idempotency_key)
+        record, replayed = management.create(
+            household_id, principal.account_id, body, idempotency_key
+        )
     except DuplicateUsernameError as error:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -155,7 +160,9 @@ def create_child(
     role = require_household(principal, household_id)
     require_parent(role)
     try:
-        child, replayed = repository.create_child(household_id, request, idempotency_key)
+        child, replayed = repository.create_child(
+            household_id, request, idempotency_key, owner_account_id=principal.account_id
+        )
     except IdempotencyConflictError as error:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -178,6 +185,8 @@ def get_child(
     child = repository.get_child(household_id, child_id)
     if child is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
+    if role is not AccountRole.CHILD and child.owner_account_id != principal.account_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
     return child
 
 
@@ -192,6 +201,9 @@ def update_child(
 ) -> JSONResponse:
     role = require_household(principal, household_id)
     require_parent(role)
+    existing = repository.get_child(household_id, child_id)
+    if existing is None or existing.owner_account_id != principal.account_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
     try:
         child, replayed = repository.update_child(household_id, child_id, request, idempotency_key)
     except IdempotencyConflictError as error:
@@ -223,6 +235,9 @@ def delete_child(
 
     role = require_household(principal, household_id)
     require_parent(role)
+    existing = repository.get_child(household_id, child_id)
+    if existing is None or existing.owner_account_id != principal.account_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
     cascade = CaptureObjectCascadeDeletion(capture_repository, object_storage)
     try:
         result = cascade.run_once(household_id, child_id)

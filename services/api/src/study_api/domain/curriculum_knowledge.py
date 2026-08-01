@@ -11,8 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 CURRICULUM_PAGE_ANALYSIS_SCHEMA = "curriculum-page-analysis.v1"
 CURRICULUM_BOOK_ANALYSIS_SCHEMA = "curriculum-book-analysis.v1"
-CURRICULUM_PAGE_PROMPT = "curriculum-page-visual.v1"
-CURRICULUM_BOOK_PROMPT = "curriculum-book-consolidation.v1"
+CURRICULUM_PAGE_PROMPT = "curriculum-page-visual.v5"
+CURRICULUM_BOOK_PROMPT = "curriculum-book-consolidation.v5"
 
 
 class KnowledgeMapStatus(StrEnum):
@@ -46,11 +46,18 @@ class ProviderExercise(BaseModel):
 
 
 class ProviderKnowledgeObservation(BaseModel):
+    """Sparse, page-local evidence used before whole-book consolidation.
+
+    A single page can introduce or practise a concept without stating a learnable
+    objective.  Do not manufacture one merely to satisfy an intermediate schema;
+    the final, reviewable book map remains responsible for complete objectives.
+    """
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     title: str = Field(min_length=1, max_length=160)
     summary: str = Field(min_length=1, max_length=1_000)
-    learning_objectives: tuple[str, ...] = Field(min_length=1, max_length=8)
+    learning_objectives: tuple[str, ...] = Field(default=(), max_length=8)
     prerequisites: tuple[str, ...] = Field(default=(), max_length=8)
     exercises: tuple[ProviderExercise, ...] = Field(default=(), max_length=12)
     confidence: float = Field(ge=0, le=1)
@@ -97,7 +104,10 @@ class ProviderBookChapter(BaseModel):
     start_page: int = Field(ge=1, le=400)
     end_page: int = Field(ge=1, le=400)
     summary: str = Field(min_length=1, max_length=1_500)
-    knowledge_points: tuple[ProviderBookKnowledgePoint, ...] = Field(min_length=1, max_length=40)
+    # Covers, contents and unit-divider pages can form a truthful chapter range
+    # without introducing a teachable point. Final approval still requires at
+    # least one point across the complete book.
+    knowledge_points: tuple[ProviderBookKnowledgePoint, ...] = Field(default=(), max_length=40)
 
     @model_validator(mode="after")
     def validate_page_range(self) -> ProviderBookChapter:

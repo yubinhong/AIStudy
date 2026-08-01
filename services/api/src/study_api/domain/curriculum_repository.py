@@ -1,4 +1,4 @@
-"""Household-owned curriculum import drafts and immutable published snapshots."""
+"""Household-owned curriculum import drafts and independently published snapshots."""
 
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -28,6 +28,7 @@ class ImportCurriculumRequest(BaseModel):
     byte_size: int = Field(ge=0, le=MAX_DOCUMENT_BYTES)
     content_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     authorization_statement: str = Field(min_length=1, max_length=500)
+    is_public_reusable: bool = False
     grade: int = Field(ge=1, le=6)
     textbook_version: str = Field(min_length=1, max_length=120)
     term: str = Field(min_length=1, max_length=40)
@@ -45,6 +46,7 @@ class CurriculumMaterial(BaseModel):
     byte_size: int
     content_sha256: str
     authorization_statement: str
+    is_public_reusable: bool = False
     status: str
     created_at: datetime
     object_key: str | None = Field(default=None, exclude=True)
@@ -65,6 +67,7 @@ class CurriculumSnapshot(BaseModel):
     version: int
     created_at: datetime
     published_at: datetime | None = None
+    reused_from_snapshot_id: UUID | None = None
 
 
 class CurriculumChunk(BaseModel):
@@ -112,7 +115,18 @@ class CurriculumRepository(Protocol):
         request: ImportCurriculumRequest,
         idempotency_key: str,
         object_key: str | None = None,
+        reused_from_snapshot_id: UUID | None = None,
     ) -> tuple[CurriculumImportResult, bool]: ...
+
+    def find_public_reusable_snapshot(
+        self, request: ImportCurriculumRequest
+    ) -> CurriculumImportResult | None: ...
+
+    def clone_parsed_content(
+        self, source_snapshot_id: UUID, target: CurriculumImportResult
+    ) -> None: ...
+
+    def has_other_material_reference(self, object_key: str, material_id: UUID) -> bool: ...
 
     def list_snapshots(
         self, household_id: UUID, child_id: UUID, published_only: bool = False
@@ -170,6 +184,7 @@ class InMemoryCurriculumRepository:
         request: ImportCurriculumRequest,
         idempotency_key: str,
         object_key: str | None = None,
+        reused_from_snapshot_id: UUID | None = None,
     ) -> tuple[CurriculumImportResult, bool]:
         operation = f"curriculum_import:{child_id}"
         fingerprint = _fingerprint(request)
@@ -192,6 +207,7 @@ class InMemoryCurriculumRepository:
             byte_size=request.byte_size,
             content_sha256=request.content_sha256,
             authorization_statement=request.authorization_statement,
+            is_public_reusable=request.is_public_reusable,
             status="uploaded" if object_key else "parsed",
             created_at=now,
             object_key=object_key,
@@ -217,11 +233,48 @@ class InMemoryCurriculumRepository:
             status="draft",
             version=version,
             created_at=now,
+            reused_from_snapshot_id=reused_from_snapshot_id,
         )
         self._materials[material.id] = material
         self._snapshots[snapshot.id] = snapshot
         self._receipts[key] = (fingerprint, snapshot.id)
         return CurriculumImportResult(material=material, snapshot=snapshot), False
+
+    def find_public_reusable_snapshot(
+        self, request: ImportCurriculumRequest
+    ) -> CurriculumImportResult | None:
+        for snapshot in self._snapshots.values():
+            material = self._materials[snapshot.material_id]
+            if (
+                material.is_public_reusable
+                and material.content_sha256 == request.content_sha256
+                and material.media_type == request.media_type
+                and material.byte_size == request.byte_size
+                and material.object_key
+            ):
+                return CurriculumImportResult(material=material, snapshot=snapshot)
+        return None
+
+    def clone_parsed_content(
+        self, source_snapshot_id: UUID, target: CurriculumImportResult
+    ) -> None:
+        source = self._snapshots[source_snapshot_id]
+        self._snapshots[target.snapshot.id] = target.snapshot.model_copy(
+            update={
+                "sections": source.sections,
+                "textbook_version": source.textbook_version,
+                "term": source.term,
+            }
+        )
+        self._materials[target.material.id] = target.material.model_copy(
+            update={"status": "needs_review"}
+        )
+
+    def has_other_material_reference(self, object_key: str, material_id: UUID) -> bool:
+        return any(
+            material.id != material_id and material.object_key == object_key
+            for material in self._materials.values()
+        )
 
     def list_snapshots(
         self, household_id: UUID, child_id: UUID, published_only: bool = False
@@ -254,9 +307,6 @@ class InMemoryCurriculumRepository:
         if _contains_unparsed_document(current):
             raise ValueError("curriculum document must be parsed before publication")
         now = datetime.now(UTC)
-        for other_id, other in list(self._snapshots.items()):
-            if other.child_id == child_id and other.status == "published":
-                self._snapshots[other_id] = other.model_copy(update={"status": "rejected"})
         published = current.model_copy(update={"status": "published", "published_at": now})
         self._snapshots[snapshot_id] = published
         self._materials[current.material_id] = self._materials[current.material_id].model_copy(
@@ -381,6 +431,7 @@ class PostgresCurriculumRepository:
         request: ImportCurriculumRequest,
         idempotency_key: str,
         object_key: str | None = None,
+        reused_from_snapshot_id: UUID | None = None,
     ) -> tuple[CurriculumImportResult, bool]:
         operation = f"curriculum_import:{child_id}"
         fingerprint = _fingerprint(request)
@@ -425,6 +476,7 @@ class PostgresCurriculumRepository:
                     byte_size=request.byte_size,
                     content_sha256=request.content_sha256,
                     authorization_statement=request.authorization_statement,
+                    is_public_reusable=request.is_public_reusable,
                     status="uploaded" if object_key else "parsed",
                     created_at=now,
                     object_key=object_key,
@@ -444,6 +496,7 @@ class PostgresCurriculumRepository:
                     version=version,
                     created_at=now,
                     published_at=None,
+                    reused_from_snapshot_id=reused_from_snapshot_id,
                 )
             )
             connection.execute(
@@ -458,6 +511,97 @@ class PostgresCurriculumRepository:
                 )
             )
             return self._read(connection, snapshot_id), False
+
+    def find_public_reusable_snapshot(
+        self, request: ImportCurriculumRequest
+    ) -> CurriculumImportResult | None:
+        # No caller receives the source identity. It is only used internally to
+        # attach an already approved public textbook to a new private snapshot.
+        from study_api.domain.curriculum_knowledge import KnowledgeMapStatus
+
+        # Reflect the optional analysis tables lazily so older development
+        # databases can still construct this repository before migration.
+        metadata = MetaData()
+        maps = Table("curriculum_knowledge_maps", metadata, autoload_with=self._engine)
+        statement = (
+            select(self._snapshots.c.id)
+            .join(self._materials, self._materials.c.id == self._snapshots.c.material_id)
+            .join(maps, maps.c.snapshot_id == self._snapshots.c.id)
+            .where(
+                self._materials.c.is_public_reusable.is_(True),
+                self._materials.c.content_sha256 == request.content_sha256,
+                self._materials.c.media_type == request.media_type,
+                self._materials.c.byte_size == request.byte_size,
+                self._materials.c.object_key.is_not(None),
+                maps.c.status == KnowledgeMapStatus.APPROVED.value,
+            )
+            .order_by(maps.c.reviewed_at.desc().nullslast(), self._snapshots.c.created_at.desc())
+            .limit(1)
+        )
+        with self._engine.connect() as connection:
+            snapshot_id = connection.execute(statement).scalar_one_or_none()
+            return self._read(connection, snapshot_id) if snapshot_id is not None else None
+
+    def clone_parsed_content(
+        self, source_snapshot_id: UUID, target: CurriculumImportResult
+    ) -> None:
+        """Copy text facts into a new tenant snapshot without another PDF parse."""
+
+        now = datetime.now(UTC)
+        with self._engine.begin() as connection:
+            source = (
+                connection.execute(
+                    select(self._snapshots).where(self._snapshots.c.id == source_snapshot_id)
+                )
+                .mappings()
+                .one()
+            )
+            rows = (
+                connection.execute(
+                    select(self._chunks).where(self._chunks.c.snapshot_id == source_snapshot_id)
+                )
+                .mappings()
+                .all()
+            )
+            for row in rows:
+                values = dict(row)
+                values.update(
+                    id=uuid4(),
+                    household_id=target.snapshot.household_id,
+                    child_id=target.snapshot.child_id,
+                    material_id=target.material.id,
+                    snapshot_id=target.snapshot.id,
+                    created_at=now,
+                )
+                connection.execute(insert(self._chunks).values(**values))
+            connection.execute(
+                update(self._snapshots)
+                .where(self._snapshots.c.id == target.snapshot.id)
+                .values(
+                    sections=source["sections"],
+                    textbook_version=source["textbook_version"],
+                    term=source["term"],
+                )
+            )
+            connection.execute(
+                update(self._materials)
+                .where(self._materials.c.id == target.material.id)
+                .values(status="needs_review")
+            )
+
+    def has_other_material_reference(self, object_key: str, material_id: UUID) -> bool:
+        with self._engine.connect() as connection:
+            return (
+                connection.execute(
+                    select(self._materials.c.id)
+                    .where(
+                        self._materials.c.object_key == object_key,
+                        self._materials.c.id != material_id,
+                    )
+                    .limit(1)
+                ).scalar_one_or_none()
+                is not None
+            )
 
     def list_snapshots(
         self, household_id: UUID, child_id: UUID, published_only: bool = False
@@ -525,15 +669,6 @@ class PostgresCurriculumRepository:
                 raise ValueError("only a draft curriculum snapshot can be published")
             if _contains_unparsed_document(self._snapshot(dict(current))):
                 raise ValueError("curriculum document must be parsed before publication")
-            connection.execute(
-                update(self._snapshots)
-                .where(
-                    self._snapshots.c.household_id == household_id,
-                    self._snapshots.c.child_id == child_id,
-                    self._snapshots.c.status == "published",
-                )
-                .values(status="rejected")
-            )
             connection.execute(
                 update(self._snapshots)
                 .where(self._snapshots.c.id == snapshot_id)

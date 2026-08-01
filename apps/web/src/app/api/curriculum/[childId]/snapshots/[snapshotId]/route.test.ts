@@ -7,7 +7,12 @@ describe("curriculum snapshot delete proxy", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("forwards authenticated, idempotent deletion to the API", async () => {
-    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({ household_id: "00000000-0000-0000-0000-000000000001" }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
     vi.stubGlobal("fetch", fetchMock);
     const childId = "00000000-0000-0000-0000-000000000101";
     const snapshotId = "00000000-0000-0000-0000-000000000201";

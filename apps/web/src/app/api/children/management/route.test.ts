@@ -7,7 +7,13 @@ describe("child management API proxy", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("lists aggregates with the household session", async () => {
-    const fetchMock = vi.fn(async () => Response.json([]));
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith("/auth/me")
+        ? Response.json({
+            household_id: "00000000-0000-0000-0000-000000000001",
+          })
+        : Response.json([]),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     await GET(
@@ -26,7 +32,13 @@ describe("child management API proxy", () => {
   });
 
   it("forwards aggregate creation and idempotency headers", async () => {
-    const fetchMock = vi.fn(async () => Response.json({ child: {} }));
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith("/auth/me")
+        ? Response.json({
+            household_id: "00000000-0000-0000-0000-000000000001",
+          })
+        : Response.json({ child: {} }),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const request = new NextRequest(
       "http://localhost/api/children/management",

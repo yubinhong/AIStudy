@@ -11,6 +11,7 @@ from study_api.auth_domain import (
     InMemoryAccountRepository,
     LoginRequest,
 )
+from study_api.domain.models import CreateChildRequest, Subject
 from study_api.main import create_app
 
 HOUSEHOLD_A = "00000000-0000-0000-0000-000000000001"
@@ -179,6 +180,150 @@ def test_duplicate_child_username_returns_conflict_without_server_error() -> Non
         "code": "HTTP_409",
         "message": "username already exists",
     }
+
+
+def test_only_household_administrator_can_create_parent_and_provision_family() -> None:
+    app = create_app()
+    service = app.state.auth_service
+    bootstrap = service.login(
+        LoginRequest(username="admin", password=BOOTSTRAP_PASSWORD, client="flutter"),
+        remote_host="127.0.0.1",
+    )
+    administrator = service.change_password(
+        app.state.account_repository.get(bootstrap.account.id),
+        BOOTSTRAP_PASSWORD,
+        "a-secure-parent-password",
+    )
+    client = TestClient(app)
+    headers = {"Authorization": f"Bearer {administrator.access_token}"}
+    created = client.post(
+        f"/auth/households/{HOUSEHOLD_A}/accounts/parents",
+        headers={**headers, "Idempotency-Key": "parent-account-001"},
+        json={"username": "relative-parent", "password": "another-secure-parent"},
+    )
+    assert created.status_code == 201
+    assert created.json()["role"] == "parent"
+
+    parent_login = service.login(
+        LoginRequest(
+            username="relative-parent", password="another-secure-parent", client="flutter"
+        ),
+        remote_host="127.0.0.1",
+    )
+    parent_session = service.change_password(
+        app.state.account_repository.get(parent_login.account.id),
+        "another-secure-parent",
+        "relative-parent-password",
+    )
+    blocked = client.post(
+        f"/auth/households/{HOUSEHOLD_A}/accounts/parents",
+        headers={
+            "Authorization": f"Bearer {parent_session.access_token}",
+            "Idempotency-Key": "blocked-001",
+        },
+        json={"username": "should-not-exist", "password": "another-secure-parent"},
+    )
+    assert blocked.status_code == 403
+
+    provisioned = client.post(
+        "/auth/households",
+        headers={**headers, "Idempotency-Key": "family-001"},
+        json={
+            "parent_username": "relative-family-parent",
+            "parent_password": "another-secure-parent",
+        },
+    )
+    assert provisioned.status_code == 201
+    assert provisioned.json()["role"] == "parent"
+    assert provisioned.json()["household_id"] != HOUSEHOLD_A
+
+
+def test_super_admin_manages_family_parents_without_orphaning_children() -> None:
+    app = create_app()
+    service = app.state.auth_service
+    bootstrap = service.login(
+        LoginRequest(username="admin", password=BOOTSTRAP_PASSWORD, client="flutter"),
+        remote_host="127.0.0.1",
+    )
+    administrator = service.change_password(
+        app.state.account_repository.get(bootstrap.account.id),
+        BOOTSTRAP_PASSWORD,
+        "a-secure-parent-password",
+    )
+    client = TestClient(app)
+    headers = {"Authorization": f"Bearer {administrator.access_token}"}
+
+    protected_parent = client.post(
+        "/auth/households",
+        headers={**headers, "Idempotency-Key": "protected-family-001"},
+        json={
+            "parent_username": "protected-parent",
+            "parent_password": "another-secure-parent",
+        },
+    )
+    assert protected_parent.status_code == 201
+    protected = protected_parent.json()
+    app.state.profile_repository.create_child(
+        UUID(protected["household_id"]),
+        CreateChildRequest(
+            display_name="Protected Child",
+            grade=2,
+            curriculum_version="math-demo-2026",
+            subjects=[Subject.MATH],
+        ),
+        "protected-child-001",
+        owner_account_id=UUID(protected["id"]),
+    )
+
+    removable_parent = client.post(
+        "/auth/households",
+        headers={**headers, "Idempotency-Key": "removable-family-001"},
+        json={
+            "parent_username": "removable-parent",
+            "parent_password": "another-secure-parent",
+        },
+    )
+    assert removable_parent.status_code == 201
+
+    listed = client.get("/auth/family-parents", headers=headers)
+    assert listed.status_code == 200
+    assert {
+        item["account"]["username"]: item["child_count"] for item in listed.json()
+    } == {"protected-parent": 1, "removable-parent": 0}
+
+    parent_login = service.login(
+        LoginRequest(
+            username="protected-parent", password="another-secure-parent", client="flutter"
+        ),
+        remote_host="127.0.0.1",
+    )
+    parent_session = service.change_password(
+        app.state.account_repository.get(parent_login.account.id),
+        "another-secure-parent",
+        "protected-parent-password",
+    )
+    assert client.get(
+        "/auth/family-parents",
+        headers={"Authorization": f"Bearer {parent_session.access_token}"},
+    ).status_code == 403
+
+    blocked = client.request(
+        "DELETE",
+        f"/auth/family-parents/{protected['id']}",
+        headers=headers,
+        json={"current_password": "a-secure-parent-password"},
+    )
+    assert blocked.status_code == 409
+
+    deleted = client.request(
+        "DELETE",
+        f"/auth/family-parents/{removable_parent.json()['id']}",
+        headers=headers,
+        json={"current_password": "a-secure-parent-password"},
+    )
+    assert deleted.status_code == 204
+    with pytest.raises(LookupError):
+        app.state.account_repository.get(UUID(removable_parent.json()["id"]))
 
 
 def test_five_failed_password_attempts_lock_account() -> None:

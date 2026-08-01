@@ -1,6 +1,6 @@
 # DECISIONS.md
 
-> 决策索引。完整决策使用 `docs/adr/NNNN-title.md`；项目 Owner（用户）已于 2026-07-13 批准 ADR-0001～0012、于 2026-07-14 批准 ADR-0013～0014、于 2026-07-15 批准 ADR-0015～0017、于 2026-07-17 批准 ADR-0018，并于 2026-07-18 批准 ADR-0020、于 2026-07-23 批准 ADR-0021～0023；ADR-0019 仍为 Proposed。ADR-0012 的默认本地完整 OCR 路线已被 ADR-0015 替代；ADR-0017 替代 ADR-0005 的 PIN/设备凭证默认认证方式和 ADR-0016 的 HMAC 家庭认证部分；ADR-0018 替代 ADR-0010/0014 的客户端预签名直传路线并继承其私有 MinIO/S3 Adapter 边界。
+> 决策索引。完整决策使用 `docs/adr/NNNN-title.md`；项目 Owner（用户）已于 2026-07-13 批准 ADR-0001～0012、于 2026-07-14 批准 ADR-0013～0014、于 2026-07-15 批准 ADR-0015～0017、于 2026-07-17 批准 ADR-0018、于 2026-07-18 批准 ADR-0020、于 2026-07-23 批准 ADR-0021～0023、于 2026-07-28 批准 ADR-0024、于 2026-07-29 批准 ADR-0025、于 2026-07-30 批准 ADR-0026；ADR-0019 仍为 Proposed。ADR-0012 的默认本地完整 OCR 路线已被 ADR-0015 替代；ADR-0017 替代 ADR-0005 的 PIN/设备凭证默认认证方式和 ADR-0016 的 HMAC 家庭认证部分；ADR-0018 替代 ADR-0010/0014 的客户端预签名直传路线并继承其私有 MinIO/S3 Adapter 边界。
 
 ## 决策原则
 
@@ -37,6 +37,9 @@
 | [ADR-0021](docs/adr/0021-local-curriculum-document-parsing-pipeline.md) | 首版教材只接受 PDF；本地有界解析 worker 生成页级草稿，家长发布后才用于 Tutor/推荐 | 已接受并实现 `pdfplumber==0.11.7`/`pdfminer-six==20250506`、0021～0023 迁移、解析 worker 和 Tutor 来源/递进字段；真实部署、扫描 PDF 与发布门槛仍有效 |
 | [ADR-0022](docs/adr/0022-cloud-tutor-and-source-bound-recommendation-planning.md) | L1/L2 使用受约束云端 Tutor；推荐由本地全教材/错题分析后交给云端做来源受限的 7 日规划 | 只发送已确认题目和有界教材候选；模型只能选择服务端 source key，家长批准后才创建正式 Task |
 | [ADR-0023](docs/adr/0023-multimodal-curriculum-knowledge-map.md) | 私有 PDF 渲染原页预览，NewAPI 分批多模态理解并形成可审核知识图谱，再结合错题规划任务 | 原 PDF/预览留在私有 MinIO；Provider 只收有界页批次，知识图谱与任务均须家长批准，模型不能伪造来源页或教材题 |
+| [ADR-0024](docs/adr/0024-multi-household-tenancy-and-curriculum-content-reuse.md) | 唯一超级管理员、多家庭会话作用域、家长自有孩子，以及显式公开教材的跨家庭复用 | Household 继续隔离孩子和学习事实；只有明确声明、精确内容指纹匹配且来源已批准的教材可复用，目标仍须审核 |
+| [ADR-0025](docs/adr/0025-provider-neutral-child-english-speaking-practice.md) | 数学/英语学科首页与供应商中立的有界儿童英语口语插件 | 不接入 Gemini；真实 Provider 合规批准前入口锁定，音频/转写不持久化，数学任务模型不变 |
+| [ADR-0026](docs/adr/0026-learning-history-query-and-retention.md) | 家长学习记录独立查询与详细历史 180 天保留 | 默认近 30 个上海自然日、可选单日；开放错题受保护，Attempt/AuditEvent 等其他事实不在本次清理范围 |
 
 ## Proposed ADR
 

@@ -4,7 +4,7 @@ This directory is the single source for the public OpenAPI contract and AI JSON
 Schemas. Generated client SDKs belong in build output directories and are not
 hand-maintained in application code.
 
-The current `0.11.0` contract includes the P0 health endpoint, the synthetic
+The current `0.13.0` contract includes the P0 health endpoint, the synthetic
 household/child/device vertical slice, Capture upload/correction/save/delete,
 local/CI OCR enqueue/result-read/confirmation paths, and a local/CI-only parent child-profile deletion path that requires
 Capture object cascade success before removing the profile. Every Household
@@ -13,6 +13,10 @@ BearerSession transports; HMAC and demo-principal schemes have been removed.
 It also includes active-session resume, server-trusted Tutor turns, learning
 session completion, weekly report aggregation, and short-lived child data
 export snapshots.
+
+Parent learning details accept an optional timezone-aware half-open interval.
+The default is the latest 30 days, one request is capped at 31 days and 500
+rows, and requests outside the 180-day detailed-history window are rejected.
 
 Curriculum PDF contracts also expose authenticated private page images and
 parent-reviewed whole-book knowledge maps. They never expose a MinIO object key,
@@ -41,6 +45,13 @@ extraction/record, human-verified question, and the provider-free
 unverified extraction only after the confirmed derivative hash gate; the
 offline Tutor Policy remains a local zero-cost fallback and never returns a
 direct answer.
+
+ADR-0025 adds a separately gated English speaking plugin without changing the
+math-only `ChildProfile.subjects`, `StudyTask`, or `StudySession` contracts.
+English live control events are provider-neutral JSON Schema documents; binary
+frames are mono PCM16 little-endian at 16 kHz input and 24 kHz output. The
+public contract contains no cloud key, provider URL, raw audio, transcript, or
+provider message. Runtime defaults remain globally disabled.
 
 Domain types are not hand-maintained in Web or Flutter. SDK generation remains
 the subject of `docs/adr/0002-openapi-contract-and-sdk-generation.md`.

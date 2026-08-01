@@ -3,9 +3,14 @@ import logging
 import pytest
 
 from study_api.material_parser import (
+    AUTO_TEXTBOOK_TITLE_PREFIX,
     MaterialParseError,
+    ParsedPage,
+    infer_textbook_identity,
     iter_rendered_pdf_pages,
     parse_pdf,
+    provisional_textbook_title,
+    resolved_textbook_identity,
 )
 
 
@@ -84,3 +89,27 @@ def test_parser_rejects_non_pdf_and_embedded_active_content() -> None:
         parse_pdf(b"not a pdf")
     with pytest.raises(MaterialParseError, match="unsafe_pdf_features"):
         parse_pdf(b"%PDF-1.4 /JavaScript")
+
+
+def test_cover_title_is_inferred_without_a_provider_call() -> None:
+    pages = (
+        ParsedPage(
+            page_number=1,
+            title="义务教育教科书",
+            text="义务教育教科书\n数学\n三年级上册",
+            confidence=1,
+        ),
+    )
+
+    identity = infer_textbook_identity(pages)
+
+    assert identity is not None
+    assert identity.textbook_version == "数学三年级上册"
+    assert identity.term == "上册"
+
+
+def test_cover_title_never_overrides_a_parent_supplied_title() -> None:
+    pages = (ParsedPage(1, "封面", "数学 三年级上册", 1),)
+
+    assert provisional_textbook_title("数学教材.pdf").startswith(AUTO_TEXTBOOK_TITLE_PREFIX)
+    assert resolved_textbook_identity("家长自定义教材", pages) is None

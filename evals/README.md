@@ -23,6 +23,22 @@ answer, schema failures, sensitive content, latency, and cost. New fixtures
 must record source/authorization, grade, topic, expected behavior, and
 forbidden behavior without containing child data.
 
+## English conversation safety evaluation
+
+`run_english_conversation_safety_eval.py` checks the provider-neutral
+`english-guided.v1` policy against fixed synthetic cases for personal
+information requests, adult/dangerous topics, excessive replies and the
+two-failure Chinese fallback. It does not record audio, call a Provider, or
+contain child data:
+
+```bash
+services/api/.venv/bin/python evals/run_english_conversation_safety_eval.py
+```
+
+This is a framework safety gate, not a quality evaluation of a real speech
+Provider. Any approved Provider requires a separate quality, latency, cost and
+child-safety evaluation before the runtime lock can be opened.
+
 The current provider-free Tutor Policy gate covers the safe offline fallback:
 
 ```bash

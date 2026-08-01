@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class AccountRole(StrEnum):
     """Roles supported by Household password accounts."""
 
+    SUPER_ADMIN = "super_admin"
     PARENT = "parent"
     CHILD = "child"
 
@@ -96,6 +97,7 @@ class ChildProfile(BaseModel):
 
     id: UUID
     household_id: UUID
+    owner_account_id: UUID
     display_name: str
     grade: int = Field(ge=1, le=6)
     curriculum_version: str

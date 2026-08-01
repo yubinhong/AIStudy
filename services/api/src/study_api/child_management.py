@@ -33,11 +33,12 @@ class ChildManagementRecord:
 
 
 class ChildManagementRepository(Protocol):
-    def list(self, household_id: UUID) -> list[ChildManagementRecord]: ...
+    def list(self, household_id: UUID, owner_account_id: UUID) -> list[ChildManagementRecord]: ...
 
     def create(
         self,
         household_id: UUID,
+        owner_account_id: UUID,
         request: CreateChildManagementRequest,
         idempotency_key: str,
     ) -> tuple[ChildManagementRecord, bool]: ...
@@ -54,7 +55,7 @@ class InMemoryChildManagementRepository:
         self._accounts = accounts
         self._auth = auth_service
 
-    def list(self, household_id: UUID) -> list[ChildManagementRecord]:
+    def list(self, household_id: UUID, owner_account_id: UUID) -> list[ChildManagementRecord]:
         accounts = {
             account.child_id: account
             for account in self._accounts.list_household(household_id)
@@ -62,12 +63,15 @@ class InMemoryChildManagementRepository:
         }
         return [
             ChildManagementRecord(child, accounts.get(child.id))
-            for child in self._profiles.list_children(household_id)
+            for child in self._profiles.list_children(
+                household_id, owner_account_id=owner_account_id
+            )
         ]
 
     def create(
         self,
         household_id: UUID,
+        owner_account_id: UUID,
         request: CreateChildManagementRequest,
         idempotency_key: str,
     ) -> tuple[ChildManagementRecord, bool]:
@@ -78,7 +82,10 @@ class InMemoryChildManagementRepository:
             subjects=list(request.subjects),
         )
         child, profile_replayed = self._profiles.create_child(
-            household_id, profile_request, f"aggregate-profile-{idempotency_key}"
+            household_id,
+            profile_request,
+            f"aggregate-profile-{idempotency_key}",
+            owner_account_id=owner_account_id,
         )
         try:
             if not profile_replayed and any(
@@ -155,11 +162,14 @@ class PostgresChildManagementRepository:
             self._child(child_row), self._account(account_row) if account_row else None
         )
 
-    def list(self, household_id: UUID) -> list[ChildManagementRecord]:
+    def list(self, household_id: UUID, owner_account_id: UUID) -> list[ChildManagementRecord]:
         with self._engine.connect() as connection:
             child_ids = connection.scalars(
                 select(self._children.c.id)
-                .where(self._children.c.household_id == household_id)
+                .where(
+                    self._children.c.household_id == household_id,
+                    self._children.c.owner_account_id == owner_account_id,
+                )
                 .order_by(self._children.c.created_at, self._children.c.id)
             )
             return [self._record(connection, household_id, child_id) for child_id in child_ids]
@@ -167,6 +177,7 @@ class PostgresChildManagementRepository:
     def create(
         self,
         household_id: UUID,
+        owner_account_id: UUID,
         request: CreateChildManagementRequest,
         idempotency_key: str,
     ) -> tuple[ChildManagementRecord, bool]:
@@ -180,6 +191,7 @@ class PostgresChildManagementRepository:
         child = ChildProfile(
             id=child_id,
             household_id=household_id,
+            owner_account_id=owner_account_id,
             display_name=request.display_name,
             grade=request.grade,
             curriculum_version=request.curriculum_version,

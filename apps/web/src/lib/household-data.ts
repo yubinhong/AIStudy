@@ -1,6 +1,5 @@
 import { cookies } from "next/headers";
 
-const householdId = "00000000-0000-0000-0000-000000000001";
 const apiBaseUrl = process.env.STUDY_API_URL ?? "http://localhost:8000";
 
 type HouseholdResource = "children" | "tasks" | "devices";
@@ -13,12 +12,14 @@ async function loadHouseholdResource(
     const cookieStore = await cookies();
     const session = cookieStore.get("study_session");
     if (!session) return [];
+    const household = await loadCurrentHousehold(session.value);
+    if (!household) return [];
     const query =
       resource === "tasks" && childId
         ? `?child_id=${encodeURIComponent(childId)}`
         : "";
     const response = await fetch(
-      `${apiBaseUrl}/households/${householdId}/${resource}${query}`,
+      `${apiBaseUrl}/households/${household}/${resource}${query}`,
       {
         headers: { Cookie: `study_session=${session.value}` },
         cache: "no-store",
@@ -31,6 +32,18 @@ async function loadHouseholdResource(
   } catch {
     return [];
   }
+}
+
+async function loadCurrentHousehold(session: string): Promise<string | null> {
+  const response = await fetch(`${apiBaseUrl}/auth/me`, {
+    headers: { Cookie: `study_session=${session}` },
+    cache: "no-store",
+  });
+  if (!response.ok) return null;
+  const payload: unknown = await response.json();
+  if (typeof payload !== "object" || payload === null) return null;
+  const householdId = (payload as Record<string, unknown>).household_id;
+  return typeof householdId === "string" ? householdId : null;
 }
 
 export async function loadChildren(): Promise<unknown[]> {
@@ -53,6 +66,8 @@ export async function loadMistakes(
     const cookieStore = await cookies();
     const session = cookieStore.get("study_session");
     if (!session) return [];
+    const householdId = await loadCurrentHousehold(session.value);
+    if (!householdId) return [];
     const query = dueOnly ? "?due_only=true" : "";
     const response = await fetch(
       `${apiBaseUrl}/households/${householdId}/children/${encodeURIComponent(childId)}/mistakes${query}`,
@@ -76,6 +91,8 @@ export async function loadWeeklyReport(
     const cookieStore = await cookies();
     const session = cookieStore.get("study_session");
     if (!session) return null;
+    const householdId = await loadCurrentHousehold(session.value);
+    if (!householdId) return null;
     const today = new Date();
     const monday = new Date(today);
     const day = today.getDay() || 7;
@@ -99,13 +116,29 @@ export async function loadWeeklyReport(
   }
 }
 
-export async function loadLearningDetails(childId: string): Promise<unknown[]> {
+export type LearningDetailsQuery = {
+  fromAt: string;
+  limit?: number;
+  toAt: string;
+};
+
+export async function loadLearningDetails(
+  childId: string,
+  query: LearningDetailsQuery,
+): Promise<unknown[]> {
   try {
     const cookieStore = await cookies();
     const session = cookieStore.get("study_session");
     if (!session) return [];
+    const householdId = await loadCurrentHousehold(session.value);
+    if (!householdId) return [];
+    const search = new URLSearchParams({
+      from_at: query.fromAt,
+      limit: String(query.limit ?? 200),
+      to_at: query.toAt,
+    });
     const response = await fetch(
-      `${apiBaseUrl}/households/${householdId}/children/${encodeURIComponent(childId)}/learning-details?limit=20`,
+      `${apiBaseUrl}/households/${householdId}/children/${encodeURIComponent(childId)}/learning-details?${search}`,
       {
         headers: { Cookie: `study_session=${session.value}` },
         cache: "no-store",
@@ -138,6 +171,13 @@ export function readArray(record: unknown, key: string): unknown[] {
     return [];
   const value = (record as Record<string, unknown>)[key];
   return Array.isArray(value) ? value : [];
+}
+
+export function readObject(record: unknown, key: string): unknown | null {
+  if (typeof record !== "object" || record === null || !(key in record))
+    return null;
+  const value = (record as Record<string, unknown>)[key];
+  return typeof value === "object" && value !== null ? value : null;
 }
 
 export function readDateLabel(record: unknown, key: string): string | null {

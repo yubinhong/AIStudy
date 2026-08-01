@@ -1,11 +1,12 @@
 import { NextRequest } from "next/server";
-
-const householdId = "00000000-0000-0000-0000-000000000001";
+import { currentHouseholdId } from "../../../../../../lib/current-household";
 
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ childId: string; recommendationId: string }> },
 ) {
+  const householdId = await currentHouseholdId(request);
+  if (!householdId) return new Response(null, { status: 401 });
   const { childId, recommendationId } = await context.params;
   const headers: Record<string, string> = {
     "content-type": "application/json",

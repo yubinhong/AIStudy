@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID, uuid4
 
-from sqlalchemy import MetaData, Table, create_engine, insert, select, update
+from sqlalchemy import MetaData, Table, create_engine, func, insert, select, update
 from sqlalchemy.engine import Engine
 
 from study_api.curriculum_limits import MAX_DOCUMENT_BYTES
@@ -23,6 +23,7 @@ from study_api.material_parser import (
     MaterialParseError,
     ParsedPage,
     parse_pdf,
+    resolved_textbook_identity,
 )
 from study_api.object_storage import (
     ObjectStorageConfig,
@@ -171,6 +172,41 @@ class PostgresMaterialParseRepository:
                         created_at=now,
                     )
                 )
+            snapshot = (
+                connection.execute(
+                    select(self._snapshots)
+                    .where(self._snapshots.c.id == job.snapshot_id)
+                    .with_for_update()
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if snapshot is not None and snapshot["status"] == "draft":
+                identity = resolved_textbook_identity(str(snapshot["textbook_version"]), pages)
+                if identity is not None:
+                    version = (
+                        connection.execute(
+                            select(func.max(self._snapshots.c.version)).where(
+                                self._snapshots.c.household_id == job.household_id,
+                                self._snapshots.c.child_id == job.child_id,
+                                self._snapshots.c.textbook_version == identity.textbook_version,
+                                self._snapshots.c.id != job.snapshot_id,
+                            )
+                        ).scalar_one()
+                        or 0
+                    ) + 1
+                    connection.execute(
+                        update(self._snapshots)
+                        .where(
+                            self._snapshots.c.id == job.snapshot_id,
+                            self._snapshots.c.status == "draft",
+                        )
+                        .values(
+                            textbook_version=identity.textbook_version,
+                            term=identity.term,
+                            version=version,
+                        )
+                    )
             connection.execute(
                 update(self._snapshots)
                 .where(self._snapshots.c.id == job.snapshot_id)

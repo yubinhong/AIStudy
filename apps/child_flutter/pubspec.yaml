@@ -12,6 +12,8 @@ dependencies:
   flutter:
     sdk: flutter
   image_picker: 1.2.3
+  record: 7.1.1
+  flutter_soloud: 4.0.13
   flutter_secure_storage: 9.2.4
   sqflite: ^2.4.3
 

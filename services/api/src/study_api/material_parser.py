@@ -5,6 +5,7 @@ does not decide what a child should learn; publication remains a parent action.
 """
 
 import logging
+import re
 from dataclasses import dataclass
 from hashlib import sha256
 from io import BytesIO
@@ -20,6 +21,7 @@ MAX_TEXT_PER_PAGE = 40_000
 MIN_TEXT_FOR_TEXT_PDF = 24
 MAX_PREVIEW_EDGE = 1800
 MAX_PREVIEW_BYTES = 2_097_152
+AUTO_TEXTBOOK_TITLE_PREFIX = "待从 PDF 识别："
 
 
 class _KnownPdfGraphicsWarningFilter(logging.Filter):
@@ -63,10 +65,69 @@ class RenderedPage:
         return sha256(self.data).hexdigest()
 
 
+@dataclass(frozen=True)
+class TextbookIdentity:
+    """A conservative title found in a PDF cover or front-matter page."""
+
+    textbook_version: str
+    term: str
+
+
 class MaterialParseError(ValueError):
     def __init__(self, code: str) -> None:
         super().__init__(code)
         self.code = code
+
+
+def provisional_textbook_title(filename: str) -> str:
+    """Keep an upload distinct until its local PDF content can be identified."""
+
+    stem = filename.rsplit(".", maxsplit=1)[0].replace("_", " ").strip()
+    stem = re.sub(r"\s+", " ", stem)[:90]
+    return f"{AUTO_TEXTBOOK_TITLE_PREFIX}{stem or '教材'}"[:120]
+
+
+def infer_textbook_identity(pages: tuple[ParsedPage, ...]) -> TextbookIdentity | None:
+    """Recognize only an unambiguous primary-school mathematics cover title.
+
+    This deliberately does not use an AI provider. A title must state the subject,
+    grade, and volume on the same cover/front-matter page; ordinary lesson prose is
+    never used as a textbook name.
+    """
+
+    patterns = (
+        re.compile(r"数学.{0,24}?(?P<grade>[一二三四五六1-6])年级.{0,8}?(?P<volume>[上下])册"),
+        re.compile(r"(?P<grade>[一二三四五六1-6])年级.{0,8}?(?P<volume>[上下])册.{0,24}?数学"),
+    )
+    for page in pages[:4]:
+        if page.text.startswith("["):
+            continue
+        compact = re.sub(r"\s+", "", page.text)[:2_000]
+        for pattern in patterns:
+            match = pattern.search(compact)
+            if match is not None:
+                grade = match.group("grade")
+                volume = match.group("volume")
+                return TextbookIdentity(
+                    textbook_version=f"数学{grade}年级{volume}册",
+                    term=f"{volume}册",
+                )
+    return None
+
+
+def resolved_textbook_identity(
+    current_title: str,
+    pages: tuple[ParsedPage, ...],
+) -> TextbookIdentity | None:
+    """Resolve only metadata the file-upload route marked as automatic.
+
+    Existing API clients may provide a deliberate title, so their value remains a
+    parent override instead of being silently replaced by a cover heuristic.
+    """
+
+    if not current_title.startswith(AUTO_TEXTBOOK_TITLE_PREFIX):
+        return None
+    return infer_textbook_identity(pages)
 
 
 def parse_pdf(data: bytes) -> tuple[ParsedPage, ...]:

@@ -421,7 +421,7 @@ class CaptureApiClient {
     String mode = 'guided_practice',
     String? answerState,
     bool evidenceConfirmed = false,
-  }) {
+  }) async {
     if (verifiedQuestionId.isEmpty) {
       throw const CaptureApiException('已确认题目不存在，请重新拍题。');
     }
@@ -472,6 +472,9 @@ class CaptureApiClient {
     if (!const {'learned', 'needs_review', 'skipped'}.contains(outcome)) {
       throw const CaptureApiException('学习结果不正确。');
     }
+    if (outcome == 'needs_review' && _verifiedQuestionId == null) {
+      throw const CaptureApiException('请先确认题目和作答状态，才能加入复习。');
+    }
     final activeSessionId = await _ensureCaptureSession();
     final completed = _verifiedQuestionId == null
         ? await _postJson(
@@ -498,6 +501,9 @@ class CaptureApiClient {
             },
             acceptedStatuses: const {200},
           );
+    if (outcome == 'needs_review' && completed['mistake'] is! Map) {
+      throw const CaptureApiException('复习计划尚未建立，请稍后重试。');
+    }
     _resolvedSessionId = null;
     _verifiedQuestionId = null;
     _captureSessionNonce = _newSessionNonce();

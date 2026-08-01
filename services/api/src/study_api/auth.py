@@ -82,8 +82,17 @@ def require_household(principal: AuthenticatedPrincipal, household_id: UUID) -> 
 
 
 def require_parent(role: AccountRole) -> None:
-    if role is not AccountRole.PARENT:
+    if role not in {AccountRole.PARENT, AccountRole.SUPER_ADMIN}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="parent role required")
+
+
+def require_super_admin(role: AccountRole) -> None:
+    """Restrict cross-household provisioning to the one instance administrator."""
+
+    if role is not AccountRole.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="super administrator role required"
+        )
 
 
 def require_bound_child(principal: AuthenticatedPrincipal) -> UUID:

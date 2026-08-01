@@ -1,6 +1,5 @@
 import { NextRequest } from "next/server";
-
-const householdId = "00000000-0000-0000-0000-000000000001";
+import { currentHouseholdId } from "../../../lib/current-household";
 
 export async function GET(request: NextRequest) {
   return forward(request, "/children", "GET");
@@ -11,6 +10,8 @@ export async function POST(request: NextRequest) {
 }
 
 async function forward(request: NextRequest, path: string, method: string) {
+  const householdId = await currentHouseholdId(request);
+  if (!householdId) return new Response(null, { status: 401 });
   const headers: Record<string, string> =
     method === "GET" ? {} : { "content-type": "application/json" };
   const cookie = request.headers.get("cookie");

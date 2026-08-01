@@ -7,12 +7,16 @@ describe("private curriculum page-image proxy", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("streams the authenticated JPEG and never redirects to MinIO", async () => {
-    const fetchMock = vi.fn(
-      async () =>
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({ household_id: "00000000-0000-0000-0000-000000000001" }),
+      )
+      .mockResolvedValueOnce(
         new Response(new Uint8Array([0xff, 0xd8, 0xff]), {
           headers: { "content-type": "image/jpeg" },
         }),
-    );
+      );
     vi.stubGlobal("fetch", fetchMock);
     const childId = "00000000-0000-0000-0000-000000000101";
     const snapshotId = "00000000-0000-0000-0000-000000000201";

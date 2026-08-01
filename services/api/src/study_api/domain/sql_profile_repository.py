@@ -17,7 +17,7 @@ from study_api.domain.models import (
     Device,
     UpdateChildRequest,
 )
-from study_api.domain.repository import IdempotencyConflictError
+from study_api.domain.repository import SYNTHETIC_OWNER_ACCOUNT_ID, IdempotencyConflictError
 
 
 class PostgresProfileRepository:
@@ -72,11 +72,15 @@ class PostgresProfileRepository:
     def _device(row: RowMapping) -> Device:
         return Device.model_validate(dict(row))
 
-    def list_children(self, household_id: UUID) -> list[ChildProfile]:
+    def list_children(
+        self, household_id: UUID, *, owner_account_id: UUID | None = None
+    ) -> list[ChildProfile]:
         with self._engine.connect() as connection:
+            statement = select(self._children).where(self._children.c.household_id == household_id)
+            if owner_account_id is not None:
+                statement = statement.where(self._children.c.owner_account_id == owner_account_id)
             rows = connection.execute(
-                select(self._children)
-                .where(self._children.c.household_id == household_id)
+                statement
                 .order_by(self._children.c.created_at, self._children.c.id)
             ).mappings()
             return [self._child(row) for row in rows]
@@ -87,7 +91,12 @@ class PostgresProfileRepository:
         return self._child(row) if row is not None else None
 
     def create_child(
-        self, household_id: UUID, request: CreateChildRequest, idempotency_key: str
+        self,
+        household_id: UUID,
+        request: CreateChildRequest,
+        idempotency_key: str,
+        *,
+        owner_account_id: UUID | None = None,
     ) -> tuple[ChildProfile, bool]:
         payload = request.model_dump_json()
         child_id = uuid4()
@@ -109,6 +118,7 @@ class PostgresProfileRepository:
             child = ChildProfile(
                 id=child_id,
                 household_id=household_id,
+                owner_account_id=owner_account_id or SYNTHETIC_OWNER_ACCOUNT_ID,
                 display_name=request.display_name,
                 grade=request.grade,
                 curriculum_version=request.curriculum_version,
@@ -170,6 +180,7 @@ class PostgresProfileRepository:
             updated = ChildProfile(
                 id=child_id,
                 household_id=household_id,
+                owner_account_id=row["owner_account_id"],
                 display_name=request.display_name,
                 grade=request.grade,
                 curriculum_version=request.curriculum_version,

@@ -1,8 +1,9 @@
 import { NextRequest } from "next/server";
-
-const householdId = "00000000-0000-0000-0000-000000000001";
+import { currentHouseholdId } from "../../../../lib/current-household";
 
 async function forward(request: NextRequest, path: string, method: string) {
+  const householdId = await currentHouseholdId(request);
+  if (!householdId) return new Response(null, { status: 401 });
   const headers: Record<string, string> = {
     "content-type": "application/json",
   };
@@ -27,11 +28,15 @@ async function forward(request: NextRequest, path: string, method: string) {
   });
 }
 
-export function GET(request: NextRequest) {
+export async function GET(request: NextRequest) {
+  const householdId = await currentHouseholdId(request);
+  if (!householdId) return new Response(null, { status: 401 });
   return forward(request, `/auth/households/${householdId}/accounts`, "GET");
 }
 
-export function POST(request: NextRequest) {
+export async function POST(request: NextRequest) {
+  const householdId = await currentHouseholdId(request);
+  if (!householdId) return new Response(null, { status: 401 });
   return forward(
     request,
     `/auth/households/${householdId}/accounts/children`,

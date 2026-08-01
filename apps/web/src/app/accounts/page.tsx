@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  CalendarPlus,
   DownloadSimple,
   Key,
   PencilSimple,
@@ -11,7 +10,7 @@ import {
   UserPlus,
   UsersThree,
 } from "@phosphor-icons/react";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import { AdminShell } from "@/app/components/admin-shell";
 import { createChildAccountIdempotencyKey } from "../../lib/account-request";
@@ -19,7 +18,7 @@ import { createChildAccountIdempotencyKey } from "../../lib/account-request";
 type Account = {
   id: string;
   username: string;
-  role: "parent" | "child";
+  role: "super_admin" | "parent" | "child";
   child_id: string | null;
   status: "active" | "disabled";
   must_change_password: boolean;
@@ -34,6 +33,17 @@ type ChildProfile = {
 type ChildManagement = {
   child: ChildProfile;
   account: Account | null;
+};
+
+type EnglishPracticeSettings = {
+  child_id: string;
+  enabled: boolean;
+  level: "pre_a1" | "a1" | "a2";
+  consent_version: string | null;
+  version: number;
+  provider_available: boolean;
+  required_consent_version: string;
+  daily_limit_minutes: number;
 };
 
 function csrfToken() {
@@ -61,58 +71,63 @@ function requestedChildId(profiles: ChildProfile[]) {
 }
 
 export default function AccountsPage() {
-  const [accounts, setAccounts] = useState<Account[]>([]);
   const [children, setChildren] = useState<ChildProfile[]>([]);
   const [management, setManagement] = useState<ChildManagement[]>([]);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [profileName, setProfileName] = useState("");
   const [profileGrade, setProfileGrade] = useState("3");
-  const [taskTitle, setTaskTitle] = useState("");
-  const [taskChildId, setTaskChildId] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [englishSettings, setEnglishSettings] = useState<
+    Record<string, EnglishPracticeSettings>
+  >({});
 
-  async function load() {
-    const [accountsResponse, managementResponse, childrenResponse] =
-      await Promise.all([
-        fetch("/api/auth/accounts", { cache: "no-store" }),
-        fetch("/api/children/management", { cache: "no-store" }),
-        fetch("/api/children", { cache: "no-store" }),
-      ]);
-    if (accountsResponse.ok) {
-      setAccounts((await accountsResponse.json()) as Account[]);
-    }
+  const loadEnglishSettings = useCallback(async (profiles: ChildProfile[]) => {
+    const entries = await Promise.all(
+      profiles.map(async (profile) => {
+        const response = await fetch(
+          `/api/children/${profile.id}/english-practice/settings`,
+          { cache: "no-store" },
+        );
+        return response.ok
+          ? ([profile.id, await response.json()] as const)
+          : null;
+      }),
+    );
+    setEnglishSettings(
+      Object.fromEntries(
+        entries.filter(
+          (entry): entry is readonly [string, EnglishPracticeSettings] =>
+            entry !== null,
+        ),
+      ),
+    );
+  }, []);
+
+  const load = useCallback(async () => {
+    const [managementResponse, childrenResponse] = await Promise.all([
+      fetch("/api/children/management", { cache: "no-store" }),
+      fetch("/api/children", { cache: "no-store" }),
+    ]);
     if (managementResponse.ok) {
       const aggregates = (await managementResponse.json()) as ChildManagement[];
       setManagement(aggregates);
       const childProfiles = aggregates.map((item) => item.child);
       setChildren(childProfiles);
-      setTaskChildId(
-        (current) =>
-          requestedChildId(childProfiles) ||
-          current ||
-          childProfiles[0]?.id ||
-          "",
-      );
+      await loadEnglishSettings(childProfiles);
     } else if (childrenResponse.ok) {
       const childProfiles = (await childrenResponse.json()) as ChildProfile[];
       setChildren(childProfiles);
-      setTaskChildId(
-        (current) =>
-          requestedChildId(childProfiles) ||
-          current ||
-          childProfiles[0]?.id ||
-          "",
-      );
+      await loadEnglishSettings(childProfiles);
     }
-  }
+  }, [loadEnglishSettings]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void load().catch(() => setMessage("暂时无法加载家庭数据"));
     }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [load]);
 
   async function createManagement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -140,27 +155,6 @@ export default function AccountsPage() {
       setPassword("");
       await load();
     }
-  }
-
-  async function createTask(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const today = new Date().toLocaleDateString("en-CA", {
-      timeZone: "Asia/Shanghai",
-    });
-    const response = await fetch("/api/tasks", {
-      method: "POST",
-      headers: writeHeaders(true),
-      body: JSON.stringify({
-        child_id: taskChildId,
-        title: taskTitle,
-        subject: "math",
-        scheduled_for: today,
-      }),
-    });
-    setMessage(
-      response.ok ? "今日数学任务已安排" : "创建任务失败，请检查孩子档案",
-    );
-    if (response.ok) setTaskTitle("");
   }
 
   async function editProfile(child: ChildProfile) {
@@ -270,11 +264,42 @@ export default function AccountsPage() {
     setMessage(response.ok ? "密码已重置，旧会话已失效" : "密码重置失败");
   }
 
+  async function updateEnglishSettings(
+    child: ChildProfile,
+    next: Pick<
+      EnglishPracticeSettings,
+      "enabled" | "level" | "consent_version"
+    >,
+  ) {
+    const current = englishSettings[child.id];
+    if (!current) return;
+    const response = await fetch(
+      `/api/children/${child.id}/english-practice/settings`,
+      {
+        method: "PUT",
+        headers: writeHeaders(true),
+        body: JSON.stringify({ ...next, expected_version: current.version }),
+      },
+    );
+    if (!response.ok) {
+      setMessage(
+        response.status === 409
+          ? "英语口语设置已变化或服务尚不可用，请刷新后重试"
+          : "英语口语设置更新失败",
+      );
+      await loadEnglishSettings(children);
+      return;
+    }
+    const updated = (await response.json()) as EnglishPracticeSettings;
+    setEnglishSettings((items) => ({ ...items, [child.id]: updated }));
+    setMessage(
+      updated.enabled ? "英语口语练习已启用" : "英语口语练习设置已更新",
+    );
+  }
+
   const currentChild =
-    children.find((child) => child.id === taskChildId) ?? children[0];
-  const parentAccounts = accounts.filter(
-    (account) => account.role === "parent",
-  );
+    children.find((child) => child.id === requestedChildId(children)) ??
+    children[0];
 
   return (
     <AdminShell
@@ -293,7 +318,7 @@ export default function AccountsPage() {
         <div>
           <p className="page-eyebrow">孩子与账号</p>
           <h1>家庭成员管理</h1>
-          <p>孩子档案、登录账号和今日任务都在同一个家庭范围内管理。</p>
+          <p>孩子档案与登录账号都在同一个家庭范围内管理。</p>
         </div>
         <span className="header-stat">
           <UsersThree size={19} /> {children.length} 个孩子
@@ -307,53 +332,7 @@ export default function AccountsPage() {
       ) : null}
 
       <section className="management-grid">
-        <article className="dashboard-panel form-panel" id="tasks">
-          <div className="section-heading">
-            <div>
-              <p className="section-kicker">今日安排</p>
-              <h2>创建数学任务</h2>
-            </div>
-            <span className="section-icon">
-              <CalendarPlus size={22} />
-            </span>
-          </div>
-          <form onSubmit={createTask} className="auth-form">
-            <label>
-              孩子档案
-              <select
-                value={taskChildId}
-                onChange={(event) => setTaskChildId(event.target.value)}
-                required
-              >
-                <option value="">请选择孩子</option>
-                {children.map((child) => (
-                  <option key={child.id} value={child.id}>
-                    {child.display_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              任务名称
-              <input
-                value={taskTitle}
-                onChange={(event) => setTaskTitle(event.target.value)}
-                placeholder="例如：完成今天的分数练习"
-                maxLength={120}
-                required
-              />
-            </label>
-            <button
-              className="primary-button"
-              type="submit"
-              disabled={!children.length}
-            >
-              <CalendarPlus size={18} /> 安排今日任务
-            </button>
-          </form>
-        </article>
-
-        <article className="dashboard-panel" id="profiles">
+        <article className="dashboard-panel full-grid-panel" id="profiles">
           <div className="section-heading">
             <div>
               <p className="section-kicker">家庭成员</p>
@@ -367,6 +346,9 @@ export default function AccountsPage() {
             ) : null}
             {management.map((item) => {
               const child = item.child;
+              const english = englishSettings[child.id];
+              const consentCurrent =
+                english?.consent_version === english?.required_consent_version;
               return (
                 <article className="profile-card" key={child.id}>
                   <span className="profile-avatar" aria-hidden="true">
@@ -436,6 +418,73 @@ export default function AccountsPage() {
                         : "启用账号"}
                     </button>
                   ) : null}
+                  {english ? (
+                    <div className="profile-subject-settings">
+                      <div>
+                        <strong>英语口语</strong>
+                        <span>
+                          {english.provider_available
+                            ? `每天最多 ${english.daily_limit_minutes} 分钟`
+                            : "口语服务未配置"}
+                        </span>
+                      </div>
+                      <label>
+                        级别
+                        <select
+                          value={english.level}
+                          onChange={(event) =>
+                            void updateEnglishSettings(child, {
+                              enabled: english.enabled,
+                              level: event.target
+                                .value as EnglishPracticeSettings["level"],
+                              consent_version: english.consent_version,
+                            })
+                          }
+                        >
+                          <option value="pre_a1">Pre-A1</option>
+                          <option value="a1">A1</option>
+                          <option value="a2">A2</option>
+                        </select>
+                      </label>
+                      <label className="profile-consent-control">
+                        <input
+                          type="checkbox"
+                          checked={consentCurrent}
+                          disabled={
+                            !english.provider_available || english.enabled
+                          }
+                          onChange={(event) =>
+                            void updateEnglishSettings(child, {
+                              enabled: false,
+                              level: english.level,
+                              consent_version: event.target.checked
+                                ? english.required_consent_version
+                                : null,
+                            })
+                          }
+                        />
+                        同意本次语音由外部服务处理
+                      </label>
+                      <label className="profile-consent-control">
+                        <input
+                          type="checkbox"
+                          checked={english.enabled}
+                          disabled={
+                            !english.provider_available ||
+                            (!english.enabled && !consentCurrent)
+                          }
+                          onChange={(event) =>
+                            void updateEnglishSettings(child, {
+                              enabled: event.target.checked,
+                              level: english.level,
+                              consent_version: english.consent_version,
+                            })
+                          }
+                        />
+                        启用英语口语练习
+                      </label>
+                    </div>
+                  ) : null}
                 </article>
               );
             })}
@@ -444,7 +493,7 @@ export default function AccountsPage() {
       </section>
 
       <section className="management-grid lower-grid">
-        <article className="dashboard-panel form-panel">
+        <article className="dashboard-panel form-panel full-grid-panel">
           <div className="section-heading">
             <div>
               <p className="section-kicker">新增成员</p>
@@ -503,37 +552,6 @@ export default function AccountsPage() {
               <Plus size={18} /> 创建孩子档案与账号
             </button>
           </form>
-        </article>
-
-        <article className="dashboard-panel">
-          <div className="section-heading">
-            <div>
-              <p className="section-kicker">已创建</p>
-              <h2>家长账号</h2>
-            </div>
-            <span className="quiet-label">{parentAccounts.length} 个账号</span>
-          </div>
-          <div className="account-list">
-            {parentAccounts.map((account) => (
-              <div className="account-row" key={account.id}>
-                <span className="account-avatar">
-                  <UsersThree size={19} />
-                </span>
-                <div className="task-details">
-                  <strong>{account.username}</strong>
-                  <span>
-                    家长账号 · {account.status === "active" ? "启用" : "已停用"}
-                  </span>
-                </div>
-                <span className="status-pill">
-                  {account.must_change_password ? "待改密" : "正常"}
-                </span>
-              </div>
-            ))}
-            {parentAccounts.length === 0 ? (
-              <p className="muted-copy">暂无家长账号。</p>
-            ) : null}
-          </div>
         </article>
       </section>
     </AdminShell>

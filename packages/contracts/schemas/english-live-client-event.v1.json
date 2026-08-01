@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://study.local/contracts/english-live-client-event.v1.json",
+  "title": "EnglishLiveClientEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "type"],
+  "properties": {
+    "schema_version": {"const": "english-live-client-event.v1"},
+    "type": {
+      "enum": ["listening", "interrupt", "audio_stream_end", "complete"]
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://study.local/contracts/english-live-server-event.v1.json",
+  "title": "EnglishLiveServerEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "type", "session_id", "event_id"],
+  "properties": {
+    "schema_version": {"const": "english-live-server-event.v1"},
+    "type": {
+      "enum": [
+        "ready",
+        "listening",
+        "thinking",
+        "speaking",
+        "interrupted",
+        "completed",
+        "error"
+      ]
+    },
+    "session_id": {"type": "string", "format": "uuid"},
+    "event_id": {"type": "string", "format": "uuid"},
+    "reason": {"type": "string", "maxLength": 64},
+    "code": {"type": "string", "maxLength": 64}
+  }
+}

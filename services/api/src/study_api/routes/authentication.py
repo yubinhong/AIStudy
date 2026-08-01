@@ -9,19 +9,30 @@ from uuid import UUID
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 
-from study_api.auth import AuthenticatedPrincipal, get_principal, require_household, require_parent
+from study_api.auth import (
+    AuthenticatedPrincipal,
+    get_principal,
+    require_household,
+    require_parent,
+    require_super_admin,
+)
 from study_api.auth_domain import (
     AccountView,
     AuthError,
     ChangePasswordRequest,
     CreateChildAccountRequest,
+    CreateHouseholdRequest,
+    CreateParentAccountRequest,
+    DeleteParentAccountRequest,
     DuplicateUsernameError,
+    FamilyParentView,
     LoginRequest,
     LoginResponse,
     PasswordPolicyError,
     ResetPasswordRequest,
     SetAccountStatusRequest,
 )
+from study_api.domain.models import AccountRole
 from study_api.domain.repository import IdempotencyConflictError
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -82,6 +93,14 @@ def _require_parent_reauth(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="reauthentication required"
         ) from error
+
+
+def _require_owned_child(
+    principal: AuthenticatedPrincipal, request: Request, household_id: UUID, child_id: UUID
+) -> None:
+    child = request.app.state.profile_repository.get_child(household_id, child_id)
+    if child is None or child.owner_account_id != principal.account_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -173,9 +192,16 @@ def logout(
 @router.get("/households/{household_id}/accounts", response_model=list[AccountView])
 def list_accounts(household_id: UUID, principal: Principal, request: Request) -> list[AccountView]:
     require_parent(require_household(principal, household_id))
+    owned_child_ids = {
+        child.id
+        for child in request.app.state.profile_repository.list_children(
+            household_id, owner_account_id=principal.account_id
+        )
+    }
     return [
         request.app.state.auth_service.view(item)
         for item in request.app.state.account_repository.list_household(household_id)
+        if item.id == principal.account_id or item.child_id in owned_child_ids
     ]
 
 
@@ -195,8 +221,7 @@ def create_child_account(
     # Account creation must bind to an existing profile in this household. The
     # repository method is intentionally not trusted to infer this boundary
     # from an arbitrary UUID supplied by the caller.
-    if request.app.state.profile_repository.get_child(household_id, body.child_id) is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
+    _require_owned_child(principal, request, household_id, body.child_id)
     try:
         account, replayed = request.app.state.auth_service.create_child_account(
             household_id, body, idempotency_key
@@ -216,6 +241,107 @@ def create_child_account(
     )
 
 
+@router.post(
+    "/households/{household_id}/accounts/parents",
+    response_model=AccountView,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_parent_account(
+    household_id: UUID,
+    body: CreateParentAccountRequest,
+    idempotency_key: IdempotencyKey,
+    principal: Principal,
+    request: Request,
+) -> JSONResponse:
+    require_super_admin(principal.role)
+    try:
+        account, replayed = request.app.state.auth_service.create_parent_account(
+            household_id, body, idempotency_key
+        )
+    except DuplicateUsernameError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="username already exists"
+        ) from error
+    except (IdempotencyConflictError, ValueError, PasswordPolicyError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="account cannot be created"
+        ) from error
+    return JSONResponse(
+        status_code=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
+        content=account.model_dump(mode="json"),
+        headers={"Idempotency-Replayed": "true"} if replayed else {},
+    )
+
+
+@router.post("/households", response_model=AccountView, status_code=status.HTTP_201_CREATED)
+def provision_household(
+    body: CreateHouseholdRequest,
+    idempotency_key: IdempotencyKey,
+    principal: Principal,
+    request: Request,
+) -> JSONResponse:
+    """Let the instance super administrator provision an isolated family."""
+
+    require_super_admin(principal.role)
+    try:
+        account, replayed = request.app.state.auth_service.provision_household(
+            body, idempotency_key
+        )
+    except DuplicateUsernameError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="username already exists"
+        ) from error
+    except (IdempotencyConflictError, ValueError, PasswordPolicyError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="household cannot be created"
+        ) from error
+    return JSONResponse(
+        status_code=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
+        content=account.model_dump(mode="json"),
+        headers={"Idempotency-Replayed": "true"} if replayed else {},
+    )
+
+
+@router.get("/family-parents", response_model=list[FamilyParentView])
+def list_family_parents(principal: Principal, request: Request) -> list[FamilyParentView]:
+    """List ordinary family parents for the instance super administrator only."""
+
+    require_super_admin(principal.role)
+    return request.app.state.auth_service.list_family_parents(
+        request.app.state.profile_repository
+    )
+
+
+@router.delete("/family-parents/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_family_parent(
+    account_id: UUID,
+    body: DeleteParentAccountRequest,
+    principal: Principal,
+    request: Request,
+) -> Response:
+    require_super_admin(principal.role)
+    _require_parent_reauth(principal, request, body.current_password)
+    try:
+        account = request.app.state.account_repository.get(account_id)
+        if account.role is not AccountRole.PARENT:
+            raise LookupError
+        if request.app.state.profile_repository.list_children(
+            account.household_id, owner_account_id=account.id
+        ):
+            raise ValueError("parent still owns children")
+        request.app.state.auth_service.delete_parent_account(account_id)
+    except LookupError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="resource not found"
+        ) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="parent account still owns children",
+        ) from error
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.patch("/households/{household_id}/accounts/{account_id}/status", response_model=AccountView)
 def set_account_status(
     household_id: UUID,
@@ -228,8 +354,9 @@ def set_account_status(
     _require_parent_reauth(principal, request, body.current_password)
     try:
         account = request.app.state.account_repository.get(account_id)
-        if account.household_id != household_id or account.role.value != "child":
+        if account.household_id != household_id or account.role is not AccountRole.CHILD:
             raise LookupError
+        _require_owned_child(principal, request, household_id, account.child_id)
         return request.app.state.auth_service.set_status(account_id, body.enabled)
     except LookupError as error:
         raise HTTPException(
@@ -251,8 +378,9 @@ def reset_account_password(
     _require_parent_reauth(principal, request, body.current_password)
     try:
         account = request.app.state.account_repository.get(account_id)
-        if account.household_id != household_id or account.role.value != "child":
+        if account.household_id != household_id or account.role is not AccountRole.CHILD:
             raise LookupError
+        _require_owned_child(principal, request, household_id, account.child_id)
         return request.app.state.auth_service.reset_password(account_id, body.new_password)
     except LookupError as error:
         raise HTTPException(

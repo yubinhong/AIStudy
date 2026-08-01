@@ -23,6 +23,7 @@ T = TypeVar("T", ChildProfile, Device)
 
 HOUSEHOLD_A = UUID("00000000-0000-0000-0000-000000000001")
 HOUSEHOLD_B = UUID("00000000-0000-0000-0000-000000000002")
+SYNTHETIC_OWNER_ACCOUNT_ID = UUID("00000000-0000-0000-0000-000000000001")
 
 
 class IdempotencyConflictError(Exception):
@@ -32,12 +33,19 @@ class IdempotencyConflictError(Exception):
 class ProfileRepository(Protocol):
     """Household-scoped profile and device persistence boundary."""
 
-    def list_children(self, household_id: UUID) -> list[ChildProfile]: ...
+    def list_children(
+        self, household_id: UUID, *, owner_account_id: UUID | None = None
+    ) -> list[ChildProfile]: ...
 
     def get_child(self, household_id: UUID, child_id: UUID) -> ChildProfile | None: ...
 
     def create_child(
-        self, household_id: UUID, request: CreateChildRequest, idempotency_key: str
+        self,
+        household_id: UUID,
+        request: CreateChildRequest,
+        idempotency_key: str,
+        *,
+        owner_account_id: UUID | None = None,
     ) -> tuple[ChildProfile, bool]: ...
 
     def update_child(
@@ -85,6 +93,7 @@ class InMemoryProfileRepository:
         self._children[UUID("00000000-0000-0000-0000-000000000101")] = ChildProfile(
             id=UUID("00000000-0000-0000-0000-000000000101"),
             household_id=HOUSEHOLD_A,
+            owner_account_id=UUID("00000000-0000-0000-0000-000000000001"),
             display_name="Synthetic Child A",
             grade=3,
             curriculum_version="math-demo-2026",
@@ -94,6 +103,7 @@ class InMemoryProfileRepository:
         self._children[UUID("00000000-0000-0000-0000-000000000102")] = ChildProfile(
             id=UUID("00000000-0000-0000-0000-000000000102"),
             household_id=HOUSEHOLD_B,
+            owner_account_id=UUID("00000000-0000-0000-0000-000000000002"),
             display_name="Synthetic Child B",
             grade=4,
             curriculum_version="math-demo-2026",
@@ -109,9 +119,16 @@ class InMemoryProfileRepository:
             registered_at=created_at,
         )
 
-    def list_children(self, household_id: UUID) -> list[ChildProfile]:
+    def list_children(
+        self, household_id: UUID, *, owner_account_id: UUID | None = None
+    ) -> list[ChildProfile]:
         return sorted(
-            (child for child in self._children.values() if child.household_id == household_id),
+            (
+                child
+                for child in self._children.values()
+                if child.household_id == household_id
+                and (owner_account_id is None or child.owner_account_id == owner_account_id)
+            ),
             key=lambda child: child.created_at,
         )
 
@@ -144,7 +161,12 @@ class InMemoryProfileRepository:
         return True, False
 
     def create_child(
-        self, household_id: UUID, request: CreateChildRequest, idempotency_key: str
+        self,
+        household_id: UUID,
+        request: CreateChildRequest,
+        idempotency_key: str,
+        *,
+        owner_account_id: UUID | None = None,
     ) -> tuple[ChildProfile, bool]:
         return self._create(
             household_id,
@@ -154,6 +176,7 @@ class InMemoryProfileRepository:
             lambda: ChildProfile(
                 id=uuid4(),
                 household_id=household_id,
+                owner_account_id=owner_account_id or SYNTHETIC_OWNER_ACCOUNT_ID,
                 display_name=request.display_name,
                 grade=request.grade,
                 curriculum_version=request.curriculum_version,
@@ -181,6 +204,7 @@ class InMemoryProfileRepository:
             lambda: ChildProfile(
                 id=child_id,
                 household_id=household_id,
+                owner_account_id=existing.owner_account_id,
                 display_name=request.display_name,
                 grade=request.grade,
                 curriculum_version=request.curriculum_version,

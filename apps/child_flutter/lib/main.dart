@@ -7,10 +7,13 @@ import 'package:image_picker/image_picker.dart';
 
 import 'capture_api_client.dart';
 import 'auth_client.dart';
+import 'english_practice.dart';
 import 'privacy_sanitization_preview.dart';
 import 'startup_transition.dart';
 
-const defaultHouseholdId = '00000000-0000-0000-0000-000000000001';
+// Task recommendations remain available to parents but are not child-facing
+// until their execution flow can present the assigned exercise directly.
+const _todayTaskEntryVisible = false;
 
 typedef ChildrenLoader = Future<List<Map<String, dynamic>>> Function();
 typedef ChildLoginAction =
@@ -27,7 +30,7 @@ typedef ChildPasswordChangeAction =
       String newPassword,
     );
 typedef ChildSessionStatusAction =
-    Future<bool> Function(String baseUrl, String token);
+    Future<ChildSessionInfo> Function(String baseUrl, String token);
 typedef ChildServiceHealthAction = Future<void> Function(String baseUrl);
 typedef ChildLoggedIn =
     void Function(
@@ -35,17 +38,19 @@ typedef ChildLoggedIn =
       String token,
       bool mustChangePassword,
       String username,
+      String householdId,
     );
 
 Future<List<Map<String, dynamic>>> loadChildrenWithToken(
   String baseUrl,
   String token,
+  String householdId,
 ) async {
   if (token.isEmpty) return [];
   final client = HttpClient();
   try {
     final request = await client.getUrl(
-      Uri.parse('$baseUrl/households/$defaultHouseholdId/children'),
+      Uri.parse('$baseUrl/households/$householdId/children'),
     );
     request.headers.set('Authorization', 'Bearer $token');
     final response = await request.close();
@@ -69,7 +74,7 @@ Future<List<Map<String, dynamic>>> loadChildrenWithToken(
       error: error,
       stackTrace: stackTrace,
     );
-    throw const ChildAuthException('暂时无法连接学习服务。');
+    throw ChildAuthException(childNetworkFailureMessage(baseUrl, error));
   } finally {
     client.close(force: true);
   }
@@ -157,6 +162,7 @@ class _ChildAuthGateState extends State<ChildAuthGate> {
   String _serverBaseUrl = defaultServerBaseUrl;
   String? _token;
   String? _username;
+  String? _householdId;
   bool _mustChangePassword = false;
   bool _loading = true;
 
@@ -171,6 +177,7 @@ class _ChildAuthGateState extends State<ChildAuthGate> {
     String serverBaseUrl = defaultServerBaseUrl;
     String? token;
     String? username;
+    String? householdId;
     var mustChangePassword = false;
     try {
       final savedServerBaseUrl = await _store.readServerBaseUrl();
@@ -187,11 +194,21 @@ class _ChildAuthGateState extends State<ChildAuthGate> {
           }
         }
         try {
-          mustChangePassword =
+          final session =
               await (widget.sessionStatusAction ?? _sessionStatusWithClient)(
                 serverBaseUrl,
                 token,
               );
+          mustChangePassword = session.mustChangePassword;
+          username ??= session.username;
+          householdId = session.householdId;
+          await _store.saveAccount(
+            ChildSavedAccount(
+              username: username,
+              serverBaseUrl: serverBaseUrl,
+              sessionToken: token,
+            ),
+          );
         } on ChildSessionExpiredException {
           await _store.clearSessionToken();
           token = null;
@@ -210,6 +227,7 @@ class _ChildAuthGateState extends State<ChildAuthGate> {
       _serverBaseUrl = serverBaseUrl;
       _token = token;
       _username = username;
+      _householdId = householdId;
       _mustChangePassword = mustChangePassword;
       _loading = false;
     });
@@ -221,6 +239,7 @@ class _ChildAuthGateState extends State<ChildAuthGate> {
     setState(() {
       _token = null;
       _username = null;
+      _householdId = null;
       _mustChangePassword = false;
     });
   }
@@ -231,6 +250,7 @@ class _ChildAuthGateState extends State<ChildAuthGate> {
     setState(() {
       _token = null;
       _username = null;
+      _householdId = null;
       _mustChangePassword = false;
     });
   }
@@ -241,6 +261,7 @@ class _ChildAuthGateState extends State<ChildAuthGate> {
     setState(() {
       _token = null;
       _username = null;
+      _householdId = null;
       _mustChangePassword = false;
     });
   }
@@ -253,6 +274,7 @@ class _ChildAuthGateState extends State<ChildAuthGate> {
       _serverBaseUrl = account.serverBaseUrl;
       _token = account.sessionToken;
       _username = account.username;
+      _householdId = null;
       _mustChangePassword = false;
     });
   }
@@ -282,8 +304,10 @@ class _ChildAuthGateState extends State<ChildAuthGate> {
     if (oldToken != null) unawaited(_replaceSavedSession(oldToken, newToken));
   }
 
-  Future<bool> _sessionStatusWithClient(String baseUrl, String token) =>
-      ChildAuthClient(baseUrl: baseUrl).mustChangePassword(token);
+  Future<ChildSessionInfo> _sessionStatusWithClient(
+    String baseUrl,
+    String token,
+  ) => ChildAuthClient(baseUrl: baseUrl).readSessionInfo(token);
 
   @override
   Widget build(BuildContext context) {
@@ -304,15 +328,18 @@ class _ChildAuthGateState extends State<ChildAuthGate> {
       }
       return StartupTransition(
         child: ChildProfileScreen(
-          loadChildren: () => loadChildrenWithToken(_serverBaseUrl, token),
+          loadChildren: () =>
+              loadChildrenWithToken(_serverBaseUrl, token, _householdId ?? ''),
           baseUrl: _serverBaseUrl,
           authorizationToken: token,
           username: _username,
+          householdId: _householdId,
           onOpenAccount: () => Navigator.of(context).push(
             MaterialPageRoute<void>(
               builder: (_) => ChildAccountScreen(
                 store: _store,
                 currentToken: token,
+                currentUsername: _username,
                 onAddAccount: _addAccount,
                 onLogout: _logout,
                 onSwitchAccount: _switchAccount,
@@ -327,13 +354,15 @@ class _ChildAuthGateState extends State<ChildAuthGate> {
       initialServerBaseUrl: _serverBaseUrl,
       store: _store,
       loginAction: widget.loginAction,
-      onLoggedIn: (baseUrl, newToken, mustChangePassword, username) =>
-          setState(() {
-            _serverBaseUrl = baseUrl;
-            _token = newToken;
-            _username = username;
-            _mustChangePassword = mustChangePassword;
-          }),
+      onLoggedIn:
+          (baseUrl, newToken, mustChangePassword, username, householdId) =>
+              setState(() {
+                _serverBaseUrl = baseUrl;
+                _token = newToken;
+                _username = username;
+                _householdId = householdId;
+                _mustChangePassword = mustChangePassword;
+              }),
     );
   }
 }
@@ -413,6 +442,7 @@ class _ChildLoginScreenState extends State<ChildLoginScreen> {
           result.username?.isNotEmpty == true
               ? result.username!
               : _username.text.trim(),
+          result.householdId,
         );
       }
     } on ChildAuthException catch (error) {
@@ -726,6 +756,7 @@ class ChildProfileScreen extends StatefulWidget {
     this.baseUrl = defaultServerBaseUrl,
     this.authorizationToken,
     this.username,
+    this.householdId,
     this.onOpenAccount,
     this.onLogout,
   });
@@ -734,6 +765,7 @@ class ChildProfileScreen extends StatefulWidget {
   final String baseUrl;
   final String? authorizationToken;
   final String? username;
+  final String? householdId;
   final VoidCallback? onOpenAccount;
   final VoidCallback? onLogout;
 
@@ -748,6 +780,16 @@ class _ChildProfileScreenState extends State<ChildProfileScreen> {
   void initState() {
     super.initState();
     _children = widget.loadChildren();
+  }
+
+  @override
+  void didUpdateWidget(covariant ChildProfileScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.baseUrl != widget.baseUrl ||
+        oldWidget.authorizationToken != widget.authorizationToken ||
+        oldWidget.username != widget.username) {
+      _children = widget.loadChildren();
+    }
   }
 
   void _retry() => setState(() => _children = widget.loadChildren());
@@ -773,9 +815,12 @@ class _ChildProfileScreenState extends State<ChildProfileScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
+            final error = snapshot.error;
             return _UnavailableScreen(
-              message: snapshot.error is ChildSessionExpiredException
+              message: error is ChildSessionExpiredException
                   ? '登录状态已失效，请返回登录后重试。'
+                  : error is ChildAuthException
+                  ? error.message
                   : '暂时无法连接学习服务，请检查网络后重试。',
               onRetry: _retry,
               onChangeServer: widget.onLogout,
@@ -790,12 +835,18 @@ class _ChildProfileScreenState extends State<ChildProfileScreen> {
               onChangeServer: widget.onLogout,
             );
           }
-          return LearningDeskScreen(
-            displayName: child['display_name']?.toString() ?? '小禾',
-            username: widget.username,
-            curriculumVersion:
-                child['curriculum_version']?.toString() ?? '数学练习',
-            captureClient: _buildCaptureClient(child),
+          final displayName = child['display_name']?.toString() ?? '小禾';
+          final captureClient = _buildCaptureClient(child);
+          return SubjectSelectionScreen(
+            displayName: displayName,
+            englishGateway: _buildEnglishClient(child),
+            mathBuilder: (_) => LearningDeskScreen(
+              displayName: displayName,
+              username: widget.username,
+              curriculumVersion:
+                  child['curriculum_version']?.toString() ?? '数学练习',
+              captureClient: captureClient,
+            ),
           );
         },
       ),
@@ -805,15 +856,41 @@ class _ChildProfileScreenState extends State<ChildProfileScreen> {
   CaptureApiClient? _buildCaptureClient(Map<String, dynamic> child) {
     final childId = child['id']?.toString();
     final token = widget.authorizationToken;
-    if (childId == null || childId.isEmpty || token == null || token.isEmpty) {
+    final householdId = widget.householdId;
+    if (childId == null ||
+        childId.isEmpty ||
+        token == null ||
+        token.isEmpty ||
+        householdId == null ||
+        householdId.isEmpty) {
       return null;
     }
     return CaptureApiClient(
       baseUrl: widget.baseUrl,
-      householdId: defaultHouseholdId,
+      householdId: householdId,
       childId: childId,
       authorizationToken: token,
       accountUsername: widget.username,
+    );
+  }
+
+  EnglishPracticeGateway? _buildEnglishClient(Map<String, dynamic> child) {
+    final childId = child['id']?.toString();
+    final token = widget.authorizationToken;
+    final householdId = widget.householdId;
+    if (childId == null ||
+        childId.isEmpty ||
+        token == null ||
+        token.isEmpty ||
+        householdId == null ||
+        householdId.isEmpty) {
+      return null;
+    }
+    return EnglishPracticeApiClient(
+      baseUrl: widget.baseUrl,
+      householdId: householdId,
+      childId: childId,
+      authorizationToken: token,
     );
   }
 }
@@ -823,6 +900,7 @@ class ChildAccountScreen extends StatefulWidget {
     super.key,
     required this.store,
     required this.currentToken,
+    this.currentUsername,
     required this.onAddAccount,
     required this.onLogout,
     required this.onSwitchAccount,
@@ -830,6 +908,7 @@ class ChildAccountScreen extends StatefulWidget {
 
   final ChildAuthStore store;
   final String currentToken;
+  final String? currentUsername;
   final Future<void> Function() onAddAccount;
   final Future<void> Function() onLogout;
   final Future<void> Function(ChildSavedAccount account) onSwitchAccount;
@@ -890,7 +969,9 @@ class _ChildAccountScreenState extends State<ChildAccountScreen> {
                         break;
                       }
                     }
-                    return Text(current?.username ?? '孩子账号');
+                    return Text(
+                      current?.username ?? widget.currentUsername ?? '尚未读取用户名',
+                    );
                   },
                 ),
               ),
@@ -1003,28 +1084,59 @@ class LearningDeskScreen extends StatefulWidget {
   State<LearningDeskScreen> createState() => _LearningDeskScreenState();
 }
 
+class _TaskSchedule {
+  const _TaskSchedule({required this.ready, required this.next});
+
+  const _TaskSchedule.empty() : ready = const [], next = null;
+
+  final List<Map<String, dynamic>> ready;
+  final Map<String, dynamic>? next;
+}
+
 class _LearningDeskScreenState extends State<LearningDeskScreen> {
-  late Future<List<Map<String, dynamic>>> _tasks;
+  late Future<_TaskSchedule> _tasks;
   bool _startingTask = false;
 
   @override
   void initState() {
     super.initState();
-    _tasks = _loadTasks();
+    _tasks = Future.value(const _TaskSchedule.empty());
+    if (_todayTaskEntryVisible) _tasks = _loadTasks();
   }
 
-  Future<List<Map<String, dynamic>>> _loadTasks() async {
+  Future<_TaskSchedule> _loadTasks() async {
     final client = widget.captureClient;
-    if (client == null) return const [];
+    if (client == null) return const _TaskSchedule.empty();
     final all = await client.listTasks();
     final today = DateTime.now().toIso8601String().substring(0, 10);
-    return all
+    final active = all
         .where(
-          (task) =>
-              task['scheduled_for'] == today &&
-              const {'assigned', 'in_progress'}.contains(task['status']),
+          (task) => const {'assigned', 'in_progress'}.contains(task['status']),
         )
         .toList(growable: false);
+    final ready = active
+        .where((task) {
+          final scheduledFor = task['scheduled_for'];
+          return scheduledFor is String && scheduledFor.compareTo(today) <= 0;
+        })
+        .toList(growable: false);
+    final later =
+        active
+            .where((task) {
+              final scheduledFor = task['scheduled_for'];
+              return scheduledFor is String &&
+                  scheduledFor.compareTo(today) > 0;
+            })
+            .toList(growable: false)
+          ..sort(
+            (left, right) => (left['scheduled_for'] as String).compareTo(
+              right['scheduled_for'] as String,
+            ),
+          );
+    return _TaskSchedule(
+      ready: ready,
+      next: later.isEmpty ? null : later.first,
+    );
   }
 
   void _reloadTasks() {
@@ -1053,7 +1165,9 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
             CaptureInputScreen(captureClient: widget.captureClient),
       ),
     );
-    if (mounted && widget.captureClient != null) _reloadTasks();
+    if (mounted && widget.captureClient != null && _todayTaskEntryVisible) {
+      _reloadTasks();
+    }
   }
 
   Future<void> _startTask(Map<String, dynamic> task) async {
@@ -1110,14 +1224,19 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
                     _buildHeader(compact),
                     SizedBox(height: compact ? 22 : 28),
                     _buildMathEntryStrip(compact),
-                    SizedBox(height: compact ? 18 : 24),
-                    _buildTaskArea(compact),
-                    const SizedBox(height: 16),
-                    TextButton(
-                      onPressed: _showLaterMessage,
-                      style: TextButton.styleFrom(foregroundColor: _coral),
-                      child: const Text('稍后再做', style: TextStyle(fontSize: 16)),
-                    ),
+                    if (_todayTaskEntryVisible) ...[
+                      SizedBox(height: compact ? 18 : 24),
+                      _buildTaskArea(compact),
+                      const SizedBox(height: 16),
+                      TextButton(
+                        onPressed: _showLaterMessage,
+                        style: TextButton.styleFrom(foregroundColor: _coral),
+                        child: const Text(
+                          '稍后再做',
+                          style: TextStyle(fontSize: 16),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               );
@@ -1163,15 +1282,17 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
                     ),
             ),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _MathEntryButton(
-              icon: Icons.today_outlined,
-              label: '今日任务',
-              caption: '按今天的安排学习',
-              onPressed: _reloadTasks,
+          if (_todayTaskEntryVisible) ...[
+            const SizedBox(width: 10),
+            Expanded(
+              child: _MathEntryButton(
+                icon: Icons.today_outlined,
+                label: '今日任务',
+                caption: '按今天的安排学习',
+                onPressed: _reloadTasks,
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -1228,7 +1349,7 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
 
   Widget _buildTaskArea(bool compact) {
     if (widget.captureClient == null) return _buildTaskSurface(compact, null);
-    return FutureBuilder<List<Map<String, dynamic>>>(
+    return FutureBuilder<_TaskSchedule>(
       future: _tasks,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
@@ -1246,8 +1367,19 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
             onPressed: _reloadTasks,
           );
         }
-        final tasks = snapshot.data ?? const [];
-        if (tasks.isEmpty) {
+        final schedule = snapshot.data ?? const _TaskSchedule.empty();
+        if (schedule.ready.isEmpty) {
+          final next = schedule.next;
+          if (next != null) {
+            return _TaskMessageCard(
+              icon: Icons.event_available_outlined,
+              title: '下一项任务已安排',
+              message:
+                  '${next['title'] ?? '数学练习'}将在 ${_taskDateLabel(next['scheduled_for'])} 出现在今日任务。今天可以拍题或复习错题。',
+              actionLabel: '拍题开始',
+              onPressed: _openCaptureFlow,
+            );
+          }
           return _TaskMessageCard(
             icon: Icons.camera_alt_outlined,
             title: '今天还没有安排任务',
@@ -1258,14 +1390,20 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
         }
         return Column(
           children: [
-            for (var index = 0; index < tasks.length; index++) ...[
+            for (var index = 0; index < schedule.ready.length; index++) ...[
               if (index > 0) const SizedBox(height: 16),
-              _buildTaskSurface(compact, tasks[index]),
+              _buildTaskSurface(compact, schedule.ready[index]),
             ],
           ],
         );
       },
     );
+  }
+
+  String _taskDateLabel(Object? value) {
+    if (value is! String) return '计划日';
+    final date = DateTime.tryParse(value);
+    return date == null ? value : '${date.month}月${date.day}日';
   }
 
   Widget _buildTaskSurface(bool compact, Map<String, dynamic>? task) {
@@ -2317,6 +2455,14 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
 
   Future<void> _completeSession(String outcome) async {
     if (_completionSaving || _completed) return;
+    if (outcome == 'needs_review' &&
+        (!_evidenceConfirmed ||
+            !const {'worked', 'blank'}.contains(_answerState))) {
+      setState(() {
+        _hintError = '请先在确认题目时选择“有作答”或“答题区为空”，才能加入复习。';
+      });
+      return;
+    }
     final client = widget.captureClient;
     if (client == null) {
       setState(() {
@@ -2339,6 +2485,10 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
       }
       await client.completeCurrentSession(outcome: outcome);
       if (!mounted) return;
+      if (outcome == 'needs_review') {
+        _returnToLearningDesk();
+        return;
+      }
       setState(() {
         _completionSaving = false;
         _completed = true;
@@ -2353,6 +2503,10 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
         _hintError = error.message;
       });
     }
+  }
+
+  void _returnToLearningDesk() {
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   @override
@@ -2682,10 +2836,10 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
             label: _hintLoading
                 ? '正在准备提示……'
                 : (_solutionSteps.isNotEmpty
-                      ? '返回首页'
+                      ? '返回学习桌'
                       : (_hintLevel >= 2 ? '查看完整解答' : '再给一点提示')),
             onPressed: _solutionSteps.isNotEmpty
-                ? () => Navigator.of(context).pop()
+                ? _returnToLearningDesk
                 : _showHint,
             background: _solutionSteps.isNotEmpty
                 ? const Color(0xFFEAF7F0)
@@ -2737,6 +2891,14 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
                   fontWeight: FontWeight.w600,
                 ),
               ),
+            ),
+            const SizedBox(height: 14),
+            _HintActionButton(
+              icon: Icons.home_outlined,
+              label: '返回学习桌',
+              onPressed: _returnToLearningDesk,
+              background: const Color(0xFFEAF7F0),
+              borderColor: const Color(0xFF8BCDB1),
             ),
           ],
         ],
@@ -3965,7 +4127,10 @@ class _UnavailableScreen extends StatelessWidget {
             const SizedBox(height: 20),
             FilledButton(onPressed: onRetry, child: const Text('重试')),
             if (onChangeServer != null)
-              TextButton(onPressed: onChangeServer, child: const Text('返回登录')),
+              TextButton(
+                onPressed: onChangeServer,
+                child: const Text('更改服务端地址'),
+              ),
           ],
         ),
       ),

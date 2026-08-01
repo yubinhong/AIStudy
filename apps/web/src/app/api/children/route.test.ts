@@ -12,8 +12,12 @@ describe("child profile API proxy", () => {
   });
 
   it("forwards create requests as JSON", async () => {
-    const fetchMock = vi.fn(async () =>
-      Response.json({ child_id: "00000000-0000-0000-0000-000000000102" }),
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith("/auth/me")
+        ? Response.json({
+            household_id: "00000000-0000-0000-0000-000000000001",
+          })
+        : Response.json({ child_id: "00000000-0000-0000-0000-000000000102" }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const request = new NextRequest("http://localhost/api/children", {
@@ -42,8 +46,12 @@ describe("child profile API proxy", () => {
   });
 
   it("forwards update requests as JSON", async () => {
-    const fetchMock = vi.fn(async () =>
-      Response.json({ display_name: "小汤圆" }),
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith("/auth/me")
+        ? Response.json({
+            household_id: "00000000-0000-0000-0000-000000000001",
+          })
+        : Response.json({ display_name: "小汤圆" }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const childId = "00000000-0000-0000-0000-000000000101";
@@ -74,8 +82,12 @@ describe("child profile API proxy", () => {
   });
 
   it("forwards child data export with session, csrf and idempotency", async () => {
-    const fetchMock = vi.fn(async () =>
-      Response.json({ schema_version: "v1" }),
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith("/auth/me")
+        ? Response.json({
+            household_id: "00000000-0000-0000-0000-000000000001",
+          })
+        : Response.json({ schema_version: "v1" }),
     );
     vi.stubGlobal("fetch", fetchMock);
     const childId = "00000000-0000-0000-0000-000000000101";
@@ -107,7 +119,13 @@ describe("child profile API proxy", () => {
   });
 
   it("forwards task creation as JSON", async () => {
-    const fetchMock = vi.fn(async () => Response.json({ id: "task-id" }));
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith("/auth/me")
+        ? Response.json({
+            household_id: "00000000-0000-0000-0000-000000000001",
+          })
+        : Response.json({ id: "task-id" }),
+    );
     vi.stubGlobal("fetch", fetchMock);
     const request = new NextRequest("http://localhost/api/tasks", {
       method: "POST",

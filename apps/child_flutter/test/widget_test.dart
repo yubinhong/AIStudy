@@ -39,6 +39,33 @@ class _FullSolutionCaptureClient extends CaptureApiClient {
   }
 }
 
+class _ReviewCloseoutCaptureClient extends CaptureApiClient {
+  _ReviewCloseoutCaptureClient()
+    : super(
+        baseUrl: 'http://localhost:8000',
+        householdId: '00000000-0000-0000-0000-000000000001',
+        childId: '00000000-0000-0000-0000-000000000101',
+        authorizationToken: 'test-session',
+      );
+
+  String? completionOutcome;
+
+  @override
+  Future<Map<String, dynamic>> recordAttempt({
+    required String answerSummary,
+    required String answerState,
+    required bool evidenceConfirmed,
+  }) async => <String, dynamic>{};
+
+  @override
+  Future<Map<String, dynamic>> completeCurrentSession({
+    required String outcome,
+  }) async {
+    completionOutcome = outcome;
+    return {'outcome': outcome, 'mistake': <String, dynamic>{}};
+  }
+}
+
 class _CurriculumTaskClient extends CaptureApiClient {
   _CurriculumTaskClient()
     : super(
@@ -48,8 +75,11 @@ class _CurriculumTaskClient extends CaptureApiClient {
         authorizationToken: 'test-session',
       );
 
+  int taskListCalls = 0;
+
   @override
   Future<List<Map<String, dynamic>>> listTasks() async {
+    taskListCalls += 1;
     final today = DateTime.now().toIso8601String().substring(0, 10);
     return [
       {
@@ -92,15 +122,17 @@ void main() {
             return const ChildLoginResult(
               token: 'configured-session',
               mustChangePassword: false,
+              householdId: '00000000-0000-0000-0000-000000000001',
             );
           },
           healthAction: (_) async {},
-          onLoggedIn: (baseUrl, token, mustChangePassword, username) {
-            expect(baseUrl, 'http://192.168.1.4:8000');
-            expect(mustChangePassword, isFalse);
-            expect(username, 'child-a');
-            savedToken = token;
-          },
+          onLoggedIn:
+              (baseUrl, token, mustChangePassword, username, householdId) {
+                expect(baseUrl, 'http://192.168.1.4:8000');
+                expect(mustChangePassword, isFalse);
+                expect(username, 'child-a');
+                savedToken = token;
+              },
         ),
       ),
     );
@@ -133,7 +165,7 @@ void main() {
         home: ChildLoginScreen(
           initialServerBaseUrl: defaultServerBaseUrl,
           store: _MemoryChildAuthStore(),
-          onLoggedIn: (_, _, _, _) {},
+          onLoggedIn: (_, _, _, _, _) {},
           healthAction: (_) async {},
         ),
       ),
@@ -152,7 +184,7 @@ void main() {
         home: ChildLoginScreen(
           initialServerBaseUrl: 'http://192.168.1.4:8000',
           store: _MemoryChildAuthStore(),
-          onLoggedIn: (_, _, _, _) {},
+          onLoggedIn: (_, _, _, _, _) {},
           healthAction: (baseUrl) async {
             expect(baseUrl, 'http://192.168.1.4:8000');
           },
@@ -178,7 +210,11 @@ void main() {
         sessionStatusAction: (baseUrl, token) async {
           expect(baseUrl, 'http://192.168.1.4:8000');
           expect(token, 'pending-session');
-          return true;
+          return const ChildSessionInfo(
+            username: 'child-a',
+            mustChangePassword: true,
+            householdId: '00000000-0000-0000-0000-000000000001',
+          );
         },
       ),
     );
@@ -278,7 +314,45 @@ void main() {
     expect(find.textContaining('Synthetic Child A'), findsOneWidget);
   });
 
-  testWidgets('compact learning desk fits a portrait phone width', (
+  testWidgets('reloads the subject home when switching back to an account', (
+    tester,
+  ) async {
+    var activeUsername = 'child-a';
+    late StateSetter updateHost;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            updateHost = setState;
+            return ChildProfileScreen(
+              authorizationToken: 'session-$activeUsername',
+              username: activeUsername,
+              loadChildren: () async => [
+                {
+                  'id': '00000000-0000-0000-0000-000000000101',
+                  'display_name': activeUsername,
+                  'curriculum_version': 'math-demo-2026',
+                },
+              ],
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('child-a，今天想学什么？'), findsOneWidget);
+
+    updateHost(() => activeUsername = 'child-b');
+    await tester.pumpAndSettle();
+    expect(find.text('child-b，今天想学什么？'), findsOneWidget);
+
+    updateHost(() => activeUsername = 'child-a');
+    await tester.pumpAndSettle();
+    expect(find.text('child-a，今天想学什么？'), findsOneWidget);
+  });
+
+  testWidgets('compact subject home and math desk fit a portrait phone width', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(390, 844);
@@ -295,26 +369,34 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('今天的数学小任务'), findsOneWidget);
+    expect(find.text('数学'), findsOneWidget);
+    expect(find.text('英语'), findsOneWidget);
+    await tester.tap(find.text('数学'));
+    await tester.pumpAndSettle();
+    expect(find.text('错题讲解'), findsOneWidget);
+    expect(find.text('今日任务'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('curriculum task offers its authenticated source page', (
+  testWidgets('hides today tasks and does not fetch their recommendations', (
     tester,
   ) async {
+    final client = _CurriculumTaskClient();
     await tester.pumpWidget(
       MaterialApp(
         home: LearningDeskScreen(
           displayName: '小禾',
           curriculumVersion: 'math-demo-2026',
-          captureClient: _CurriculumTaskClient(),
+          captureClient: client,
         ),
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('把铅笔放在书本的下面。'), findsOneWidget);
-    expect(find.text('查看教材第 14 页原图'), findsOneWidget);
+    expect(find.text('今日任务'), findsNothing);
+    expect(find.text('位置关系练习'), findsNothing);
+    expect(find.text('把铅笔放在书本的下面。'), findsNothing);
+    expect(client.taskListCalls, 0);
   });
 
   testWidgets('opens OCR confirmation from the learning desk', (tester) async {
@@ -329,8 +411,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text('拍题'));
-    await tester.tap(find.text('拍题'));
+    await tester.ensureVisible(find.text('错题讲解'));
+    await tester.tap(find.text('错题讲解'));
     await tester.pumpAndSettle();
 
     expect(find.text('拍题'), findsOneWidget);
@@ -348,22 +430,10 @@ void main() {
     expect(find.text('题目已确认，可以开始学习。'), findsOneWidget);
   });
 
-  testWidgets('opens the thinking practice from the learning desk', (
-    tester,
-  ) async {
+  testWidgets('renders the thinking practice', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(
-        home: LearningDeskScreen(
-          displayName: '小禾',
-          username: 'xiaotangyuan',
-          curriculumVersion: 'math-demo-2026',
-        ),
-      ),
+      const MaterialApp(home: TutorHintScreen(displayName: 'xiaotangyuan')),
     );
-    await tester.pumpAndSettle();
-
-    await tester.ensureVisible(find.text('继续学习'));
-    await tester.tap(find.text('继续学习'));
     await tester.pumpAndSettle();
 
     expect(find.text('xiaotangyuan的数学练习'), findsOneWidget);
@@ -381,7 +451,7 @@ void main() {
     expect(find.text('继续说下去'), findsOneWidget);
   });
 
-  testWidgets('returns to the previous page after the full solution is shown', (
+  testWidgets('returns to the learning desk after the full solution is shown', (
     tester,
   ) async {
     final client = _FullSolutionCaptureClient();
@@ -411,15 +481,96 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('完整解答'), findsOneWidget);
-    expect(find.text('返回首页'), findsOneWidget);
+    expect(find.text('返回学习桌'), findsOneWidget);
     expect(find.text('查看完整解答'), findsNothing);
 
-    final returnHome = find.text('返回首页');
+    final returnHome = find.text('返回学习桌');
     await tester.ensureVisible(returnHome);
     await tester.tap(returnHome);
     await tester.pumpAndSettle();
     expect(find.text('打开讲解'), findsOneWidget);
   });
+
+  testWidgets('returns to the learning desk after completing a question', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: FilledButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const TutorHintScreen(),
+                ),
+              ),
+              child: const Text('打开练习'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('打开练习'));
+    await tester.pumpAndSettle();
+    final understood = find.text('我想到了');
+    await tester.ensureVisible(understood);
+    await tester.tap(understood);
+    await tester.pump();
+    final complete = find.text('我会了，完成本题');
+    await tester.ensureVisible(complete);
+    await tester.tap(complete);
+    await tester.pumpAndSettle();
+
+    expect(find.text('本题已完成。'), findsOneWidget);
+    final returnDesk = find.text('返回学习桌');
+    await tester.ensureVisible(returnDesk);
+    await tester.tap(returnDesk);
+    await tester.pumpAndSettle();
+    expect(find.text('打开练习'), findsOneWidget);
+  });
+
+  testWidgets(
+    'adds a confirmed question to review and returns to the learning desk',
+    (tester) async {
+      final client = _ReviewCloseoutCaptureClient();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: FilledButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => TutorHintScreen(
+                      captureClient: client,
+                      answerState: 'blank',
+                      evidenceConfirmed: true,
+                    ),
+                  ),
+                ),
+                child: const Text('打开练习'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('打开练习'));
+      await tester.pumpAndSettle();
+      final understood = find.text('我想到了');
+      await tester.ensureVisible(understood);
+      await tester.tap(understood);
+      await tester.pump();
+      final needsReview = find.text('还没完全会，加入复习');
+      await tester.ensureVisible(needsReview);
+      await tester.tap(needsReview);
+      await tester.pumpAndSettle();
+
+      expect(client.completionOutcome, 'needs_review');
+      expect(find.text('打开练习'), findsOneWidget);
+      expect(find.text('已完成本题，并加入复习清单。'), findsNothing);
+    },
+  );
 
   testWidgets(
     'shows local sanitization preview and returns only sanitized copy',
@@ -609,6 +760,7 @@ void main() {
                 builder: (_) => ChildAccountScreen(
                   store: store,
                   currentToken: first.sessionToken,
+                  currentUsername: first.username,
                   onAddAccount: () async => added = true,
                   onLogout: () async => loggedOut = true,
                   onSwitchAccount: (account) async => switched = account,
@@ -627,6 +779,7 @@ void main() {
     await tester.tap(find.text('打开账号页'));
     await tester.pumpAndSettle();
     expect(find.text('切换账号'), findsOneWidget);
+    expect(find.text('child-a'), findsWidgets);
     await tester.tap(find.text('切换').first);
     await tester.pumpAndSettle();
     expect(switched?.username, 'child-b');

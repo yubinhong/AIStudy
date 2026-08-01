@@ -1,19 +1,29 @@
+"use client";
+
 import {
   BookOpenText,
   CalendarCheck,
+  ClockCounterClockwise,
   CaretDown,
   CaretRight,
   Check,
   HouseLine,
   IdentificationCard,
   Leaf,
-  UserCircle,
+  ShieldCheck,
 } from "@phosphor-icons/react/dist/ssr";
 import type { IconProps } from "@phosphor-icons/react";
 import Link from "next/link";
-import type { ComponentType, ReactNode } from "react";
+import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 
-type ActiveSection = "overview" | "curriculum" | "accounts";
+import { AccountMenu } from "./account-menu";
+
+type ActiveSection =
+  | "overview"
+  | "learning"
+  | "curriculum"
+  | "accounts"
+  | "family";
 
 type AdminShellProps = {
   active: ActiveSection;
@@ -39,6 +49,10 @@ type NavigationItem = {
   section?: ActiveSection;
 };
 
+type CurrentAccount = {
+  role: "super_admin" | "parent" | "child";
+};
+
 export const adminNavigationGroups: Array<{
   label: string;
   items: NavigationItem[];
@@ -55,12 +69,23 @@ export const adminNavigationGroups: Array<{
     ],
   },
   {
+    label: "学习",
+    items: [
+      {
+        href: "/learning",
+        icon: ClockCounterClockwise,
+        label: "学习记录",
+        section: "learning",
+      },
+    ],
+  },
+  {
     label: "教材",
     items: [
       {
         href: "/curriculum",
         icon: BookOpenText,
-        label: "教材与任务",
+        label: "教材管理",
         section: "curriculum",
       },
     ],
@@ -77,6 +102,18 @@ export const adminNavigationGroups: Array<{
     ],
   },
 ];
+
+const familyNavigationGroup: { label: string; items: NavigationItem[] } = {
+  label: "家庭权限",
+  items: [
+    {
+      href: "/family",
+      icon: ShieldCheck,
+      label: "家庭权限",
+      section: "family",
+    },
+  ],
+};
 
 export function childScopedHref(baseHref: string, childId?: string) {
   if (!childId) return baseHref;
@@ -109,11 +146,26 @@ export function AdminShell({
   connectionLabel = "本地服务已连接",
   selectedChildId,
 }: AdminShellProps) {
+  const [account, setAccount] = useState<CurrentAccount | null>(null);
   const selectedOption =
     childOptions.find((option) => option.id === selectedChildId) ??
     childOptions[0];
   const currentName = selectedOption?.name ?? childName;
   const currentMeta = selectedOption?.meta ?? childMeta;
+  const navigationGroups =
+    account?.role === "super_admin"
+      ? [...adminNavigationGroups, familyNavigationGroup]
+      : adminNavigationGroups;
+
+  useEffect(() => {
+    void fetch("/api/auth/session", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json()) as CurrentAccount;
+      })
+      .then(setAccount)
+      .catch(() => setAccount(null));
+  }, []);
 
   return (
     <div className="admin-shell">
@@ -130,7 +182,7 @@ export function AdminShell({
         </Link>
 
         <nav className="admin-navigation" aria-label="家长端主导航">
-          {adminNavigationGroups.map((group) => (
+          {navigationGroups.map((group) => (
             <div className="nav-group" key={group.label}>
               <p>{group.label}</p>
               {group.items.map((item) => {
@@ -216,13 +268,7 @@ export function AdminShell({
               <span aria-hidden="true" />
               {connectionLabel}
             </span>
-            <Link
-              className="account-shortcut"
-              href="/accounts"
-              aria-label="账号设置"
-            >
-              <UserCircle size={24} weight="regular" />
-            </Link>
+            <AccountMenu />
           </div>
         </header>
         <main className="admin-main">{children}</main>

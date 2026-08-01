@@ -114,6 +114,100 @@ def test_parent_uploads_multiple_curriculum_documents_into_private_drafts() -> N
     assert len(storage.objects) == 2
 
 
+def test_file_upload_uses_a_pdf_specific_provisional_title_when_metadata_is_omitted() -> None:
+    storage = MemoryDocumentStorage()
+    client = TestClient(create_app(object_storage=storage))
+    response = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/imports/files",
+        headers={**session_headers(client), "Idempotency-Key": "curriculum-files-auto-title"},
+        data={
+            "authorization_statement": "家庭已取得本地自用材料授权",
+            "grade": "3",
+        },
+        files=[("files", ("三年级数学上册.pdf", b"%PDF-local", "application/pdf"))],
+    )
+
+    assert response.status_code == 201
+    snapshot = response.json()[0]["snapshot"]
+    assert snapshot["textbook_version"] == "待从 PDF 识别：三年级数学上册"
+    assert snapshot["term"] == "待识别"
+
+
+def test_public_curriculum_reuse_requires_an_approved_source_map() -> None:
+    storage = MemoryDocumentStorage()
+    curriculum_repository = InMemoryCurriculumRepository()
+    knowledge_repository = InMemoryCurriculumKnowledgeRepository()
+    client = TestClient(
+        create_app(
+            object_storage=storage,
+            curriculum_repository=curriculum_repository,
+            curriculum_knowledge_repository=knowledge_repository,
+        )
+    )
+    parent = session_headers(client)
+    payload = {
+        "authorization_statement": "国家公开教材，可跨家庭复用",
+        "is_public_reusable": "true",
+        "grade": "3",
+        "textbook_version": "人教版-三年级上册",
+        "term": "上学期",
+    }
+    source = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/imports/files",
+        headers={**parent, "Idempotency-Key": "public-curriculum-source"},
+        data=payload,
+        files=[("files", ("公开教材.pdf", b"%PDF-public", "application/pdf"))],
+    )
+    assert source.status_code == 201
+
+    # A matching declaration alone is insufficient. Until the source map is
+    # approved the new import takes the ordinary private parse path.
+    unapproved = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/imports/files",
+        headers={**parent, "Idempotency-Key": "public-curriculum-unapproved"},
+        data=payload,
+        files=[("files", ("公开教材副本.pdf", b"%PDF-public", "application/pdf"))],
+    )
+    assert unapproved.status_code == 201
+    assert unapproved.json()[0]["material"]["status"] == "uploaded"
+    assert len(storage.objects) == 2
+
+    source_item = source.json()[0]
+    now = datetime.now(UTC)
+    knowledge_repository.save_for_testing(
+        CurriculumKnowledgeMap(
+            id=UUID("00000000-0000-0000-0000-000000000903"),
+            household_id=UUID(HOUSEHOLD_A),
+            child_id=UUID(CHILD_A),
+            material_id=UUID(source_item["material"]["id"]),
+            snapshot_id=UUID(source_item["snapshot"]["id"]),
+            status=KnowledgeMapStatus.APPROVED,
+            attempt=1,
+            book_summary="公开教材",
+            page_count=1,
+            analyzed_page_count=1,
+            provider="newapi",
+            model="math-model",
+            schema_version="curriculum-book-analysis.v1",
+            prompt_version="curriculum-book-consolidation.v5",
+            created_at=now,
+            updated_at=now,
+            reviewed_at=now,
+        )
+    )
+    reused = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/imports/files",
+        headers={**parent, "Idempotency-Key": "public-curriculum-approved"},
+        data=payload,
+        files=[("files", ("公开教材第三份.pdf", b"%PDF-public", "application/pdf"))],
+    )
+
+    assert reused.status_code == 201
+    assert reused.json()[0]["material"]["status"] == "needs_review"
+    assert reused.json()[0]["snapshot"]["reused_from_snapshot_id"] == source_item["snapshot"]["id"]
+    assert len(storage.objects) == 2
+
+
 def test_parent_reads_page_scoped_parsing_output_for_review() -> None:
     curriculum_repository = CurriculumWithChunks()
     client = TestClient(create_app(curriculum_repository=curriculum_repository))
@@ -365,6 +459,30 @@ def test_parent_imports_draft_and_publishes_only_after_review() -> None:
     )
     assert [item["id"] for item in child_view.json()] == [snapshot["id"]]
 
+    second_import = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/imports",
+        headers={**parent, "Idempotency-Key": "curriculum-import-2"},
+        json={
+            **payload,
+            "filename": "小学数学三年级上册练习册.pdf",
+            "content_sha256": "b" * 64,
+            "textbook_version": "人教版-三年级上册练习册",
+        },
+    )
+    assert second_import.status_code == 201
+    second_snapshot = second_import.json()["snapshot"]
+    second_published = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/snapshots/{second_snapshot['id']}/publish",
+        headers={**parent, "Idempotency-Key": "curriculum-publish-2"},
+    )
+    assert second_published.status_code == 200
+    child_view = client.get(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum",
+        headers=session_headers(client, role="child", household_id=HOUSEHOLD_A, child_id=CHILD_A),
+    )
+    assert {item["id"] for item in child_view.json()} == {snapshot["id"], second_snapshot["id"]}
+    assert {item["status"] for item in child_view.json()} == {"published"}
+
 
 def test_manifest_import_rejects_non_pdf_document_media_types() -> None:
     client = TestClient(create_app())
@@ -516,14 +634,85 @@ def test_recommendation_requires_parent_approval_before_creating_task(
         )
     )
 
+    second_curriculum = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/imports",
+        headers={**parent, "Idempotency-Key": "recommendation-second-curriculum-import"},
+        json={
+            "filename": "workbook.json",
+            "media_type": "application/json",
+            "byte_size": 128,
+            "content_sha256": "d" * 64,
+            "authorization_statement": "家庭自用授权",
+            "grade": 3,
+            "textbook_version": "人教版-三年级上册练习册",
+            "term": "上学期",
+            "sections": [
+                {
+                    "title": "分数练习",
+                    "chapter": "第五单元",
+                    "learning_objectives": ["巩固分数"],
+                }
+            ],
+        },
+    )
+    assert second_curriculum.status_code == 201
+    second_snapshot_id = second_curriculum.json()["snapshot"]["id"]
+    assert (
+        client.post(
+            f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/snapshots/{second_snapshot_id}/publish",
+            headers={**parent, "Idempotency-Key": "recommendation-second-curriculum-publish"},
+        ).status_code
+        == 200
+    )
+    second_map_id = UUID("00000000-0000-0000-0000-000000000903")
+    knowledge_repository.save_for_testing(
+        CurriculumKnowledgeMap(
+            id=second_map_id,
+            household_id=UUID(HOUSEHOLD_A),
+            child_id=UUID(CHILD_A),
+            material_id=UUID(second_curriculum.json()["material"]["id"]),
+            snapshot_id=UUID(second_snapshot_id),
+            status=KnowledgeMapStatus.APPROVED,
+            attempt=1,
+            book_summary="分数练习册",
+            page_count=1,
+            analyzed_page_count=1,
+            provider="newapi",
+            model="math-model",
+            schema_version="curriculum-book-analysis.v1",
+            prompt_version="curriculum-book-consolidation.v5",
+            created_at=now,
+            updated_at=now,
+            reviewed_at=now,
+            knowledge_points=(
+                point.model_copy(
+                    update={
+                        "id": UUID("00000000-0000-0000-0000-000000000904"),
+                        "material_id": UUID(second_curriculum.json()["material"]["id"]),
+                        "snapshot_id": UUID(second_snapshot_id),
+                        "knowledge_map_id": second_map_id,
+                        "knowledge_key": "kp-fractions-workbook",
+                    }
+                ),
+            ),
+        )
+    )
+
     def plan_from_sources(
         _provider: NewApiVisionProvider, *, sources
     ) -> ProviderRecommendationPlan:
-        assert sources[0].source_page == 86
+        curriculum_sources = [source for source in sources if source.source_type == "curriculum"]
+        assert {str(source.snapshot_id) for source in curriculum_sources} == {
+            snapshot_id,
+            second_snapshot_id,
+        }
+        source = next(
+            source for source in curriculum_sources if str(source.snapshot_id) == snapshot_id
+        )
         return ProviderRecommendationPlan(
             items=(
                 ProviderRecommendationItem(
-                    source_keys=(sources[0].source_key,),
+                    source_keys=(source.source_key,),
                     title="分数第86页巩固",
                     reason="从已发布教材第86页练习一道分数题。",
                     knowledge_point="分数的认识与比较",

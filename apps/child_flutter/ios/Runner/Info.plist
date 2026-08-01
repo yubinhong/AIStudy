@@ -28,6 +28,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>用于拍摄题目照片，交给学习助手进行题目识别。</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>仅在孩子按住说话时录制英语练习语音，应用进入后台后立即停止。</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>用于连接家庭局域网中的学习服务，获取任务并上传经确认的题目图片。</string>
 	<key>NSAppTransportSecurity</key>

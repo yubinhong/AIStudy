@@ -86,7 +86,9 @@ void main() {
             'account': {
               'role': 'child',
               'child_id': '00000000-0000-0000-0000-000000000101',
+              'username': 'child-a',
               'must_change_password': true,
+              'household_id': '00000000-0000-0000-0000-000000000001',
             },
           }),
         );
@@ -145,7 +147,9 @@ void main() {
               jsonEncode({
                 'role': 'child',
                 'child_id': '00000000-0000-0000-0000-000000000101',
+                'username': 'child-a',
                 'must_change_password': true,
+                'household_id': '00000000-0000-0000-0000-000000000001',
               }),
             );
         } else {
@@ -175,7 +179,9 @@ void main() {
         baseUrl: 'http://${server.address.host}:${server.port}',
       );
 
-      expect(await client.mustChangePassword('pending-session'), isTrue);
+      final session = await client.readSessionInfo('pending-session');
+      expect(session.username, 'child-a');
+      expect(session.mustChangePassword, isTrue);
       final token = await client.changePassword(
         token: 'pending-session',
         currentPassword: 'initial-password',

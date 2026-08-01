@@ -773,32 +773,12 @@ void main() {
     );
   });
 
-  test('completes the current session with an explicit outcome', () async {
+  test('keeps an unexpected detailed-solution conflict generic', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    const sessionId = '00000000-0000-0000-0000-000000000801';
+    const verifiedQuestionId = '00000000-0000-0000-0000-000000000706';
     final subscription = server.listen((request) async {
-      expect(
-        request.uri.path,
-        '/households/household/sessions/$sessionId/completion',
-      );
-      expect(
-        request.headers.value('Idempotency-Key'),
-        'complete-session-$sessionId-needs_review',
-      );
-      final body = jsonDecode(
-        utf8.decode(await request.expand((chunk) => chunk).toList()),
-      );
-      expect(body, {'outcome': 'needs_review'});
-      request.response
-        ..statusCode = HttpStatus.ok
-        ..headers.contentType = ContentType.json
-        ..write(
-          jsonEncode({
-            'id': sessionId,
-            'status': 'completed',
-            'outcome': 'needs_review',
-          }),
-        );
+      await request.drain<void>();
+      request.response.statusCode = HttpStatus.conflict;
       await request.response.close();
     });
     addTearDown(() async {
@@ -809,15 +789,149 @@ void main() {
       baseUrl: 'http://${server.address.host}:${server.port}',
       householdId: 'household',
       childId: 'child',
-      sessionId: sessionId,
       authorizationToken: 'test-session-token',
     );
 
-    final response = await client.completeCurrentSession(
-      outcome: 'needs_review',
+    await expectLater(
+      client.createTutorHint(
+        verifiedQuestionId: verifiedQuestionId,
+        level: 3,
+        mode: 'mistake_explanation',
+        answerState: 'blank',
+        evidenceConfirmed: true,
+      ),
+      throwsA(
+        isA<CaptureApiException>()
+            .having(
+              (error) => error.statusCode,
+              'statusCode',
+              HttpStatus.conflict,
+            )
+            .having((error) => error.message, 'message', '暂时无法获取这道题的提示，请稍后重试。'),
+      ),
     );
-    expect(response['status'], 'completed');
   });
+
+  test(
+    'requires a confirmed question before a session can join review',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      const sessionId = '00000000-0000-0000-0000-000000000801';
+      final subscription = server.listen((request) async {
+        fail(
+          'review without a verified question must not make a network request',
+        );
+      });
+      addTearDown(() async {
+        await subscription.cancel();
+        await server.close(force: true);
+      });
+      final client = CaptureApiClient(
+        baseUrl: 'http://${server.address.host}:${server.port}',
+        householdId: 'household',
+        childId: 'child',
+        sessionId: sessionId,
+        authorizationToken: 'test-session-token',
+      );
+
+      await expectLater(
+        client.completeCurrentSession(outcome: 'needs_review'),
+        throwsA(
+          isA<CaptureApiException>().having(
+            (error) => error.message,
+            'message',
+            '请先确认题目和作答状态，才能加入复习。',
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'joins review through atomic mistake closeout after confirmation',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      const sessionId = '00000000-0000-0000-0000-000000000802';
+      const captureId = '00000000-0000-0000-0000-000000000803';
+      const analysisJobId = '00000000-0000-0000-0000-000000000804';
+      const verifiedQuestionId = '00000000-0000-0000-0000-000000000805';
+      final requests = <String>[];
+      final subscription = server.listen((request) async {
+        requests.add('${request.method} ${request.uri.path}');
+        if (request.uri.path.endsWith('/extraction/verify')) {
+          request.response
+            ..statusCode = HttpStatus.created
+            ..headers.contentType = ContentType.json
+            ..write(jsonEncode({'id': verifiedQuestionId}));
+        } else if (request.uri.path ==
+            '/households/household/children/child/mistake-closeout') {
+          expect(
+            request.headers.value('Idempotency-Key'),
+            'mistake-closeout-$sessionId-needs_review',
+          );
+          final body = jsonDecode(
+            utf8.decode(await request.expand((chunk) => chunk).toList()),
+          );
+          expect(body['verified_question_id'], verifiedQuestionId);
+          expect(body['session_id'], sessionId);
+          expect(body['outcome'], 'needs_review');
+          request.response
+            ..statusCode = HttpStatus.ok
+            ..headers.contentType = ContentType.json
+            ..write(
+              jsonEncode({
+                'session_id': sessionId,
+                'outcome': 'needs_review',
+                'mistake': {},
+              }),
+            );
+        } else {
+          request.response.statusCode = HttpStatus.notFound;
+        }
+        await request.response.close();
+      });
+      addTearDown(() async {
+        await subscription.cancel();
+        await server.close(force: true);
+      });
+      const receipt = CaptureUploadReceipt(
+        captureId: captureId,
+        captureVersion: 2,
+        mediaType: 'image/jpeg',
+        byteSize: 3,
+        contentSha256:
+            '0000000000000000000000000000000000000000000000000000000000000000',
+        ocrJobId: '',
+        ocrJobStatus: 'not_started',
+        imageAnalysisJobId: analysisJobId,
+        imageAnalysisStatus: 'succeeded',
+      );
+      final client = CaptureApiClient(
+        baseUrl: 'http://${server.address.host}:${server.port}',
+        householdId: 'household',
+        childId: 'child',
+        sessionId: sessionId,
+        authorizationToken: 'test-session-token',
+      );
+
+      await client.verifyQuestionExtraction(
+        receipt: receipt,
+        questionText: '3 + 4 = ?',
+        extraction: const {'options': <String>[], 'formulas': <String>[]},
+        answerState: 'blank',
+        evidenceConfirmed: true,
+      );
+      final response = await client.completeCurrentSession(
+        outcome: 'needs_review',
+      );
+
+      expect(response['mistake'], isA<Map>());
+      expect(requests, [
+        'POST /households/household/captures/$captureId/image-analysis-jobs/$analysisJobId/extraction/verify',
+        'POST /households/household/children/child/mistake-closeout',
+      ]);
+    },
+  );
 
   test('loads due mistakes and submits a review result', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

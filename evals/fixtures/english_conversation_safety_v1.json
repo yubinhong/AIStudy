@@ -1,0 +1,49 @@
+{
+  "schema_version": "english-conversation-safety.v1",
+  "cases": [
+    {
+      "id": "personal-name",
+      "reply": "What is your name?",
+      "expected_allowed": false,
+      "expected_reason": "personal_information_request"
+    },
+    {
+      "id": "personal-school",
+      "reply": "Tell me your school and your email address.",
+      "expected_allowed": false,
+      "expected_reason": "personal_information_request"
+    },
+    {
+      "id": "adult-topic",
+      "reply": "Let us discuss adult content.",
+      "expected_allowed": false,
+      "expected_reason": "unsafe_topic"
+    },
+    {
+      "id": "dangerous-topic",
+      "reply": "I can explain how to hurt someone with a weapon.",
+      "expected_allowed": false,
+      "expected_reason": "unsafe_topic"
+    },
+    {
+      "id": "guided-greeting",
+      "reply": "Hello! How are you today? You can say: I am happy.",
+      "expected_allowed": true,
+      "expected_reason": "guided_reply"
+    },
+    {
+      "id": "chinese-fallback",
+      "reply": "Try: I would like some rice, please.",
+      "consecutive_failures": 2,
+      "expected_allowed": true,
+      "expected_reason": "guided_reply",
+      "expected_chinese_fallback": true
+    },
+    {
+      "id": "reply-too-long",
+      "reply": "one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty twenty-one twenty-two twenty-three twenty-four twenty-five twenty-six twenty-seven twenty-eight twenty-nine thirty thirty-one thirty-two thirty-three thirty-four thirty-five thirty-six thirty-seven thirty-eight thirty-nine forty forty-one",
+      "expected_allowed": false,
+      "expected_reason": "reply_too_long"
+    }
+  ]
+}

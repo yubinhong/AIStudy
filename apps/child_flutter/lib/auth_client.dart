@@ -27,12 +27,26 @@ class ChildLoginResult {
   const ChildLoginResult({
     required this.token,
     required this.mustChangePassword,
+    required this.householdId,
     this.username,
   });
 
   final String token;
   final bool mustChangePassword;
+  final String householdId;
   final String? username;
+}
+
+class ChildSessionInfo {
+  const ChildSessionInfo({
+    required this.username,
+    required this.mustChangePassword,
+    required this.householdId,
+  });
+
+  final String username;
+  final bool mustChangePassword;
+  final String householdId;
 }
 
 class ChildSavedAccount {
@@ -272,12 +286,16 @@ class ChildAuthClient {
         throw const ChildAuthException('请使用孩子账号登录。');
       }
       final mustChangePassword = account['must_change_password'];
-      if (mustChangePassword is! bool) {
+      final householdId = account['household_id'];
+      if (mustChangePassword is! bool ||
+          householdId is! String ||
+          householdId.isEmpty) {
         throw const ChildAuthException('登录响应不完整，请联系家长。');
       }
       return ChildLoginResult(
         token: body['access_token'] as String,
         mustChangePassword: mustChangePassword,
+        householdId: householdId,
         username: account['username'] is String
             ? (account['username'] as String).trim()
             : null,
@@ -297,7 +315,7 @@ class ChildAuthClient {
     }
   }
 
-  Future<bool> mustChangePassword(String token) async {
+  Future<ChildSessionInfo> readSessionInfo(String token) async {
     final client = HttpClient();
     try {
       final request = await client.getUrl(Uri.parse('$baseUrl/auth/me'));
@@ -313,11 +331,21 @@ class ChildAuthClient {
       if (body['role'] != 'child' || body['child_id'] is! String) {
         throw const ChildSessionExpiredException();
       }
-      final required = body['must_change_password'];
-      if (required is! bool) {
+      final username = body['username'];
+      final mustChangePassword = body['must_change_password'];
+      final householdId = body['household_id'];
+      if (username is! String ||
+          username.trim().isEmpty ||
+          mustChangePassword is! bool ||
+          householdId is! String ||
+          householdId.isEmpty) {
         throw const ChildAuthException('登录状态响应不完整。');
       }
-      return required;
+      return ChildSessionInfo(
+        username: username.trim(),
+        mustChangePassword: mustChangePassword,
+        householdId: householdId,
+      );
     } on ChildAuthException {
       rethrow;
     } on Object catch (error, stackTrace) {
@@ -332,6 +360,9 @@ class ChildAuthClient {
       client.close(force: true);
     }
   }
+
+  Future<bool> mustChangePassword(String token) async =>
+      (await readSessionInfo(token)).mustChangePassword;
 
   Future<String> changePassword({
     required String token,

@@ -2,7 +2,7 @@
 
 这套 Compose 适合单家庭、自用部署，包含 PostgreSQL、Redis、私有 MinIO、FastAPI API、家长 Web、数据库迁移一次性服务、NewAPI 图片分析 worker 和数据生命周期 worker。Compose 会从同目录的 `.env` 注入服务变量，不需要在启动命令中传入 `--env-file`。它不会部署 NewAPI；NewAPI 由部署者单独提供，API 通过 OpenAI-compatible `/v1/chat/completions` 访问。
 
-当前服务端状态：API `0.8.0`、账号密码/可撤销会话、PostgreSQL 业务事实、MinIO、ImageAnalysis/VerifiedQuestion/TutorTurn、周报/导出、家长 Web、两个 worker 和备份恢复脚本已实现；Ubuntu 已完成 NewAPI synthetic 大图和隔离恢复验收。真实自动视觉检测器、正式监控和四设备回归仍未完成，因此本文件提供的是“已验证的单家庭自用全栈部署”，不是公网或商业生产发布证明。
+当前本地与 Ubuntu 服务端状态：API `0.13.0`、迁移头 `0030_learning_history_retention`。账号密码/可撤销会话、PostgreSQL 业务事实、MinIO、ImageAnalysis/VerifiedQuestion/TutorTurn、周报/导出、家长 Web、worker 和备份恢复脚本已实现。真实自动视觉检测器、正式监控和四设备回归仍未完成，因此本文件提供的是自用部署说明，不是公网或商业生产发布证明。
 
 ## 1. 前置条件
 
@@ -32,6 +32,7 @@ openssl rand -hex 32
 - 初次部署保持 `STUDY_NEWAPI_ENABLED=false`。确认 NewAPI 视觉模型、key 和响应契约后，再改为 `true`。
 - Adapter 默认以 `study-api/0.5` 作为 `User-Agent`，避免部分 Cloudflare 规则拦截 Python `urllib` 的默认特征；如前置网关要求其他值，可设置 `STUDY_NEWAPI_USER_AGENT`，但只允许 1–256 个可打印 ASCII 字符，不能包含换行或其他控制字符。
 - `STUDY_NEWAPI_MAX_IMAGE_BYTES` 默认 `600000`。更大的已确认脱敏图会在 worker 内存中去元数据、等比缩放并重编码为 JPEG 后再 base64 传输，用于避开 NewAPI/反向代理请求体上限；不要把该值调高到网关限制以上。
+- DataLifecycle worker 固定删除超过 180 天、且不再被开放错题引用的详细题目/讲解和已结束复习链路。紧急调查时可设置 `LEARNING_HISTORY_CLEANUP_ENABLED=false` 暂停后续清理；不要改变代码中的 180 天策略或手工删除开放错题。
 
 不要把 `infra/compose/.env`、真实 API key、儿童图片或真实题目写入仓库。
 
@@ -48,7 +49,7 @@ curl http://127.0.0.1:${API_PORT:-8000}/healthz
 curl http://127.0.0.1:${WEB_PORT:-3000}/healthz
 ```
 
-首次 amd64 构建会安装 PaddleOCR 依赖并下载五份锁定模型，可能明显慢于后续启动；原生 ARM 构建会跳过该不兼容依赖和模型。Web 构建使用 Node 24.18.0 和 pnpm 11.7.0，并生成 Next.js standalone 镜像。`migrate` 只执行 `alembic upgrade head`，成功后退出；API 依赖其成功状态，Web 依赖 API 健康状态。ImageAnalysis worker 在 `STUDY_NEWAPI_ENABLED=false` 时安全空闲，不连接 Provider、不读取图片；DataLifecycle worker 默认每 300 秒清理到期 Capture 对象和 24 小时导出快照，只记录计数。迁移是前滚式的，Compose 不会自动 downgrade。
+首次 amd64 构建会安装 PaddleOCR 依赖并下载五份锁定模型，可能明显慢于后续启动；原生 ARM 构建会跳过该不兼容依赖和模型。Web 构建使用 Node 24.18.0 和 pnpm 11.7.0，并生成 Next.js standalone 镜像。`migrate` 只执行 `alembic upgrade head`，成功后退出；API 依赖其成功状态，Web 依赖 API 健康状态。ImageAnalysis worker 在 `STUDY_NEWAPI_ENABLED=false` 时安全空闲，不连接 Provider、不读取图片；DataLifecycle worker 默认每 300 秒清理到期 Capture 对象、24 小时导出快照和超过 180 天的可清理详细学习历史，只记录计数。迁移是前滚式的，Compose 不会自动 downgrade。
 
 查看日志时只看稳定状态，不要把请求体、图片、令牌或 NewAPI key 粘贴到工单或聊天中：
 
@@ -95,7 +96,7 @@ docker compose -f infra/compose/compose.yml down
 docker volume ls | grep study
 ```
 
-升级步骤：先备份 PostgreSQL 和 MinIO 数据，再拉取/切换到目标代码版本，运行 `config`，执行 `up -d --build`，确认 `migrate` 成功和 `/healthz` 正常。当前 head 为 `0016_child_account_uniqueness`；回退应用时保留新增表，不在正式数据上执行 downgrade。发生应用问题时先关闭 NewAPI 开关并停止 ImageAnalysis worker；数据库迁移优先前向修复，不对 Profile、Account、Attempt、TutorTurn 或 AuditEvent 做破坏性回滚。
+升级步骤：先备份 PostgreSQL 和 MinIO 数据，再拉取/切换到目标代码版本，运行 `config`，执行 `up -d --build`，确认 `migrate` 成功和 `/healthz` 正常。本地目标 head 为 `0030_learning_history_retention`；回退应用时保留新增索引，不在正式数据上执行 downgrade。发生学习历史范围异常时先设置 `LEARNING_HISTORY_CLEANUP_ENABLED=false` 并重启 DataLifecycle worker，再前向修复；已经按策略删除的数据不能靠应用回滚恢复。发生 Provider 问题时关闭 NewAPI 开关并停止 ImageAnalysis worker；不得破坏性回滚 Profile、Account、Attempt 或 AuditEvent。
 
 ### 备份与恢复验证
 

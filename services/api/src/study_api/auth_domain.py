@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Protocol
 from unicodedata import normalize
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from argon2 import PasswordHasher
 from argon2.exceptions import HashingError, VerificationError, VerifyMismatchError
@@ -17,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 
 from study_api.database import database_url
 from study_api.domain.models import AccountRole, AuditEvent, ChildProfile, Subject
-from study_api.domain.repository import IdempotencyConflictError
+from study_api.domain.repository import IdempotencyConflictError, ProfileRepository
 
 DEFAULT_HOUSEHOLD_ID = UUID("00000000-0000-0000-0000-000000000001")
 BOOTSTRAP_USERNAME = "admin"
@@ -26,6 +26,7 @@ SESSION_TTL = timedelta(days=30)
 LOCKOUT_AFTER_FAILURES = 5
 LOCKOUT_FOR = timedelta(minutes=15)
 ANONYMOUS_RESOURCE_ID = UUID("00000000-0000-0000-0000-000000000000")
+BOOTSTRAP_ACCOUNT_ID = UUID("00000000-0000-0000-0000-000000000001")
 
 # Explicit parameters make the password-cost contract reviewable and stable.
 PASSWORD_HASHER = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4)
@@ -40,7 +41,7 @@ class PasswordPolicyError(ValueError):
 
 
 class DuplicateUsernameError(ValueError):
-    """The normalized username is already allocated in this household."""
+    """The normalized username is already allocated."""
 
 
 def normalize_username(value: str) -> str:
@@ -53,7 +54,7 @@ def normalize_username(value: str) -> str:
 
 
 def validate_password(value: str, *, role: AccountRole) -> str:
-    minimum = 12 if role is AccountRole.PARENT else 8
+    minimum = 12 if role in {AccountRole.PARENT, AccountRole.SUPER_ADMIN} else 8
     if not minimum <= len(value) <= 128:
         raise PasswordPolicyError("password length is invalid")
     if any(ord(character) < 0x20 for character in value):
@@ -118,6 +119,15 @@ class AccountView(BaseModel):
     created_at: datetime
 
 
+class FamilyParentView(BaseModel):
+    """One ordinary parent provisioned for an isolated family."""
+
+    model_config = ConfigDict(frozen=True)
+
+    account: AccountView
+    child_count: int = Field(ge=0)
+
+
 class CreateChildManagementRequest(BaseModel):
     """One parent command for a child profile and its unique login account."""
 
@@ -159,6 +169,18 @@ class CreateChildAccountRequest(BaseModel):
     child_id: UUID
 
 
+class CreateParentAccountRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=80)
+    password: str = Field(min_length=1, max_length=128)
+
+
+class CreateHouseholdRequest(BaseModel):
+    """Provision one isolated family and its first ordinary parent."""
+
+    parent_username: str = Field(min_length=3, max_length=80)
+    parent_password: str = Field(min_length=1, max_length=128)
+
+
 class SetAccountStatusRequest(BaseModel):
     enabled: bool
     current_password: str = Field(min_length=1, max_length=128)
@@ -167,6 +189,10 @@ class SetAccountStatusRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
     new_password: str = Field(min_length=1, max_length=128)
+
+
+class DeleteParentAccountRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
 
 
 def _view(account: AccountRecord) -> AccountView:
@@ -199,9 +225,23 @@ class AccountRepository(Protocol):
         fingerprint: str,
     ) -> tuple[AccountRecord, bool]: ...
 
+    def create_parent(
+        self,
+        household_id: UUID,
+        username: str,
+        password_hash: str,
+        role: AccountRole,
+        idempotency_key: str,
+        fingerprint: str,
+    ) -> tuple[AccountRecord, bool]: ...
+
     def list_household(self, household_id: UUID) -> list[AccountRecord]: ...
 
+    def list_parent_accounts(self) -> list[AccountRecord]: ...
+
     def delete_child_account(self, household_id: UUID, child_id: UUID) -> None: ...
+
+    def delete_parent_account(self, account_id: UUID) -> None: ...
 
     def set_login_failure(self, account_id: UUID, now: datetime) -> None: ...
 
@@ -245,10 +285,10 @@ class InMemoryAccountRepository:
             return next(iter(self._accounts.values()))
         now = self._now()
         account = AccountRecord(
-            id=uuid4(),
+            id=BOOTSTRAP_ACCOUNT_ID,
             household_id=household_id,
             username=BOOTSTRAP_USERNAME,
-            role=AccountRole.PARENT,
+            role=AccountRole.SUPER_ADMIN,
             child_id=None,
             password_hash=hash_bootstrap_password(),
             must_change_password=True,
@@ -309,9 +349,55 @@ class InMemoryAccountRepository:
         self._idempotency[key] = (fingerprint, account.id)
         return account, False
 
+    def create_parent(
+        self,
+        household_id: UUID,
+        username: str,
+        password_hash: str,
+        role: AccountRole,
+        idempotency_key: str,
+        fingerprint: str,
+    ) -> tuple[AccountRecord, bool]:
+        if role not in {AccountRole.PARENT, AccountRole.SUPER_ADMIN}:
+            raise ValueError("parent account role is required")
+        operation = f"create_parent_account:{household_id}"
+        key = (household_id, operation, idempotency_key)
+        replay = self._idempotency.get(key)
+        if replay is not None:
+            if replay[0] != fingerprint:
+                raise IdempotencyConflictError
+            return self.get(replay[1]), True
+        normalized = normalize_username(username)
+        if self.get_by_username(normalized) is not None:
+            raise DuplicateUsernameError("username already exists")
+        now = self._now()
+        account = AccountRecord(
+            id=uuid4(),
+            household_id=household_id,
+            username=normalized,
+            role=role,
+            child_id=None,
+            password_hash=password_hash,
+            must_change_password=True,
+            status="active",
+            failed_login_count=0,
+            locked_until=None,
+            created_at=now,
+            updated_at=now,
+        )
+        self._accounts[account.id] = account
+        self._idempotency[key] = (fingerprint, account.id)
+        return account, False
+
     def list_household(self, household_id: UUID) -> list[AccountRecord]:
         return sorted(
             (item for item in self._accounts.values() if item.household_id == household_id),
+            key=lambda item: (item.created_at, item.id),
+        )
+
+    def list_parent_accounts(self) -> list[AccountRecord]:
+        return sorted(
+            (item for item in self._accounts.values() if item.role is AccountRole.PARENT),
             key=lambda item: (item.created_at, item.id),
         )
 
@@ -326,6 +412,16 @@ class InMemoryAccountRepository:
             self._accounts.pop(account_id, None)
         self._idempotency = {
             key: value for key, value in self._idempotency.items() if value[1] not in account_ids
+        }
+
+    def delete_parent_account(self, account_id: UUID) -> None:
+        account = self.get(account_id)
+        if account.role is not AccountRole.PARENT:
+            raise LookupError
+        self.revoke_account_sessions(account_id, self._now())
+        del self._accounts[account_id]
+        self._idempotency = {
+            key: value for key, value in self._idempotency.items() if value[1] != account_id
         }
 
     def set_login_failure(self, account_id: UUID, now: datetime) -> None:
@@ -462,7 +558,7 @@ class PostgresAccountRepository:
                 uuid4(),
                 household_id,
                 BOOTSTRAP_USERNAME,
-                AccountRole.PARENT,
+                AccountRole.SUPER_ADMIN,
                 None,
                 hash_bootstrap_password(),
                 True,
@@ -563,7 +659,86 @@ class PostgresAccountRepository:
                 )
         except IntegrityError as error:
             diagnostic = getattr(error.orig, "diag", None)
-            if getattr(diagnostic, "constraint_name", None) == "uq_accounts_household_username":
+            if getattr(diagnostic, "constraint_name", None) in {
+                "uq_accounts_username",
+                "uq_accounts_household_username",
+            }:
+                raise DuplicateUsernameError("username already exists") from error
+            raise
+        return account, False
+
+    def create_parent(
+        self,
+        household_id: UUID,
+        username: str,
+        password_hash: str,
+        role: AccountRole,
+        idempotency_key: str,
+        fingerprint: str,
+    ) -> tuple[AccountRecord, bool]:
+        if role not in {AccountRole.PARENT, AccountRole.SUPER_ADMIN}:
+            raise ValueError("parent account role is required")
+        normalized = normalize_username(username)
+        now = datetime.now(UTC)
+        account = AccountRecord(
+            uuid4(),
+            household_id,
+            normalized,
+            role,
+            None,
+            password_hash,
+            True,
+            "active",
+            0,
+            None,
+            now,
+            now,
+        )
+        operation = f"create_parent_account:{household_id}"
+        try:
+            with self._engine.begin() as connection:
+                existing = (
+                    connection.execute(
+                        select(self._idempotency).where(
+                            self._idempotency.c.household_id == household_id,
+                            self._idempotency.c.operation == operation,
+                            self._idempotency.c.idempotency_key == idempotency_key,
+                        )
+                    )
+                    .mappings()
+                    .one_or_none()
+                )
+                if existing is not None:
+                    if existing["fingerprint"] != fingerprint:
+                        raise IdempotencyConflictError
+                    row = (
+                        connection.execute(
+                            select(self._accounts).where(
+                                self._accounts.c.id == existing["resource_id"]
+                            )
+                        )
+                        .mappings()
+                        .one()
+                    )
+                    return self._account(row), True
+                connection.execute(insert(self._accounts).values(**account.__dict__))
+                connection.execute(
+                    insert(self._idempotency).values(
+                        household_id=household_id,
+                        operation=operation,
+                        idempotency_key=idempotency_key,
+                        fingerprint=fingerprint,
+                        resource_type="account",
+                        resource_id=account.id,
+                        created_at=now,
+                    )
+                )
+        except IntegrityError as error:
+            diagnostic = getattr(error.orig, "diag", None)
+            if getattr(diagnostic, "constraint_name", None) in {
+                "uq_accounts_username",
+                "uq_accounts_household_username",
+            }:
                 raise DuplicateUsernameError("username already exists") from error
             raise
         return account, False
@@ -573,6 +748,15 @@ class PostgresAccountRepository:
             rows = connection.execute(
                 select(self._accounts)
                 .where(self._accounts.c.household_id == household_id)
+                .order_by(self._accounts.c.created_at, self._accounts.c.id)
+            ).mappings()
+            return [self._account(row) for row in rows]
+
+    def list_parent_accounts(self) -> list[AccountRecord]:
+        with self._engine.connect() as connection:
+            rows = connection.execute(
+                select(self._accounts)
+                .where(self._accounts.c.role == AccountRole.PARENT.value)
                 .order_by(self._accounts.c.created_at, self._accounts.c.id)
             ).mappings()
             return [self._account(row) for row in rows]
@@ -592,13 +776,34 @@ class PostgresAccountRepository:
                 delete(self._sessions).where(self._sessions.c.account_id.in_(account_ids))
             )
             connection.execute(
-                delete(self._idempotency).where(
-                    self._idempotency.c.resource_id.in_(account_ids)
+                delete(self._idempotency).where(self._idempotency.c.resource_id.in_(account_ids))
+            )
+            connection.execute(delete(self._accounts).where(self._accounts.c.id.in_(account_ids)))
+
+    def delete_parent_account(self, account_id: UUID) -> None:
+        try:
+            with self._engine.begin() as connection:
+                account = (
+                    connection.execute(
+                        select(self._accounts).where(self._accounts.c.id == account_id)
+                    )
+                    .mappings()
+                    .one_or_none()
                 )
-            )
-            connection.execute(
-                delete(self._accounts).where(self._accounts.c.id.in_(account_ids))
-            )
+                if account is None or account["role"] != AccountRole.PARENT.value:
+                    raise LookupError
+                connection.execute(
+                    delete(self._sessions).where(self._sessions.c.account_id == account_id)
+                )
+                connection.execute(
+                    delete(self._idempotency).where(self._idempotency.c.resource_id == account_id)
+                )
+                connection.execute(delete(self._accounts).where(self._accounts.c.id == account_id))
+        except IntegrityError as error:
+            diagnostic = getattr(error.orig, "diag", None)
+            if getattr(diagnostic, "constraint_name", None) == "fk_child_profiles_owner_account":
+                raise ValueError("parent still owns children") from error
+            raise
 
     def set_login_failure(self, account_id: UUID, now: datetime) -> None:
         account = self.get(account_id)
@@ -805,6 +1010,64 @@ class AuthService:
         if not replayed:
             self._audit(household_id, "auth_child_account_created", account.id, self._now())
         return _view(account), replayed
+
+    def create_parent_account(
+        self,
+        household_id: UUID,
+        request: CreateParentAccountRequest,
+        idempotency_key: str,
+    ) -> tuple[AccountView, bool]:
+        role = AccountRole.PARENT
+        fingerprint = sha256(request.model_dump_json().encode()).hexdigest()
+        account, replayed = self._repository.create_parent(
+            household_id,
+            normalize_username(request.username),
+            hash_password(request.password, role=role),
+            role,
+            idempotency_key,
+            fingerprint,
+        )
+        if not replayed:
+            self._audit(household_id, "auth_parent_account_created", account.id, self._now())
+        return _view(account), replayed
+
+    def provision_household(
+        self, request: CreateHouseholdRequest, idempotency_key: str
+    ) -> tuple[AccountView, bool]:
+        # A retry must reopen the same isolated Household rather than silently
+        # creating another family. The key is client generated and only accepted
+        # from an already authenticated administrator.
+        household_id = uuid5(NAMESPACE_URL, f"study-household:{idempotency_key}")
+        account, replayed = self.create_parent_account(
+            household_id,
+            CreateParentAccountRequest(
+                username=request.parent_username, password=request.parent_password
+            ),
+            idempotency_key,
+        )
+        return account, replayed
+
+    def list_family_parents(
+        self, profile_repository: ProfileRepository
+    ) -> list[FamilyParentView]:
+        return [
+            FamilyParentView(
+                account=_view(account),
+                child_count=len(
+                    profile_repository.list_children(
+                        account.household_id, owner_account_id=account.id
+                    )
+                ),
+            )
+            for account in self._repository.list_parent_accounts()
+        ]
+
+    def delete_parent_account(self, account_id: UUID) -> None:
+        account = self._repository.get(account_id)
+        if account.role is not AccountRole.PARENT:
+            raise LookupError
+        self._repository.delete_parent_account(account_id)
+        self._audit(account.household_id, "auth_parent_account_deleted", account_id, self._now())
 
     def reset_password(self, account_id: UUID, new_password: str) -> AccountView:
         account = self._repository.get(account_id)

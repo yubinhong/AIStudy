@@ -7,12 +7,17 @@ describe("curriculum knowledge-analysis proxy", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("forwards session, CSRF and idempotency without exposing storage data", async () => {
-    const fetchMock = vi.fn(async () =>
-      Response.json(
-        { status: "queued", knowledge_points: [] },
-        { status: 202 },
-      ),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({ household_id: "00000000-0000-0000-0000-000000000001" }),
+      )
+      .mockResolvedValueOnce(
+        Response.json(
+          { status: "queued", knowledge_points: [] },
+          { status: 202 },
+        ),
+      );
     vi.stubGlobal("fetch", fetchMock);
     const childId = "00000000-0000-0000-0000-000000000101";
     const snapshotId = "00000000-0000-0000-0000-000000000201";

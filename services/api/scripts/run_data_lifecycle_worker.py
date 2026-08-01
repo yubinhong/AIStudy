@@ -1,4 +1,4 @@
-"""Delete expired private media and short-lived data export snapshots."""
+"""Delete expired private media, exports and detailed learning history."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import time
+from datetime import UTC, datetime, timedelta
 
 from study_api.domain.insights_repository import PostgresInsightsRepository
 from study_api.domain.sql_capture_repository import PostgresCaptureRepository
@@ -21,6 +22,15 @@ def _poll_interval() -> float:
         return 300.0
 
 
+def _learning_history_cleanup_enabled() -> bool:
+    return os.getenv("LEARNING_HISTORY_CLEANUP_ENABLED", "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
 def run_once() -> dict[str, int]:
     captures = PostgresCaptureRepository()
     insights = PostgresInsightsRepository()
@@ -29,11 +39,25 @@ def run_once() -> dict[str, int]:
             captures,
             S3ObjectStorage(ObjectStorageConfig.from_environment()),
         ).run_once()
+        learning_history = (
+            insights.cleanup_expired_learning_history(datetime.now(UTC) - timedelta(days=180))
+            if _learning_history_cleanup_enabled()
+            else None
+        )
         return {
             "media_claimed": media.claimed,
             "media_deleted": media.deleted,
             "media_failed": media.failed,
             "exports_deleted": insights.cleanup_expired_exports(),
+            "resolved_mistakes_deleted": (
+                learning_history.resolved_mistakes_deleted if learning_history else 0
+            ),
+            "tutor_turns_deleted": (
+                learning_history.tutor_turns_deleted if learning_history else 0
+            ),
+            "verified_questions_deleted": (
+                learning_history.verified_questions_deleted if learning_history else 0
+            ),
         }
     finally:
         captures.close()

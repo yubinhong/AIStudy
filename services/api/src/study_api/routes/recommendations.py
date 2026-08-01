@@ -11,7 +11,7 @@ from study_api.auth import AuthenticatedPrincipal, get_principal, require_househ
 from study_api.curriculum_analysis_jobs import CurriculumKnowledgeRepository
 from study_api.domain.curriculum_repository import CurriculumRepository
 from study_api.domain.mistake_repository import MistakeRepository
-from study_api.domain.models import CreateTaskRequest, Subject
+from study_api.domain.models import AccountRole, CreateTaskRequest, Subject
 from study_api.domain.recommendation_repository import (
     CreateRecommendationRequest,
     DecideRecommendationRequest,
@@ -59,8 +59,15 @@ Learning = Annotated[LearningRepository, Depends(get_learning)]
 Knowledge = Annotated[CurriculumKnowledgeRepository, Depends(get_knowledge)]
 
 
-def _require_child(request: Request, household_id: UUID, child_id: UUID) -> None:
-    if request.app.state.profile_repository.get_child(household_id, child_id) is None:
+def _require_child(
+    principal: AuthenticatedPrincipal, request: Request, household_id: UUID, child_id: UUID
+) -> None:
+    child = request.app.state.profile_repository.get_child(household_id, child_id)
+    if child is None or (
+        principal.role is AccountRole.CHILD and principal.child_id != child_id
+    ) or (
+        principal.role is not AccountRole.CHILD and child.owner_account_id != principal.account_id
+    ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
 
 
@@ -81,19 +88,18 @@ def generate_recommendations(
     app_request: Request,
 ) -> list[TaskRecommendation]:
     require_parent(require_household(principal, household_id))
-    _require_child(app_request, household_id, child_id)
+    _require_child(principal, app_request, household_id, child_id)
     if payload.child_id != child_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="child scope mismatch")
     now = datetime.now(UTC)
     all_mistakes = mistakes.list_mistakes(household_id, child_id)
     snapshots = curriculum.list_snapshots(household_id, child_id, published_only=True)
-    snapshot = snapshots[0] if snapshots else None
-    knowledge_points = (
-        knowledge.list_approved_points(household_id, child_id, snapshot.id)
-        if snapshot is not None
-        else []
-    )
-    if snapshot is not None and not knowledge_points:
+    knowledge_points = [
+        point
+        for snapshot in snapshots
+        for point in knowledge.list_approved_points(household_id, child_id, snapshot.id)
+    ]
+    if snapshots and not knowledge_points:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="published curriculum has no approved AI knowledge map",
@@ -153,7 +159,7 @@ def list_recommendations(
     pending_only: Annotated[bool, Query()] = False,
 ) -> list[TaskRecommendation]:
     require_household(principal, household_id)
-    _require_child(app_request, household_id, child_id)
+    _require_child(principal, app_request, household_id, child_id)
     return repository.list(household_id, child_id, pending_only)
 
 
@@ -173,7 +179,7 @@ def decide_recommendation(
     app_request: Request,
 ) -> JSONResponse:
     require_parent(require_household(principal, household_id))
-    _require_child(app_request, household_id, child_id)
+    _require_child(principal, app_request, household_id, child_id)
     try:
         recommendation, replayed = repository.decide(
             household_id, child_id, recommendation_id, request, idempotency_key

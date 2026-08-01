@@ -3,7 +3,7 @@
 ## 1. 服务概览
 
 - 服务：家庭 AI 学习助手（目标包括 Flutter 孩子端、Web/PWA、FastAPI/Worker、PostgreSQL、Redis、S3/MinIO 和 AI Provider）。
-- 当前状态：`SELF_HOSTED_DEV_VALIDATED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 已运行一次自用 Compose 验证栈；没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
+- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.13.0`/`0030_learning_history_retention`；没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
 - Owner/值班：`TBD（项目 Owner/运维负责人在 staging 前确认）`。
 - 用户影响：服务中断会阻止同步、拍题、AI 提示和周报；孩子端必须保留离线任务/作答，不能因服务中断丢学习记录。
 - 外部依赖：单一获批云视觉 Provider、Tutor Provider、HMS（或应用内提醒）和对象存储；具体供应商 `TBD`。本地 OCR 仅是目标 PrivacySanitizer 的隐私检测依赖，不是外部 Provider。
@@ -22,15 +22,15 @@ SLO 必须在 staging 获得基线后由产品/技术 Owner 批准，不在零�
 | 离线同步冲突/失败 | 不得丢失或覆盖学习记录 | 阈值 `TBD`；任何确认的数据丢失立即升级 | 无实现 |
 | AI Schema/安全失败 | 阻断不合规响应 | 阈值 `TBD`；无错题门禁直接代答、错误完整讲解或敏感泄露立即升级 | 本地 5-case Tutor eval 与来源键推荐回归已通过；真实 Provider 基线未建立 |
 | AI 成本 | 每家庭/请求预算 `TBD` | 超批准预算即告警/降级 | 无成本数据 |
-| 导出/删除/备份失败 | 0 个静默失败 | 任一超时或错误立即告警 | 导出/删除/备份恢复已实现；自动告警未接入 |
+| 导出/删除/备份失败 | 0 个静默失败 | 任一超时或错误立即告警 | 导出/删除/备份恢复已实现；180 天详细历史清理输出计数，自动告警未接入 |
 
 ## 3. 环境与部署
 
 ### 当前环境
 
 - local：`infra/compose/compose.yml` 已编排 PostgreSQL、Redis、MinIO、API、家长 Web、一次性 Alembic migration 和默认启动的 ImageAnalysis worker；Apple Silicon `linux/arm64` 调试镜像构建成功。NewAPI 默认关闭；此时 worker 保持空闲。
-- Ubuntu 自用验收：宿主为 Ubuntu 24.04/x86_64，远端 `.env` 权限 600。2026-07-24 已前滚至 `0025_curriculum_knowledge_map`；API `0.11.0`、PostgreSQL、MinIO、Redis、Web、ImageAnalysis、DataLifecycle、MaterialParse 和 CurriculumAnalysis worker 运行健康。新流式上传使用内部 `minio:9000`，宿主/LAN 未发布 MinIO `9000`。PDF-only 解析/发布、错题 closeout、ReviewAttempt、Tutor Hint、私有原页、知识图谱和来源受限推荐已部署；API/Web `/healthz`、远端 current/head 及新 OpenAPI 路径已校验。NewAPI synthetic 完整解答已通过，真实规划质量/成本与生产监控仍未实现。
-- 真机拍题当前事实：API/Flutter/Compose/Ubuntu 已切换为 App 携带 Session 向 API 上传，且 Compose 不发布 MinIO `9000`；Nova 9/iPad 需在设备可用时重新执行拍题、权限、弱网和重启验收。Provider HTTP `402` 只表示 NewAPI 余额/模型额度不可用，不应误判为上传或 MinIO 故障。
+- Ubuntu 自用验收：宿主为 Ubuntu 24.04/x86_64，远端 `infra/compose/.env` 权限 600。2026-07-31 已在保留数据卷和配置的前提下前滚至 `0030_learning_history_retention`；备份 `/home/syin/study-backups/20260731T020739Z` 已完成 PostgreSQL/MinIO 隔离恢复验证。API `0.13.0`、PostgreSQL、MinIO、Redis、Web、ImageAnalysis、DataLifecycle、MaterialParse 和 CurriculumAnalysis worker 运行健康。新流式上传使用内部 `minio:9000`，宿主/LAN 未发布 MinIO `9000`。PDF-only 解析/发布、错题 closeout、ReviewAttempt、Tutor Hint、私有原页、知识图谱、来源受限推荐、教材范围完整解答、唯一超级管理员、家长自有孩子、显式公开教材复用及 180 天详细学习记录策略已部署；API/Web `/healthz`、远端 current/head、OpenAPI、数据库表/索引和容器内运行源码已校验。Web 使用 Node `24.18`/pnpm `11.7` 重建，真实教材质量/成本、跨家庭登录态浏览器/设备和生产监控仍未实现。
+- 真机拍题当前事实：API/Flutter/Compose/Ubuntu 已切换为 App 携带 Session 向 API 上传，且 Compose 不发布 MinIO `9000`。最新 iPad Release `Runner.app` 已安装到无线设备 `00008110-0011356E0E41801E`，但 iOS 首次启动要求用户在“设置 → 通用 → VPN 与设备管理”显式信任开发者 Team `VZ59988J63`；信任后仍需执行拍题、权限、弱网和重启验收。Provider HTTP `402` 只表示 NewAPI 余额/模型额度不可用，不应误判为上传或 MinIO 故障。
 - staging：未建立。
 - production：未建立且未获部署授权。
 
@@ -65,6 +65,7 @@ SLO 必须在 staging 获得基线后由产品/技术 Owner 批准，不在零�
 6. 部署 `0024_intelligent_recommendations` 前再次备份并记录 `alembic current`；按“migration → API/worker → Web → Flutter”成对前滚。2026-07-23 已完成本轮 rsync、Compose 重建、远端 Alembic `current/head` 校验和 API/Web 健康校验；后续仍需用 synthetic/真实受控数据确认旧 Task/Recommendation 可读、新推荐只引用允许的 source key、到期错题排当天、每日不超过 3 项、批准后 Task 保留具体题/页码/日期/时长。
 7. 打开真实 NewAPI 规划前，先用非儿童 synthetic 题和教材验证 L1/L2 相关性、来源键拒绝、超时/Schema 失败、请求量和费用；真实孩子数据验收只发送已确认题目文字和有界教材候选，不发送图片/PDF/对象键。
 8. `0025_curriculum_knowledge_map` 已于 2026-07-24 前滚：先完成 `/home/syin/study-backups/20260724T015356Z` 的 quiesced PostgreSQL/MinIO 备份和隔离恢复，再部署匹配 API/Web/五个 worker；API `0.11.0`、迁移头、健康端点、私有 MinIO 边界及教材分析/原页 OpenAPI 路径通过。仍须用不含个人信息的 synthetic 图文 PDF 验证私有原页与页码一致、每批最多 4 页、缺页/伪造页码/伪造练习键整体拒绝、token/延迟/成本可见、删除同时清理 `curriculum/` 和 `curriculum-previews/`；随后才可进行真实教材和 Flutter 原页人工验收。
+9. `0026_parallel_curriculum` 已于 2026-07-27 前滚：先完成 `/home/syin/study-backups/20260727T065635Z` 的 quiesced PostgreSQL/MinIO 备份；迁移只将旧自动替换逻辑写入的 `rejected` 教材快照恢复为 `published`，不删除或改写内容。Alembic revision ID 必须不超过现有 `alembic_version.version_num varchar(32)`；本轮超长 ID 的首次尝试在提交版本号前整体事务回滚，无数据变化，已改用短 ID 后重试成功。迁移后 API/Web healthcheck 通过，远端教材状态汇总为两份 `published`；发布新教材后应再次确认旧教材仍可查看且推荐来源保持各自 `snapshot_id`。
 9. 真实教材只允许上传家庭有权使用的清洁电子版，家长必须确认文件不含儿童姓名、个人批注或其他个人信息。`curriculum-analysis-worker` 会把页级派生图发送给配置的单一 NewAPI Provider；未确认 Provider 数据条款、预算、模型上下文和留存策略前，保持 `STUDY_NEWAPI_ENABLED=false`，不得用真实教材试跑。
 
 回滚只停止 `curriculum-analysis-worker`，关闭 `material_parsing/curriculum_knowledge_map/curriculum_grounding/mistake_closeout/review_v2/progressive_hints/task_recommendation_sources` 对应能力并回退匹配应用，不破坏性 downgrade 或删除已发布 Snapshot、已批准 KnowledgeMap、Mistake、Attempt/ReviewAttempt、Review/审批事实。Provider 或解析器不可用时保留私有原 PDF/原页、手工教材、既有讲解和确定性复习事实；解析草稿/索引可重算，发布/学习事实不可覆盖，也不得恢复从残缺页级文字抽题。
@@ -84,7 +85,7 @@ uv run python scripts/run_image_analysis_worker.py --watch
 uv run python scripts/run_curriculum_analysis_worker.py --watch
 ```
 
-启用前先用 synthetic 图片验证 NewAPI 返回 `question-extraction.v1`，再用 synthetic 图文教材验证 `curriculum-page-analysis.v1` 与 `curriculum-book-analysis.v1`；默认 `STUDY_NEWAPI_USER_AGENT=study-api/0.5`，用于兼容会拦截 Python 默认 `urllib` 签名的前置网关。该值只能是 1–256 个可打印 ASCII 字符，禁止换行或其他控制字符。worker 的失败只写稳定错误码，原始 Provider 请求/响应、教材文字和页图不写日志。发现外发范围、模型行为或成本异常时，立即将 `STUDY_NEWAPI_ENABLED=false` 并停止两个 Provider worker；已入队任务不会在关闭开关后继续被新 worker 领取。
+启用前先用 synthetic 图片验证 NewAPI 返回 `question-extraction.v1`，再用 synthetic 图文教材验证 `curriculum-page-analysis.v1` 与 `curriculum-book-analysis.v1`；教材 Provider 会依次尝试 `json_schema`、`json_object`、无 `response_format` 以兼容网关，但无论采用哪种格式均必须在服务端通过固定 Schema。页级 Prompt `curriculum-page-visual.v5` 仅将明确的中英文难度同义标签、0–100/百分比置信度标度和同页章节标题归一化；页级观察可省略无法可靠判断的学习目标，最终整书知识点仍严格要求目标，其他字段错误仍拒绝。整书 Prompt `curriculum-book-consolidation.v5` 允许封面/目录/过渡章节为空，把非数组可选引用收敛为空、过滤缺少非空目标的知识点，并将超过既有 Schema 上限的章节、知识点、目标、先修项和练习引用截为有界前缀；至少一个最终知识点、其目标、页码和练习来源校验仍不可省略。单次请求只对 `429`、`5xx`、网络错误和超时按 1 秒、2 秒退避，最多三次；最终失败留在可见状态，须由家长明确重新理解。默认 `STUDY_NEWAPI_USER_AGENT=study-api/0.5`，用于兼容会拦截 Python 默认 `urllib` 签名的前置网关。该值只能是 1–256 个可打印 ASCII 字符，禁止换行或其他控制字符。worker 的失败只写稳定错误码和 Schema 字段路径及截断计数，原始 Provider 请求/响应、教材文字和页图不写日志。发现外发范围、模型行为或成本异常时，立即将 `STUDY_NEWAPI_ENABLED=false` 并停止两个 Provider worker；已入队任务不会在关闭开关后继续被新 worker 领取。
 
 ### 生产前置检查
 
@@ -110,7 +111,7 @@ docker compose -f infra/compose/compose.yml ps
 curl http://127.0.0.1:${WEB_PORT:-3000}/healthz
 ```
 
-ImageAnalysis 和 DataLifecycle worker 是默认服务；NewAPI 关闭时前者安全空闲，后者继续执行到期对象/导出清理。Apple Silicon 原生 Linux ARM 调试镜像不包含 PaddlePaddle 3.3.1；需要旧完整 Paddle 路线时使用 macOS 原生进程或 `linux/amd64` 镜像。完整变量、迁移、备份、恢复验证、停止和回滚见 `infra/compose/README.md`。Compose 使用持久卷；任何时候都不得把 `down -v` 当作备份或正式删除。日志/遥测、定时异机备份、告警和静态加密仍需补齐。
+ImageAnalysis 和 DataLifecycle worker 是默认服务；NewAPI 关闭时前者安全空闲，后者继续执行到期对象/导出及 ADR-0026 的 180 天详细学习历史清理。清理按有界批次删除不再被开放错题引用的 VerifiedQuestion/TutorTurn 和已结束复习链路，完成日志只记录三类删除计数。若范围异常，设置 `LEARNING_HISTORY_CLEANUP_ENABLED=false` 并重启该 worker；不要手工删除开放错题。Apple Silicon 原生 Linux ARM 调试镜像不包含 PaddlePaddle 3.3.1；需要旧完整 Paddle 路线时使用 macOS 原生进程或 `linux/amd64` 镜像。完整变量、迁移、备份、恢复验证、停止和回滚见 `infra/compose/README.md`。Compose 使用持久卷；任何时候都不得把 `down -v` 当作备份或正式删除。日志/遥测、定时异机备份、告警和静态加密仍需补齐。
 
 以下命令只运行 ADR-0012 下已经实现的本地完整 OCR synthetic 路线，用于兼容/回滚验证；它不实现 ADR-0015，也不会向云端发送图片。API 与旧 OCR Worker 要共享 Job 状态时，必须显式启用 PostgreSQL Learning/Capture、Job 和结果仓储；Worker 需要五个带构建期 SHA-256 标记的模型目录、PostgreSQL、MinIO 配置：
 
@@ -151,6 +152,8 @@ TBD：当前提供已验证的单家庭自托管 Compose；公网暴露、CI/CD�
 具体烟雾测试命令 `TBD（P0/P1 实现时建立）`。
 
 ## 5. 回滚与前滚
+
+英语口语紧急关闭：将 `STUDY_ENGLISH_LIVE_ENABLED=false`、`STUDY_ENGLISH_LIVE_PROVIDER=disabled` 后重启 API。不得改为 `fake` 维持用户流量；保留 `english_practice_settings` 和 `english_practice_sessions` 摘要用于家庭导出与审计，不做数据库 downgrade。Ubuntu 已部署供应商中立框架和 `0029` 表，但 2026-07-31 运行态确认开关为关闭、Provider 为 `disabled`，没有真实语音 Provider 流量。
 
 - 触发条件：跨家庭越权、学习记录丢失/覆盖、迁移破坏、AI 安全阻断失败、Restricted 数据泄漏、删除错误、错误率/成本超过批准阈值。
 - 功能降级顺序：关闭云视觉图片外发 → 降级为重新裁剪/手工录入或显式本地 OCR 回滚 Provider → 关闭受影响 Tutor 模型/Policy → 关闭拍题/Tutor/通知/周报等独立开关 → 回退应用版本 → 隔离写入。任何降级都不得发送原图或自动广播给其他 Provider。

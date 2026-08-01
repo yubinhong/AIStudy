@@ -1,6 +1,5 @@
 import { NextRequest } from "next/server";
-
-const householdId = "00000000-0000-0000-0000-000000000001";
+import { currentHouseholdId } from "../../../../../../../lib/current-household";
 
 function forwardHeaders(request: NextRequest, mutating: boolean) {
   const headers: Record<string, string> = {};
@@ -18,6 +17,8 @@ async function proxy(
   context: { params: Promise<{ childId: string; snapshotId: string }> },
   method: "GET" | "POST",
 ) {
+  const householdId = await currentHouseholdId(request);
+  if (!householdId) return new Response(null, { status: 401 });
   const { childId, snapshotId } = await context.params;
   const upstream = await fetch(
     `${process.env.STUDY_API_URL ?? "http://api:8000"}/households/${householdId}/children/${childId}/curriculum/snapshots/${snapshotId}/analysis`,
