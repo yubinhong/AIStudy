@@ -1,3 +1,4 @@
+import asyncio
 from uuid import UUID
 
 import pytest
@@ -43,6 +44,42 @@ class _FailingFakeProvider(FakeEnglishLiveProvider):
     ) -> EnglishLiveSession:
         del scenario_id, level, policy_instruction
         raise RuntimeError("synthetic provider failure")
+
+
+class _BlockingLiveSession:
+    def __init__(self) -> None:
+        self.cancelled = False
+        self.interrupted = False
+
+    async def send_audio(self, pcm: bytes) -> None:
+        del pcm
+
+    async def interrupt(self) -> None:
+        self.interrupted = True
+
+    async def finish_input(self):
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+        if False:
+            yield b""
+
+    async def close(self) -> None:
+        return None
+
+
+class _BlockingFakeProvider(FakeEnglishLiveProvider):
+    def __init__(self) -> None:
+        self.session: _BlockingLiveSession | None = None
+
+    async def open_session(
+        self, *, scenario_id: str, level: EnglishLevel, policy_instruction: str
+    ) -> EnglishLiveSession:
+        del scenario_id, level, policy_instruction
+        self.session = _BlockingLiveSession()
+        return self.session
 
 
 def _client(
@@ -311,6 +348,32 @@ def test_websocket_requires_child_bearer_and_accepts_pcm_contract() -> None:
     assert summary["output_audio_ms"] == 40
     assert provider.policy_instruction is not None
     assert "Never request a name, school, address" in provider.policy_instruction
+
+
+def test_websocket_interrupt_cancels_provider_audio_relay() -> None:
+    provider = _BlockingFakeProvider()
+    client = _client(provider=provider)
+    assert _enable(client).status_code == 200
+    session_id = UUID(_start(client).json()["id"])
+    path = (
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/english-practice/"
+        f"sessions/{session_id}/stream"
+    )
+
+    with client.websocket_connect(path, headers=_child(client)) as websocket:
+        assert websocket.receive_json()["type"] == "ready"
+        websocket.send_bytes(bytes(640))
+        websocket.send_json({"schema_version": CLIENT_SCHEMA, "type": "audio_stream_end"})
+        assert websocket.receive_json()["type"] == "thinking"
+        assert websocket.receive_json()["type"] == "speaking"
+        websocket.send_json({"schema_version": CLIENT_SCHEMA, "type": "interrupt"})
+        assert websocket.receive_json()["type"] == "interrupted"
+        websocket.send_json({"schema_version": CLIENT_SCHEMA, "type": "complete"})
+        assert websocket.receive_json()["type"] == "completed"
+
+    assert provider.session is not None
+    assert provider.session.cancelled is True
+    assert provider.session.interrupted is True
 
 
 def test_provider_open_failure_finalizes_without_exposing_details() -> None:

@@ -1,3 +1,38 @@
+# PLANS.md — PLAN-0028 移除成人英语并准备 GitHub 开源
+
+## 计划元数据
+
+- 计划 ID：`PLAN-0028`
+- 关联事项：用户 2026-08-10 明确要求、`TASK-0011`、`PLAN-0022`、`ADR-0025`
+- 状态：`COMPLETE（成人增量已删除，孩子框架保留，开源文件与本地远程已准备）`
+- 优先级：`P1 / OPEN SOURCE / CHILD SAFETY / API`
+- Owner：Codex（执行）；项目 Owner（批准移除成人英语并公开仓库）
+- 创建：`2026-08-10`
+
+## 范围与不变量
+
+- 删除尚未部署的家长本人英语练习、成人专用 Gemini Provider、成人实时会话授权、成人环境变量、专属依赖/测试和部署文档。
+- 保留 `PLAN-0022` 的孩子英语学科入口、家长逐孩子设置、三个有界情景、PCM16/WebSocket 合同、Provider 中立接口、`disabled`/测试 `fake`、摘要、导出/删除和安全 Policy。
+- 不修改数学合同、英语 `0029` 附加表或孩子历史摘要；运行态继续默认 `STUDY_ENGLISH_LIVE_ENABLED=false`、`STUDY_ENGLISH_LIVE_PROVIDER=disabled`。
+- 为 GitHub 公开补齐准确 README 和根许可证；许可证只覆盖仓库自有代码/文档，不自动授权第三方依赖、模型权重、教材、题库、用户数据或商标。
+- 保留工作区无关改动，不提交、不推送、不部署 Ubuntu；只准备并核验远程地址 `git@github.com:yubinhong/AIStudy.git`。
+
+## 里程碑
+
+- [x] M1：移除成人/Gemini 服务端实现、授权分支、环境变量、OpenAPI 描述、直接依赖和专属测试。
+- [x] M2：确认孩子端 REST/WebSocket、家长设置、通用播放打断、安全 Policy、迁移/导出/删除和 Flutter 页面完整保留。
+- [x] M3：撤回未部署的成人 ADR/计划并同步 `AI_CONTEXT.md`、`PROJECT.md`、`TASK.md`、`SECURITY.md`、`RUNBOOK.md`、`TESTING.md`、`DECISIONS.md` 和 `CHANGELOG.md`。
+- [x] M4：采用 `Apache-2.0`，加入标准 `LICENSE`，重写根 README 的状态、架构、快速开始、安全、贡献、许可证边界和 GitHub 地址。
+- [x] M5：英语定向 API `16 passed`、Ruff/Mypy、英语安全 eval `7/7`、Flutter `50 passed`/Analyze、Web `32 passed`/类型/格式、OpenAPI/JSON 解析、Compose、依赖锁、README 链接、密钥特征和最终差异检查通过。
+
+## 发布与回滚
+
+- 回滚代码时只允许恢复供应商中立孩子框架，不恢复成人 Gemini、成人授权或密钥配置；任何真实儿童 Provider 仍需新的合规 ADR。
+- 发布仓库不等于部署服务。没有真实 Provider、正式儿童同意文本、设备/E2E 和安全门槛时，README 必须继续说明英语入口默认锁定。
+- 不为本轮执行数据库 downgrade 或删除英语表/摘要；不运行 `git commit`、`git push` 或远程部署。
+
+---
+
 # PLANS.md — PLAN-0024 家长学习记录与 180 天保留
 
 ## 计划元数据

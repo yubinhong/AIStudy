@@ -7,7 +7,7 @@ import json
 import logging
 from contextlib import suppress
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, WebSocket
@@ -289,6 +289,8 @@ async def session_stream(
         return
 
     live_session: EnglishLiveSession | None = None
+    receive_task: asyncio.Task[Any] | None = None
+    response_task: asyncio.Task[Any] | None = None
     await websocket.accept()
     try:
         live_session = await provider.open_session(
@@ -316,11 +318,21 @@ async def session_stream(
                     f"ws-wall-limit-{session_id}",
                 )
                 return
-            try:
-                message = await asyncio.wait_for(
-                    websocket.receive(), timeout=config.idle_timeout_seconds
-                )
-            except TimeoutError:
+            if receive_task is None:
+                receive_task = asyncio.create_task(websocket.receive())
+            wait_set: set[asyncio.Task[Any]] = {receive_task}
+            if response_task is not None:
+                wait_set.add(response_task)
+            done, _ = await asyncio.wait(
+                wait_set,
+                return_when=asyncio.FIRST_COMPLETED,
+                timeout=1 if response_task is not None else config.idle_timeout_seconds,
+            )
+            if not done:
+                if response_task is not None:
+                    continue
+                await _cancel_task(receive_task)
+                receive_task = None
                 await websocket.send_json(_event("completed", session_id, reason="idle_timeout"))
                 repository.complete_session(
                     household_id,
@@ -331,6 +343,13 @@ async def session_stream(
                     failure_code="idle_timeout",
                 )
                 return
+            if response_task is not None and response_task in done:
+                await response_task
+                response_task = None
+                continue
+            assert receive_task is not None
+            message = await receive_task
+            receive_task = None
             if message.get("type") == "websocket.disconnect":
                 raise WebSocketDisconnect
             data = message.get("bytes")
@@ -341,6 +360,10 @@ async def session_stream(
                     )
                     await websocket.close(code=4400)
                     return
+                if response_task is not None:
+                    await _cancel_task(response_task)
+                    response_task = None
+                    await live_session.interrupt()
                 input_ms = len(data) * 1000 // (2 * 16000)
                 await live_session.send_audio(data)
                 repository.record_audio(session_id, input_ms=input_ms)
@@ -375,24 +398,33 @@ async def session_stream(
             if event_type == "listening":
                 await websocket.send_json(_event("listening", session_id))
             elif event_type == "interrupt":
+                if response_task is not None:
+                    await _cancel_task(response_task)
+                    response_task = None
                 await live_session.interrupt()
                 await websocket.send_json(_event("interrupted", session_id))
             elif event_type == "audio_stream_end":
+                if response_task is not None:
+                    await websocket.send_json(_event("error", session_id, code="turn_in_progress"))
+                    continue
                 repository.record_turn(session_id)
                 await websocket.send_json(_event("thinking", session_id))
                 await websocket.send_json(_event("speaking", session_id))
-                async for audio in live_session.finish_input():
-                    if len(audio) not in {960, 1920}:
-                        raise ValueError("provider returned an invalid PCM frame")
-                    repository.record_audio(session_id, output_ms=len(audio) * 1000 // (2 * 24000))
-                    current = repository.get_session(household_id, child_id, session_id)
-                    if (
-                        current is None
-                        or current.output_audio_ms > config.session_limit_seconds * 1000
-                    ):
-                        raise ValueError("provider exceeded the session audio limit")
-                    await websocket.send_bytes(audio)
+                response_task = asyncio.create_task(
+                    _relay_provider_audio(
+                        websocket,
+                        live_session,
+                        repository,
+                        household_id,
+                        child_id,
+                        session_id,
+                        config,
+                    )
+                )
             elif event_type == "complete":
+                if response_task is not None:
+                    await _cancel_task(response_task)
+                    response_task = None
                 completed, _ = repository.complete_session(
                     household_id,
                     child_id,
@@ -431,6 +463,8 @@ async def session_stream(
             await websocket.send_json(_event("error", session_id, code="provider_unavailable"))
             await websocket.close(code=1011)
     finally:
+        await _cancel_task(response_task)
+        await _cancel_task(receive_task)
         if live_session is not None:
             with suppress(Exception):
                 await live_session.close()
@@ -444,6 +478,33 @@ async def session_stream(
                 f"ws-finalize-{session_id}",
                 failure_code="connection_closed",
             )
+
+
+async def _relay_provider_audio(
+    websocket: WebSocket,
+    live_session: EnglishLiveSession,
+    repository: EnglishPracticeRepository,
+    household_id: UUID,
+    child_id: UUID,
+    session_id: UUID,
+    config: EnglishLiveConfig,
+) -> None:
+    async for audio in live_session.finish_input():
+        if len(audio) not in {960, 1920}:
+            raise ValueError("provider returned an invalid PCM frame")
+        repository.record_audio(session_id, output_ms=len(audio) * 1000 // (2 * 24000))
+        current = repository.get_session(household_id, child_id, session_id)
+        if current is None or current.output_audio_ms > config.session_limit_seconds * 1000:
+            raise ValueError("provider exceeded the session audio limit")
+        await websocket.send_bytes(audio)
+
+
+async def _cancel_task(task: asyncio.Task[Any] | None) -> None:
+    if task is None or task.done():
+        return
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
 
 
 def _websocket_principal(websocket: WebSocket, token: str | None) -> AuthenticatedPrincipal | None:

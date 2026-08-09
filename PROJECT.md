@@ -2,10 +2,10 @@
 
 ## 文档信息
 
-- 状态：`ACTIVE`（本地与 Ubuntu API 0.13.0/0030；真实 Provider/PDF/设备待联调）
+- 状态：`ACTIVE`（本地与 Ubuntu API 0.13.0/0030；孩子英语 Provider 保持关闭；GitHub 开源文件已准备）
 - Owner：`TBD（项目发起人确认）`
-- 最后更新：`2026-07-31`
-- 项目仓库：本地 Git 仓库 `/Users/ybh/PycharmProjects/study`；远程地址 `TBD（项目 Owner 确认）`
+- 最后更新：`2026-08-10`
+- 项目仓库：本地 Git 仓库 `/Users/ybh/PycharmProjects/study`；本地 `origin` 为 `git@github.com:yubinhong/AIStudy.git`，尚未推送
 - 设计基线：`家庭AI学习助手_架构设计_v1.0.docx`
 
 ## 1. 项目概述
@@ -96,7 +96,7 @@
 | 孩子/移动端 | Flutter（iOS/Android） | Flutter stable `3.44.6`（`ADR-0007` Accepted）；`image_picker 1.2.3`、`crypto 3.0.7`、`flutter_secure_storage 9.2.4`、`sqflite 2.4.3` | iPad 为孩子主端；任务/拍题/提示、安全会话、数学三入口、视觉四态自动候选与人工校正、长文本确认、上传进度、完整解答和账号切换已实现；实际相机闭环与设备回归待完成 |
 | Web/PWA | Next.js + TypeScript | Next.js `16.2.10`（`ADR-0007` Accepted） | 家长后台和 Windows 首版入口；登录/任务/周报已实现。目标增加统一孩子管理、每孩子课程范围、教材导入审核发布和任务建议审批 |
 | API/Worker | Python + FastAPI + 异步 Worker | Python `3.12.x`、FastAPI `0.136.3`、boto3 `1.43.46`、Pillow `12.3.0`、pdfplumber `0.11.7`、pypdfium2 `5.11.0`、PaddleOCR `3.7.0`、PaddlePaddle CPU `3.3.1` | 模块化单体；PDF 文本辅助解析、私有页图渲染、多模态教材知识图谱、Tutor、Mistake/Review/Recommendation worker 已有本地实现 |
-| 云端视觉/推理 | Provider Adapter + 固定 JSON Schema / Tutor Policy | 自用 NewAPI URL/key/model 通过环境注入 | 图片解析与 Tutor 分离；NewAPI synthetic 大图已完成真实实例联调，服务端只保存未确认 Extraction，人工确认后才生成 VerifiedQuestion；Tutor 仅按服务端 ID 读取并追加 TutorTurn，默认使用 0 元离线策略 |
+| 云端视觉/推理 | Provider Adapter + 固定 JSON Schema / Tutor Policy | 自用 NewAPI URL/key/model 通过环境注入 | 图片解析与 Tutor 分离；NewAPI synthetic 大图已完成真实实例联调，服务端只保存未确认 Extraction，人工确认后才生成 VerifiedQuestion；Tutor 仅按服务端 ID 读取并追加 TutorTurn，英语真实 Provider 未接入 |
 | 业务数据 | PostgreSQL + pgvector | PostgreSQL `16.10`（Compose） | PostgreSQL 是业务事实来源；现有保存 Profile/Learning/Capture/Identity/Tutor/Report/Mistake/Review。目标继续增加 CurriculumSnapshot、来源证据和 TaskRecommendation；pgvector 只做已发布知识检索，不替代关系/审批事实 |
 | 缓存/队列 | Redis | `TBD（P0 锁定）` | 不作为长期业务事实来源 |
 | 文件 | 本地 MinIO / S3 兼容 Adapter | MinIO `RELEASE.2025-09-07T16-13-09Z`；boto3 `1.43.46` | 私有 Bucket；API/worker 由内部地址有界流式写入且 MinIO 不暴露 LAN，见 ADR-0018/0011。Ubuntu 已完成成对迁移 |
@@ -111,7 +111,7 @@
 | staging | 集成、设备、AI 评测和迁移/恢复验证 | `TBD（P0/P1 建立）` | sanitized/synthetic | CI 产物，禁止从个人工作区直接发布 |
 | production | 家庭正式使用 | `TBD（发布方案和 RUNBOOK 批准后建立）` | restricted | 仅允许已通过发布门槛的版本化产物 |
 
-当前事实：Git 位于 `master`；本地与 Ubuntu API/OpenAPI 均为 `0.13.0`、迁移头 `0030_learning_history_retention`。家长工作台可直接辨认到期题目，独立学习记录页默认近 30 个上海自然日并支持 180 天窗口内单日筛选；详细题目/讲解和已结束复习链路固定保留 180 天，开放错题受保护。PostgreSQL 已有私有页图元数据、页级 AI 分析、全书知识图谱和规范化知识点；同一孩子可并行发布多份教材，推荐遍历全部已发布且已批准的知识图谱，并继续为每条题目保留确切教材/页码来源。全实例只有一个超级管理员 `super_admin`，它可开通独立亲戚家庭及其普通家长；普通家长只能管理自己名下孩子。只有显式声明为国家公开教材、完整内容指纹匹配且来源图谱已批准的 PDF 可跨家庭复用私有 PDF/页图/解析草稿，目标家庭仍独立审核发布。2026-07-31 已完成 Ubuntu 备份恢复、`0029`/`0030` 前滚、API/Web/四个常驻 worker、迁移服务、OpenAPI 和运行源码验收；英语供应商中立框架保持关闭，跨家庭登录态浏览器与设备验收仍未执行。
+当前事实：Git 位于 `master`；本地与 Ubuntu API/OpenAPI 均为 `0.13.0`、迁移头 `0030_learning_history_retention`。家长工作台可直接辨认到期题目，独立学习记录页默认近 30 个上海自然日并支持 180 天窗口内单日筛选；详细题目/讲解和已结束复习链路固定保留 180 天，开放错题受保护。PostgreSQL 已有私有页图元数据、页级 AI 分析、全书知识图谱和规范化知识点；同一孩子可并行发布多份教材，推荐遍历全部已发布且已批准的知识图谱，并继续为每条题目保留确切教材/页码来源。全实例只有一个超级管理员 `super_admin`，它可开通独立亲戚家庭及其普通家长；普通家长只能管理自己名下孩子。只有显式声明为国家公开教材、完整内容指纹匹配且来源图谱已批准的 PDF 可跨家庭复用私有 PDF/页图/解析草稿，目标家庭仍独立审核发布。2026-07-31 已完成 Ubuntu 备份恢复、`0029`/`0030` 前滚、API/Web/四个常驻 worker、迁移服务、OpenAPI 和运行源码验收；孩子英语供应商中立框架保持关闭，跨家庭登录态浏览器与设备验收仍未执行。
 
 上传架构修订（2026-07-17）：项目 Owner 接受 ADR-0018，以 Session 鉴权的 API 有界流式上传替代 ADR-0010/0014 的 App 预签名直传。目标合同合并申请/PUT/确认并只返回已确认 Capture，移除 `upload_url`、`OBJECT_STORAGE_PUBLIC_ENDPOINT_URL` 和 MinIO `9000` LAN 暴露。API/Flutter/OpenAPI/Compose 已迁移，Ubuntu 已成对部署；最终设备回归和 Provider 额度恢复后的真实识别由 TASK-0009 跟踪。
 

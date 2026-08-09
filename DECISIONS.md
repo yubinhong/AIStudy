@@ -41,6 +41,8 @@
 | [ADR-0025](docs/adr/0025-provider-neutral-child-english-speaking-practice.md) | 数学/英语学科首页与供应商中立的有界儿童英语口语插件 | 不接入 Gemini；真实 Provider 合规批准前入口锁定，音频/转写不持久化，数学任务模型不变 |
 | [ADR-0026](docs/adr/0026-learning-history-query-and-retention.md) | 家长学习记录独立查询与详细历史 180 天保留 | 默认近 30 个上海自然日、可选单日；开放错题受保护，Attempt/AuditEvent 等其他事实不在本次清理范围 |
 
+2026-08-10：未部署的 ADR-0027 成人英语增量已由项目 Owner 撤回，相关文件、代码、配置和测试删除；现行英语边界继续以 ADR-0025 为准。
+
 ## Proposed ADR
 
 | ADR | 提议 | 进入实施前条件 |

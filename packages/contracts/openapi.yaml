@@ -2089,7 +2089,7 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
-        '422': {$ref: '#/components/responses/ValidationError'}
+        '422': {$ref: '#/components/responses/InvalidRequest'}
   /households/{household_id}/children/{child_id}/english-practice/settings:
     parameters:
       - $ref: '#/components/parameters/HouseholdId'

@@ -22,6 +22,19 @@
 
 回滚：关闭全局英语开关并保留附加表/摘要；禁止为回滚删除儿童记录。Ubuntu 运行态已确认为关闭、Provider 为 `disabled`。
 
+## 2026-08-10 用户明确增量：移除成人英语并准备 GitHub 开源
+
+- 状态：`COMPLETE（未提交、未推送、未部署）`
+- 范围：删除未部署的家长本人英语练习、成人 Gemini Provider/授权/配置/依赖/测试/文档；孩子英语学科、家长逐孩子设置和全部供应商中立合同必须保留。
+- [x] 建立 `PLAN-0028`，明确不删除 `0029` 表、孩子摘要、Flutter 英语页面、家长设置或通用实时打断逻辑。
+- [x] 完成成人增量代码、配置、契约说明和 ADR 清理；孩子会话、WebSocket 打断、家长逐孩子设置、摘要、导出/删除、迁移和 Flutter 英语页面均保留。
+- [x] 采用 Apache-2.0，增加 `LICENSE`/`NOTICE`，更新根 README、项目状态、开源边界和目标 GitHub 地址；本地 `origin` 已配置为 `git@github.com:yubinhong/AIStudy.git`。
+- [x] API 英语 `16 passed`、相关 Ruff/Mypy、英语安全 eval `7/7`、Flutter `50 passed`/Analyze、Web `32 passed`/类型/格式、OpenAPI/JSON、Compose、锁文件、README 链接、密钥特征和 `git diff --check` 通过。
+
+未执行：API 全量/集成、Web build/lint、Flutter release、实体设备、Ubuntu 部署、Git commit/push 和 GitHub 远程连通性。本轮未修改数据库结构或孩子 UI；`TASK-0011` 的 PostgreSQL 并发/级联、真实 Provider 合规和设备验收仍按原状态未完成。
+
+回滚：只允许恢复孩子供应商中立框架；不得恢复成人 Provider、成人授权或任何云端语音密钥配置。数据库不降级、不删除英语摘要。
+
 ## 2026-07-30 用户明确增量：家长学习记录
 
 - 状态：`COMPLETE（本地交付并已部署 Ubuntu 0.13.0/0030）`
