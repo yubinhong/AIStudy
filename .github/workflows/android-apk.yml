@@ -1,0 +1,126 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.44.6"
+  FLUTTER_HOME: ${{ github.workspace }}/.flutter-sdk
+
+jobs:
+  build:
+    name: Test and build split APKs
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/child_flutter
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Cache Flutter SDK
+        id: flutter-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.FLUTTER_HOME }}
+          key: flutter-${{ runner.os }}-${{ env.FLUTTER_VERSION }}
+
+      - name: Install pinned Flutter SDK
+        if: steps.flutter-cache.outputs.cache-hit != 'true'
+        working-directory: ${{ github.workspace }}
+        run: git clone --depth 1 --branch "$FLUTTER_VERSION" https://github.com/flutter/flutter.git "$FLUTTER_HOME"
+
+      - name: Add Flutter to PATH
+        working-directory: ${{ github.workspace }}
+        run: echo "$FLUTTER_HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Verify Flutter SDK
+        run: flutter --version
+
+      - name: Install locked dependencies
+        run: flutter pub get
+
+      - name: Verify dependency lock is unchanged
+        run: git diff --exit-code -- pubspec.lock
+
+      - name: Check formatting
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Configure optional release signing
+        id: signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [[ -z "$ANDROID_KEYSTORE_BASE64" && -z "$ANDROID_KEYSTORE_PASSWORD" && -z "$ANDROID_KEY_ALIAS" && -z "$ANDROID_KEY_PASSWORD" ]]; then
+            echo "mode=evaluation" >> "$GITHUB_OUTPUT"
+            echo "No Android signing secrets were provided; the APKs will use the runner's debug certificate." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [[ -z "$ANDROID_KEYSTORE_BASE64" || -z "$ANDROID_KEYSTORE_PASSWORD" || -z "$ANDROID_KEY_ALIAS" || -z "$ANDROID_KEY_PASSWORD" ]]; then
+            echo "All four Android signing secrets must be configured together." >&2
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
+          {
+            printf 'storePassword=%s\n' "$ANDROID_KEYSTORE_PASSWORD"
+            printf 'keyPassword=%s\n' "$ANDROID_KEY_PASSWORD"
+            printf 'keyAlias=%s\n' "$ANDROID_KEY_ALIAS"
+            printf 'storeFile=upload-keystore.jks\n'
+          } > android/key.properties
+          echo "mode=signed" >> "$GITHUB_OUTPUT"
+          echo "A repository signing keystore was configured for this build." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build release APKs
+        run: flutter build apk --release --split-per-abi
+
+      - name: Prepare artifact and checksums
+        env:
+          SIGNING_MODE: ${{ steps.signing.outputs.mode }}
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/*-release.apk dist/
+          {
+            printf 'commit=%s\n' "$GITHUB_SHA"
+            printf 'flutter=%s\n' "$FLUTTER_VERSION"
+            printf 'signing=%s\n' "$SIGNING_MODE"
+          } > dist/BUILD-INFO.txt
+          cd dist
+          sha256sum ./*.apk > SHA256SUMS
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aistudy-android-${{ steps.signing.outputs.mode }}-${{ github.sha }}
+          path: apps/child_flutter/dist/
+          if-no-files-found: error
+          retention-days: 14

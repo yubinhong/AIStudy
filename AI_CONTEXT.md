@@ -14,10 +14,10 @@
 
 ## 2. 当前工作状态
 
-- 活动计划：`PLAN-0028` 已完成，未部署的成人英语/Gemini 增量已删除，Apache-2.0、README 和 GitHub 本地远程已准备；`TASK-0011` / `PLAN-0022` 的孩子英语框架完整保留、继续供应商中立且默认锁定。当前 Ubuntu 运行态开关为关闭、Provider 为 `disabled`。`TASK-0010` 的真实教材/设备剩余验收保持未完成；PLAN-0018 的私有教材原页、分批多模态理解、整本知识图谱、家长批准和来源受限推荐已部署，真实教材/NewAPI 质量与费用、浏览器/设备 E2E 仍待验收。
+- 活动计划：`PLAN-0028` 已完成，未部署的成人英语/Gemini 增量已删除，Apache-2.0、README、GitHub 本地远程和 Android APK workflow 已准备；workflow 的本地等价构建通过，但尚未在 GitHub runner 执行。`TASK-0011` / `PLAN-0022` 的孩子英语框架完整保留、继续供应商中立且默认锁定。当前 Ubuntu 运行态开关为关闭、Provider 为 `disabled`。`TASK-0010` 的真实教材/设备剩余验收保持未完成；PLAN-0018 的私有教材原页、分批多模态理解、整本知识图谱、家长批准和来源受限推荐已部署，真实教材/NewAPI 质量与费用、浏览器/设备 E2E 仍待验收。
 - 任务状态：ADR-0018/PLAN-0012 已完成本地与 Ubuntu API/Flutter/Compose/契约迁移；Ubuntu 不再依赖预签名直传，MinIO `9000` 未向宿主/LAN 暴露。最终真机仍未回归。
 - 当前分支：`master`；工作区包含本轮未提交的 P1 闭环代码、迁移、测试和文档。
-- 当前重点：GitHub 开源整理已完成，本地 `origin` 为 `git@github.com:yubinhong/AIStudy.git`，尚未 commit/push；继续完成已部署 API 流式上传、孩子管理聚合和教材知识图谱的真实教材/浏览器/设备验收。Ubuntu 已前滚到 `0.13.0`/`0030_learning_history_retention`；教材 PDF 单文件上限为 `50 MiB`，解析 worker 使用受限私有 `curriculum/` 读取边界，分析 worker 使用 `curriculum-previews/` 私有原页和批准知识图谱。家长教材原页/知识审核、推荐详情、孩子端原页入口和独立学习记录页均已部署 Ubuntu；真实 PDF 多模态分析、发布和推荐验收待后续执行。
+- 当前重点：GitHub 开源整理和 APK workflow 已完成本地准备，本地 `origin` 为 `git@github.com:yubinhong/AIStudy.git`，尚未 commit/push；下一步是在 GitHub 默认分支实际运行 workflow，并继续已部署 API 流式上传、孩子管理聚合和教材知识图谱的真实教材/浏览器/设备验收。Ubuntu 已前滚到 `0.13.0`/`0030_learning_history_retention`；教材 PDF 单文件上限为 `50 MiB`，解析 worker 使用受限私有 `curriculum/` 读取边界，分析 worker 使用 `curriculum-previews/` 私有原页和批准知识图谱。家长教材原页/知识审核、推荐详情、孩子端原页入口和独立学习记录页均已部署 Ubuntu；真实 PDF 多模态分析、发布和推荐验收待后续执行。
 - 已完成：本地与 Ubuntu OpenAPI `0.13.0`、迁移 `0013`～`0030`、视觉四态候选与确认、可信 VerifiedQuestion → 云端递进 L1/L2 → 完整步骤/答案/验算、Mistake/Review closeout，以及 PDF 私有原页、分批多模态教材理解、全书知识图谱、家长批准、“批准知识点 + 全部开放错题”的来源受限推荐和 180 天详细学习历史策略。
 - 当前未完成：真实 118 页 PDF 多模态知识质量/费用/重试验收、浏览器 E2E、实际相机四态闭环、教材个人信息自动门禁、自动视觉检测器、四设备回归、正式依赖/镜像安全扫描、监控告警和已批准的 RPO/RTO。NewAPI 合成完整解答已现场通过；云端教材分析、L1/L2 和推荐 planner 尚未进行真实 Provider 质量/成本验收。
 - 新产品主线已完成代码收口：ADR-0020/PLAN-0014 的错题、复习、教材和 Tutor 关键事实链已接通；PLAN-0016 进入设备/E2E/发布验收阶段，ADR-0021 已接受。

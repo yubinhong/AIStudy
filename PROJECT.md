@@ -2,10 +2,10 @@
 
 ## 文档信息
 
-- 状态：`ACTIVE`（本地与 Ubuntu API 0.13.0/0030；孩子英语 Provider 保持关闭；GitHub 开源文件已准备）
+- 状态：`ACTIVE`（本地与 Ubuntu API 0.13.0/0030；孩子英语 Provider 保持关闭；GitHub 开源文件与 Android APK workflow 已准备）
 - Owner：`TBD（项目发起人确认）`
 - 最后更新：`2026-08-10`
-- 项目仓库：本地 Git 仓库 `/Users/ybh/PycharmProjects/study`；本地 `origin` 为 `git@github.com:yubinhong/AIStudy.git`，尚未推送
+- 项目仓库：本地 Git 仓库 `/Users/ybh/PycharmProjects/study`；本地 `origin` 为 `git@github.com:yubinhong/AIStudy.git`，尚未推送；APK workflow 尚未在 GitHub runner 执行
 - 设计基线：`家庭AI学习助手_架构设计_v1.0.docx`
 
 ## 1. 项目概述

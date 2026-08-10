@@ -83,6 +83,16 @@ curl -fsS http://127.0.0.1:3000/healthz
 
 完整配置、Apple Silicon 限制、NewAPI 接入、备份与恢复步骤见 [infra/compose/README.md](infra/compose/README.md) 和 [RUNBOOK.md](RUNBOOK.md)。
 
+## Android APK 与部署
+
+仓库提供 `Build Android APK` GitHub Actions：可在 Actions 页面手动运行，也会在推送 `v*` 标签时运行。工作流使用固定 Flutter `3.44.6`，先执行格式、Analyze 和测试，再按 ABI 构建 APK，并上传包含 SHA-256 摘要的 Artifact。
+
+未配置 Android 签名 Secrets 时，产物使用 runner 的 debug 证书，只适合家庭侧载验证；稳定升级和正式分发必须配置受控签名密钥并更换当前示例 application ID。GitHub Actions 操作、签名配置、APK 安装、Compose 服务端部署、升级和回滚见 [构建与自托管部署指南](docs/DEPLOYMENT.md)。
+
+## 电子教材
+
+项目可配合独立的 [tchMaterial-parser](https://github.com/happycola233/tchMaterial-parser) 获取国家中小学智慧教育平台电子课本 PDF。该工具不是 AIStudy 依赖，AIStudy 不接收其 Access Token，也不包含或分发下载的教材。请只下载和导入自己有权使用的资料，并遵守平台条款、教材版权和当地法律；完整安全导入步骤见 [部署指南的教材章节](docs/DEPLOYMENT.md#7-获取和导入电子教材)。
+
 ## 本地开发与验证
 
 API：

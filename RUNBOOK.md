@@ -26,6 +26,8 @@ SLO 必须在 staging 获得基线后由产品/技术 Owner 批准，不在零�
 
 ## 3. 环境与部署
 
+GitHub Actions Android APK 构建、稳定签名 Secret、Artifact 校验/安装、首次自托管部署和外部教材工具的完整操作入口见 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)。本 Runbook 继续作为运行态、迁移、备份、故障处置和回滚的事实来源。
+
 ### 当前环境
 
 - local：`infra/compose/compose.yml` 已编排 PostgreSQL、Redis、MinIO、API、家长 Web、一次性 Alembic migration 和默认启动的 ImageAnalysis worker；Apple Silicon `linux/arm64` 调试镜像构建成功。NewAPI 默认关闭；此时 worker 保持空闲。
