@@ -41,6 +41,7 @@ git push -u origin master
 4. 按 ABI 构建 release APK。
 5. 生成 `SHA256SUMS` 和 `BUILD-INFO.txt`。
 6. 上传保留 14 天的 GitHub Actions Artifact。
+7. 如果由 `v*` 标签触发，创建同名 GitHub Release 并上传 APK、摘要和构建信息。
 
 工作流不会接收 API URL、Session、Provider Key 或教材。应用首次启动时由用户在登录页配置家庭 API 地址。
 
@@ -59,18 +60,20 @@ gh workflow run android-apk.yml --ref master
 gh run list --workflow android-apk.yml
 ```
 
-推送 `v` 开头的标签也会触发构建：
+### 标签发布到 GitHub Release
+
+推送 `v` 开头的标签会触发构建，并在全部 Flutter 检查通过后自动创建同名 GitHub Release：
 
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-该动作只生成 Actions Artifact，不会自动创建 GitHub Release、推送商店或部署服务器。
+Release 附件包含三个 APK、`SHA256SUMS` 和 `BUILD-INFO.txt`，可直接从仓库 **Releases** 页面下载。重新运行同一标签的 workflow 时会覆盖同名附件，不重复创建 Release。手动运行仍只生成 Actions Artifact，不会创建没有版本标签的 Release。两种触发方式都不会推送应用商店或部署服务器。
 
 ### APK 文件选择
 
-Artifact 解压后包含：
+Artifact 解压后或 GitHub Release 附件中包含：
 
 - `app-arm64-v8a-release.apk`：大多数现代 Android 手机和平板，包括常见华为 ARM64 设备。
 - `app-armeabi-v7a-release.apk`：较旧的 32 位 ARM 设备。
@@ -245,4 +248,3 @@ docker compose -f infra/compose/compose.yml ps
 - 合规英语语音 Provider、监护人同意文本和真实安全评测。
 
 在这些门槛完成前，GitHub Actions 成功只证明该提交能通过自动检查并生成 APK，不证明它已经达到应用商店或商业生产发布条件。
-

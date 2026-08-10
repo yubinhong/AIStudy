@@ -287,9 +287,10 @@ def test_super_admin_manages_family_parents_without_orphaning_children() -> None
 
     listed = client.get("/auth/family-parents", headers=headers)
     assert listed.status_code == 200
-    assert {
-        item["account"]["username"]: item["child_count"] for item in listed.json()
-    } == {"protected-parent": 1, "removable-parent": 0}
+    assert {item["account"]["username"]: item["child_count"] for item in listed.json()} == {
+        "protected-parent": 1,
+        "removable-parent": 0,
+    }
 
     parent_login = service.login(
         LoginRequest(
@@ -302,10 +303,13 @@ def test_super_admin_manages_family_parents_without_orphaning_children() -> None
         "another-secure-parent",
         "protected-parent-password",
     )
-    assert client.get(
-        "/auth/family-parents",
-        headers={"Authorization": f"Bearer {parent_session.access_token}"},
-    ).status_code == 403
+    assert (
+        client.get(
+            "/auth/family-parents",
+            headers={"Authorization": f"Bearer {parent_session.access_token}"},
+        ).status_code
+        == 403
+    )
 
     blocked = client.request(
         "DELETE",

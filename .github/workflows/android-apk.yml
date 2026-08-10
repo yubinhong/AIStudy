@@ -22,6 +22,8 @@ jobs:
     name: Test and build split APKs
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      artifact_name: ${{ steps.artifact.outputs.name }}
     defaults:
       run:
         working-directory: apps/child_flutter
@@ -117,10 +119,47 @@ jobs:
           cd dist
           sha256sum ./*.apk > SHA256SUMS
 
-      - name: Upload APK artifact
+      - name: Determine artifact name
+        id: artifact
+        env:
+          ARTIFACT_NAME: aistudy-android-${{ steps.signing.outputs.mode }}-${{ github.sha }}
+        run: echo "name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Store APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aistudy-android-${{ steps.signing.outputs.mode }}-${{ github.sha }}
+          name: ${{ steps.artifact.outputs.name }}
           path: apps/child_flutter/dist/
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    name: Publish APKs to GitHub Release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download built APKs
+        uses: actions/download-artifact@v5
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: release-assets
+
+      - name: Create release and upload APKs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --generate-notes \
+              --title "AIStudy $GITHUB_REF_NAME"
+          fi

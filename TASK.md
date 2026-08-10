@@ -24,15 +24,16 @@
 
 ## 2026-08-10 用户明确增量：GitHub Actions APK 与部署文档
 
-- 状态：`COMPLETE（本地验证；尚未在 GitHub runner 执行）`
+- 状态：`IN_PROGRESS（本地修复与验证完成；等待补丁标签的 GitHub Release/CI 远端验收）`
 - [x] 新增手动及 `v*` 标签触发的 Android APK workflow，固定 Flutter `3.44.6`/Java 17，并在构建前执行格式、Analyze 和测试。
-- [x] 生成 ARM32、ARM64、x86_64 release APK、`SHA256SUMS` 和 `BUILD-INFO.txt`，作为保留 14 天的 Actions Artifact；不自动创建 Release、推送商店或部署服务器。
+- [x] 生成 ARM32、ARM64、x86_64 release APK、`SHA256SUMS` 和 `BUILD-INFO.txt`；手动触发保留 Actions Artifact，`v*` 标签触发额外自动创建同名 GitHub Release 并上传附件。
 - [x] Android Gradle 支持可选稳定 release keystore；无 Secrets 时保留明确标注的 evaluation debug 签名路径，正式 application ID/商店签名仍未完成。
 - [x] 新增 `docs/DEPLOYMENT.md`，覆盖 GitHub、签名、下载校验、侧载、Compose、首次账号、网络、备份升级和回滚；README/RUNBOOK 已链接。
 - [x] 将 `tchMaterial-parser` 作为独立外部教材下载工具说明；不引入代码或依赖，不接收 Token，不分发教材，上传前继续要求权利与个人信息确认。
+- [x] 修复 API CI：全仓 Ruff 格式/检查、正式 `mypy src` 范围和非集成测试通过；修复题目确认角色判断与孩子删除幂等重放两个既有失败。
 - [x] 本地 Flutter 依赖、格式、Analyze、50 项测试和三个 ABI release 构建通过；YAML 解析、文档链接和差异检查通过。
 
-未执行：GitHub runner 实际 workflow、稳定 keystore 路径的真实签名、Artifact 下载、Nova 9 安装、GitHub Release/Play Store、Ubuntu 重新部署。回滚时删除新增 workflow/文档入口并恢复 Gradle debug-only 配置，不删除设备数据或服务端数据。
+未执行：补丁标签的 GitHub runner/Release 验收、稳定 keystore 路径的真实签名、Nova 9 安装、Play Store 和 Ubuntu 重新部署。回滚时关闭自动 Release Job，仍保留可下载 Artifact；API 采用前向修复，不删除设备或服务端数据。
 
 ## 2026-08-10 用户明确增量：移除成人英语并准备 GitHub 开源
 

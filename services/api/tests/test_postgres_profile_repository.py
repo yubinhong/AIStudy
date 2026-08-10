@@ -274,8 +274,24 @@ def test_profile_delete_cascades_bound_child_account_and_session_and_replays() -
             RecordAttemptRequest(event_id=uuid4(), answer_summary="synthetic deletion attempt"),
             f"pg-profile-delete-attempt-{uuid4()}",
         )
-        assert repository.delete_child(HOUSEHOLD_A, child.id, delete_key) == (True, False)
-        assert repository.delete_child(HOUSEHOLD_A, child.id, delete_key) == (True, True)
+        assert repository.delete_child(
+            HOUSEHOLD_A,
+            child.id,
+            delete_key,
+            owner_account_id=child.owner_account_id,
+        ) == (True, False)
+        assert repository.delete_child(
+            HOUSEHOLD_A,
+            child.id,
+            delete_key,
+            owner_account_id=uuid4(),
+        ) == (False, False)
+        assert repository.delete_child(
+            HOUSEHOLD_A,
+            child.id,
+            delete_key,
+            owner_account_id=child.owner_account_id,
+        ) == (True, True)
         assert repository.get_child(HOUSEHOLD_A, child.id) is None
         with repository.engine.connect() as connection:
             assert (

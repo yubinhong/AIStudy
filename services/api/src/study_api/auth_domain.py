@@ -1047,9 +1047,7 @@ class AuthService:
         )
         return account, replayed
 
-    def list_family_parents(
-        self, profile_repository: ProfileRepository
-    ) -> list[FamilyParentView]:
+    def list_family_parents(self, profile_repository: ProfileRepository) -> list[FamilyParentView]:
         return [
             FamilyParentView(
                 account=_view(account),

@@ -56,12 +56,8 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["child_id"], ["child_profiles.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(
-            ["material_id"], ["learning_materials.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["snapshot_id"], ["curriculum_snapshots.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["material_id"], ["learning_materials.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["snapshot_id"], ["curriculum_snapshots.id"], ondelete="CASCADE"),
         sa.UniqueConstraint("material_id", name="uq_material_parse_jobs_material"),
         sa.CheckConstraint(
             "status IN ('uploaded', 'queued', 'parsing', 'needs_review', 'needs_ocr', "
@@ -91,17 +87,15 @@ def upgrade() -> None:
         sa.Column("parser_version", sa.String(80), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["child_id"], ["child_profiles.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(
-            ["material_id"], ["learning_materials.id"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["snapshot_id"], ["curriculum_snapshots.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["material_id"], ["learning_materials.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["snapshot_id"], ["curriculum_snapshots.id"], ondelete="CASCADE"),
         sa.UniqueConstraint(
             "material_id", "page_number", "chunk_index", name="uq_curriculum_chunks_page"
         ),
         sa.CheckConstraint("page_number >= 1", name="ck_curriculum_chunks_page"),
-        sa.CheckConstraint("confidence >= 0 AND confidence <= 1", name="ck_curriculum_chunks_confidence"),
+        sa.CheckConstraint(
+            "confidence >= 0 AND confidence <= 1", name="ck_curriculum_chunks_confidence"
+        ),
     )
     op.create_index(
         "ix_curriculum_chunks_scope",

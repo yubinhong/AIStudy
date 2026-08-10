@@ -87,7 +87,9 @@ def upgrade() -> None:
     op.add_column("tutor_turns", sa.Column("verification", sa.String(length=1000)))
     op.add_column(
         "tutor_turns",
-        sa.Column("requires_child_response", sa.Boolean(), nullable=False, server_default=sa.true()),
+        sa.Column(
+            "requires_child_response", sa.Boolean(), nullable=False, server_default=sa.true()
+        ),
     )
 
 

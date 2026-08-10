@@ -85,7 +85,7 @@ curl -fsS http://127.0.0.1:3000/healthz
 
 ## Android APK 与部署
 
-仓库提供 `Build Android APK` GitHub Actions：可在 Actions 页面手动运行，也会在推送 `v*` 标签时运行。工作流使用固定 Flutter `3.44.6`，先执行格式、Analyze 和测试，再按 ABI 构建 APK，并上传包含 SHA-256 摘要的 Artifact。
+仓库提供 `Build Android APK` GitHub Actions：手动运行时生成保留 14 天的 Actions Artifact；推送 `v*` 标签时还会自动创建对应 GitHub Release，并上传三个 ABI APK、SHA-256 摘要和构建信息。工作流使用固定 Flutter `3.44.6`，发布 Job 才获得最小 `contents: write` 权限。
 
 未配置 Android 签名 Secrets 时，产物使用 runner 的 debug 证书，只适合家庭侧载验证；稳定升级和正式分发必须配置受控签名密钥并更换当前示例 application ID。GitHub Actions 操作、签名配置、APK 安装、Compose 服务端部署、升级和回滚见 [构建与自托管部署指南](docs/DEPLOYMENT.md)。
 

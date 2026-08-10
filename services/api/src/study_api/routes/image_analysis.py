@@ -19,6 +19,7 @@ from study_api.auth import (
 )
 from study_api.domain.capture_repository import CaptureRepository
 from study_api.domain.learning_repository import ChildAssignmentError
+from study_api.domain.models import AccountRole
 from study_api.domain.question_extraction_repository import QuestionExtractionRepository
 from study_api.domain.repository import IdempotencyConflictError
 from study_api.domain.verified_question_repository import VerifiedQuestionRepository
@@ -217,9 +218,7 @@ def verify_question_extraction(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="extraction is not ready")
     if capture.version != request.expected_capture_version:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="capture version conflict")
-    # A parent may review any child in the household; a child may only review
-    # the bound child that owns this Capture.
-    if principal.role.value == "parent":
+    if principal.role in {AccountRole.PARENT, AccountRole.SUPER_ADMIN}:
         verified_by = "parent"
     else:
         if principal.child_id != job.child_id:

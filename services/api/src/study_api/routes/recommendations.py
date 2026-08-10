@@ -63,10 +63,13 @@ def _require_child(
     principal: AuthenticatedPrincipal, request: Request, household_id: UUID, child_id: UUID
 ) -> None:
     child = request.app.state.profile_repository.get_child(household_id, child_id)
-    if child is None or (
-        principal.role is AccountRole.CHILD and principal.child_id != child_id
-    ) or (
-        principal.role is not AccountRole.CHILD and child.owner_account_id != principal.account_id
+    if (
+        child is None
+        or (principal.role is AccountRole.CHILD and principal.child_id != child_id)
+        or (
+            principal.role is not AccountRole.CHILD
+            and child.owner_account_id != principal.account_id
+        )
     ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
 

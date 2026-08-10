@@ -3,6 +3,7 @@ from uuid import UUID
 from auth_helpers import session_headers
 from fastapi.testclient import TestClient
 
+from study_api.domain.repository import InMemoryProfileRepository
 from study_api.main import create_app
 from study_api.media_lifecycle import CaptureObject, DeletionStatus
 
@@ -149,9 +150,7 @@ def test_parent_can_create_child_profile_and_account_as_one_idempotent_aggregate
     assert replay.status_code == 200
     assert replay.headers["Idempotency-Replayed"] == "true"
     assert replay.json() == first.json()
-    assert any(
-        item["child"]["id"] == first.json()["child"]["id"] for item in listed.json()
-    )
+    assert any(item["child"]["id"] == first.json()["child"]["id"] for item in listed.json())
 
 
 def test_child_management_requires_parent_and_keeps_profile_on_duplicate_username() -> None:
@@ -310,6 +309,32 @@ def test_parent_child_delete_keeps_profile_until_media_cascade_succeeds() -> Non
     assert missing.status_code == 404
     assert repository.status is DeletionStatus.DELETED
     assert storage.deleted == ["captures/synthetic/profile-delete"] * 2
+
+
+def test_child_delete_replay_is_scoped_to_the_owner_account() -> None:
+    repository = InMemoryProfileRepository()
+    child_id = UUID(CHILD_A)
+    owner_id = UUID("00000000-0000-0000-0000-000000000001")
+    other_parent_id = UUID("00000000-0000-0000-0000-000000000099")
+
+    assert repository.delete_child(
+        UUID(HOUSEHOLD_A),
+        child_id,
+        "owner-scoped-delete",
+        owner_account_id=owner_id,
+    ) == (True, False)
+    assert repository.delete_child(
+        UUID(HOUSEHOLD_A),
+        child_id,
+        "owner-scoped-delete",
+        owner_account_id=other_parent_id,
+    ) == (False, False)
+    assert repository.delete_child(
+        UUID(HOUSEHOLD_A),
+        child_id,
+        "owner-scoped-delete",
+        owner_account_id=owner_id,
+    ) == (True, True)
 
 
 def test_child_or_cross_household_cannot_delete_profile() -> None:

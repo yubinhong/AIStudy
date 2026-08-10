@@ -89,8 +89,7 @@ class InMemoryChildManagementRepository:
         )
         try:
             if not profile_replayed and any(
-                account.role is AccountRole.CHILD
-                and account.child_id == child.id
+                account.role is AccountRole.CHILD and account.child_id == child.id
                 for account in self._accounts.list_household(household_id)
             ):
                 raise DuplicateUsernameError("child account already exists")
@@ -145,19 +144,27 @@ class PostgresChildManagementRepository:
         return AccountRecord(**payload)
 
     def _record(self, connection, household_id: UUID, child_id: UUID) -> ChildManagementRecord:
-        child_row = connection.execute(
-            select(self._children).where(
-                self._children.c.household_id == household_id,
-                self._children.c.id == child_id,
+        child_row = (
+            connection.execute(
+                select(self._children).where(
+                    self._children.c.household_id == household_id,
+                    self._children.c.id == child_id,
+                )
             )
-        ).mappings().one()
-        account_row = connection.execute(
-            select(self._accounts).where(
-                self._accounts.c.household_id == household_id,
-                self._accounts.c.child_id == child_id,
-                self._accounts.c.role == AccountRole.CHILD.value,
+            .mappings()
+            .one()
+        )
+        account_row = (
+            connection.execute(
+                select(self._accounts).where(
+                    self._accounts.c.household_id == household_id,
+                    self._accounts.c.child_id == child_id,
+                    self._accounts.c.role == AccountRole.CHILD.value,
+                )
             )
-        ).mappings().one_or_none()
+            .mappings()
+            .one_or_none()
+        )
         return ChildManagementRecord(
             self._child(child_row), self._account(account_row) if account_row else None
         )
@@ -214,13 +221,17 @@ class PostgresChildManagementRepository:
         )
         try:
             with self._engine.begin() as connection:
-                existing = connection.execute(
-                    select(self._idempotency).where(
-                        self._idempotency.c.household_id == household_id,
-                        self._idempotency.c.operation == operation,
-                        self._idempotency.c.idempotency_key == idempotency_key,
+                existing = (
+                    connection.execute(
+                        select(self._idempotency).where(
+                            self._idempotency.c.household_id == household_id,
+                            self._idempotency.c.operation == operation,
+                            self._idempotency.c.idempotency_key == idempotency_key,
+                        )
                     )
-                ).mappings().one_or_none()
+                    .mappings()
+                    .one_or_none()
+                )
                 if existing is not None:
                     if existing["fingerprint"] != fingerprint:
                         raise IdempotencyConflictError

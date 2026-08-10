@@ -122,7 +122,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_task_recommendations_household_child_status", table_name="task_recommendations")
+    op.drop_index(
+        "ix_task_recommendations_household_child_status", table_name="task_recommendations"
+    )
     op.drop_table("task_recommendations")
     op.drop_index(
         "ix_curriculum_snapshots_household_child_status", table_name="curriculum_snapshots"

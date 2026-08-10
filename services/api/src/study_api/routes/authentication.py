@@ -307,9 +307,7 @@ def list_family_parents(principal: Principal, request: Request) -> list[FamilyPa
     """List ordinary family parents for the instance super administrator only."""
 
     require_super_admin(principal.role)
-    return request.app.state.auth_service.list_family_parents(
-        request.app.state.profile_repository
-    )
+    return request.app.state.auth_service.list_family_parents(request.app.state.profile_repository)
 
 
 @router.delete("/family-parents/{account_id}", status_code=status.HTTP_204_NO_CONTENT)

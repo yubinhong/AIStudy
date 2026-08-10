@@ -58,9 +58,7 @@ def closeout_mistake(
 
     _child_scope(principal, household_id, child_id)
     try:
-        result, replayed = repository.closeout(
-            household_id, child_id, request, idempotency_key
-        )
+        result, replayed = repository.closeout(household_id, child_id, request, idempotency_key)
     except LookupError as error:
         raise HTTPException(status_code=404, detail="resource not found") from error
     except ValueError as error:

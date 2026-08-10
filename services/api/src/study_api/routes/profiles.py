@@ -236,7 +236,20 @@ def delete_child(
     role = require_household(principal, household_id)
     require_parent(role)
     existing = repository.get_child(household_id, child_id)
-    if existing is None or existing.owner_account_id != principal.account_id:
+    if existing is None:
+        deleted, replayed = repository.delete_child(
+            household_id,
+            child_id,
+            idempotency_key,
+            owner_account_id=principal.account_id,
+        )
+        if deleted and replayed:
+            return Response(
+                status_code=status.HTTP_204_NO_CONTENT,
+                headers={"Idempotency-Replayed": "true"},
+            )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
+    if existing.owner_account_id != principal.account_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
     cascade = CaptureObjectCascadeDeletion(capture_repository, object_storage)
     try:
@@ -251,7 +264,12 @@ def delete_child(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="child deletion is incomplete and can be retried",
         )
-    deleted, replayed = repository.delete_child(household_id, child_id, idempotency_key)
+    deleted, replayed = repository.delete_child(
+        household_id,
+        child_id,
+        idempotency_key,
+        owner_account_id=principal.account_id,
+    )
     try:
         account_repository.delete_child_account(household_id, child_id)
     except Exception as error:  # noqa: BLE001 -- do not expose repository failures.

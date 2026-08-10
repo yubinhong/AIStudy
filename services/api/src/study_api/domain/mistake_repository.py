@@ -168,6 +168,7 @@ def _determine_review_outcome(
     request: ReviewMistakeRequest, expected_answer: str | None
 ) -> ReviewOutcome:
     if request.evidence_confirmed and request.submitted_answer and expected_answer:
+
         def normalize(value: str) -> str:
             return "".join(value.split()).lower()
 
@@ -414,13 +415,17 @@ class PostgresMistakeRepository:
         schedule_values = {
             column.name: row[f"schedule_{column.name}"] for column in self._schedules.columns
         }
-        question_row = connection.execute(
-            select(self._questions).where(
-                self._questions.c.id == mistake_values["verified_question_id"],
-                self._questions.c.household_id == mistake_values["household_id"],
-                self._questions.c.child_id == mistake_values["child_id"],
+        question_row = (
+            connection.execute(
+                select(self._questions).where(
+                    self._questions.c.id == mistake_values["verified_question_id"],
+                    self._questions.c.household_id == mistake_values["household_id"],
+                    self._questions.c.child_id == mistake_values["child_id"],
+                )
             )
-        ).mappings().one_or_none()
+            .mappings()
+            .one_or_none()
+        )
         question = None
         if question_row is not None:
             question = ReviewQuestion(

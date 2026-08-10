@@ -80,8 +80,7 @@ class PostgresProfileRepository:
             if owner_account_id is not None:
                 statement = statement.where(self._children.c.owner_account_id == owner_account_id)
             rows = connection.execute(
-                statement
-                .order_by(self._children.c.created_at, self._children.c.id)
+                statement.order_by(self._children.c.created_at, self._children.c.id)
             ).mappings()
             return [self._child(row) for row in rows]
 
@@ -191,10 +190,16 @@ class PostgresProfileRepository:
             return updated, False
 
     def delete_child(
-        self, household_id: UUID, child_id: UUID, idempotency_key: str
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        idempotency_key: str,
+        *,
+        owner_account_id: UUID | None = None,
     ) -> tuple[bool, bool]:
-        payload = str(child_id)
-        operation = f"child_delete:{child_id}"
+        owner_scope = str(owner_account_id) if owner_account_id is not None else "internal"
+        payload = f"{child_id}:{owner_scope}"
+        operation = f"child_delete:{child_id}:owner:{owner_scope}"
         with self._engine.begin() as connection:
             if self._is_idempotency_replay(
                 connection, household_id, operation, idempotency_key, payload, child_id
@@ -208,6 +213,8 @@ class PostgresProfileRepository:
                     connection, household_id, operation, idempotency_key, payload, child_id
                 ):
                     return True, True
+                return False, False
+            if owner_account_id is not None and row["owner_account_id"] != owner_account_id:
                 return False, False
             created = self._reserve_idempotency(
                 connection,

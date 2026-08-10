@@ -57,7 +57,12 @@ class ProfileRepository(Protocol):
     ) -> tuple[ChildProfile | None, bool]: ...
 
     def delete_child(
-        self, household_id: UUID, child_id: UUID, idempotency_key: str
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        idempotency_key: str,
+        *,
+        owner_account_id: UUID | None = None,
     ) -> tuple[bool, bool]: ...
 
     def list_devices(self, household_id: UUID) -> list[Device]: ...
@@ -80,7 +85,7 @@ class InMemoryProfileRepository:
         self._children: dict[UUID, ChildProfile] = {}
         self._devices: dict[UUID, Device] = {}
         self._idempotency: dict[tuple[UUID, str, str], IdempotencyRecord] = {}
-        self._delete_idempotency: set[tuple[UUID, UUID, str]] = set()
+        self._delete_idempotency: set[tuple[UUID, UUID, UUID | None, str]] = set()
         self._audits: list[AuditEvent] = []
         self._seed()
 
@@ -137,15 +142,22 @@ class InMemoryProfileRepository:
         return child if child and child.household_id == household_id else None
 
     def delete_child(
-        self, household_id: UUID, child_id: UUID, idempotency_key: str
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        idempotency_key: str,
+        *,
+        owner_account_id: UUID | None = None,
     ) -> tuple[bool, bool]:
         """Delete one synthetic profile only after media cascade succeeds."""
 
-        key = (household_id, child_id, idempotency_key)
+        key = (household_id, child_id, owner_account_id, idempotency_key)
         if key in self._delete_idempotency:
             return True, True
         child = self.get_child(household_id, child_id)
-        if child is None:
+        if child is None or (
+            owner_account_id is not None and child.owner_account_id != owner_account_id
+        ):
             return False, False
         del self._children[child_id]
         self._delete_idempotency.add(key)

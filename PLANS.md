@@ -1,3 +1,25 @@
+# PLANS.md — PLAN-0029 GitHub APK Release 与 API CI 修复
+
+## 计划元数据
+
+- 计划 ID：`PLAN-0029`
+- 关联事项：用户 2026-08-10 截图反馈、GitHub `v0.1.0`、`TASK-0011`
+- 状态：`IN_PROGRESS（本地门槛通过，等待补丁标签远端验收）`
+- 优先级：`P0 / CI / RELEASE`
+- Owner：Codex（执行）；项目 Owner（明确要求 Release 提供 APK 并修复 API CI）
+
+## 范围与里程碑
+
+- [x] API Ruff 全仓格式/检查、Mypy 正式源代码范围和非集成测试通过。
+- [x] 修复超级管理员题目确认角色分支和孩子删除幂等重放，删除回执绑定发起家长账号。
+- [x] 标签构建在独立 `contents: write` Job 创建或更新同名 GitHub Release；手动构建仍只保留 Artifact。
+- [x] 同步 README、部署、测试、任务和变更文档。
+- [ ] 提交并推送 `master`，创建不改写历史的补丁标签，确认 GitHub Quality 与 Android workflow 成功且 Release 附件可下载。
+
+回滚：停用 Release Job 但保留 Actions Artifact；API 使用前向修复，不改迁移、不删除现有数据或幂等回执。
+
+---
+
 # PLANS.md — PLAN-0028 移除成人英语并准备 GitHub 开源
 
 ## 计划元数据

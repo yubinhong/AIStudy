@@ -24,6 +24,8 @@
 
 ## [Unreleased]
 
+- 2026-08-10：修复 GitHub 发布链路：`v*` 标签构建通过后自动创建同名 Release，并上传三个 ABI APK、`SHA256SUMS` 与 `BUILD-INFO.txt`；手动构建继续保留 Actions Artifact。API CI 同步执行仓库正式的 `mypy src` 范围，Ruff 格式化全仓 Python，并修复超级管理员确认题目被误判为孩子角色、孩子删除成功后幂等重放返回 `404` 两个既有回归；删除回执按发起家长账号隔离。
+
 - 2026-08-10：新增 `Build Android APK` GitHub Actions，可手动运行或由 `v*` 标签触发；固定 Flutter `3.44.6`/Java 17，先执行格式、Analyze 和 50 项测试，再生成 ARM32、ARM64、x86_64 分架构 APK、SHA-256 清单和构建信息 Artifact。Android Gradle 支持从 GitHub Secrets 注入稳定签名；无 Secrets 时明确生成仅供侧载验证的 evaluation 包。新增完整构建/部署/签名/安装/升级回滚文档，并将独立 MIT 工具 `tchMaterial-parser` 作为合法取得教材后的可选本地辅助工具说明，不引入其代码、Token 或教材内容。
 
 - 2026-08-10：撤回并删除从未部署的成人英语/Gemini 增量，包括服务端 Adapter、成人授权、环境变量、直接依赖、专属测试和部署文档。孩子英语学科入口、家长逐孩子设置、三个有界情景、Provider 中立 WebSocket/PCM 框架、摘要和安全 Policy 完整保留且默认锁定。同时补齐 GitHub README 与 Apache-2.0 许可证，修正学习记录 `422` 的 OpenAPI 响应引用；教材、模型权重、用户数据和第三方组件仍按各自权利与许可证处理。

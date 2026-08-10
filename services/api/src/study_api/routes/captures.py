@@ -42,9 +42,7 @@ IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=8, ma
 CaptureMediaType = Annotated[
     Literal["image/jpeg", "image/png"], Header(alias="X-Capture-Media-Type")
 ]
-CaptureByteSize = Annotated[
-    int, Header(alias="X-Capture-Byte-Size", ge=1, le=8_000_000)
-]
+CaptureByteSize = Annotated[int, Header(alias="X-Capture-Byte-Size", ge=1, le=8_000_000)]
 CaptureSha256 = Annotated[
     str,
     Header(
