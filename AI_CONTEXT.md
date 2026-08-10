@@ -44,7 +44,7 @@
 | --- | --- | --- |
 | 项目目标、范围、设备、环境 | `PROJECT.md` | Active；目标与现状已分离 |
 | P1 产品需求与验收 | `PRD.md` | Draft；待产品 Owner 审批 |
-| 当前任务 | `TASK.md` | GitHub APK Release/API CI 修复正在做补丁标签远端验收；PLAN-0028 已完成；TASK-0011/PLAN-0022 孩子英语框架保持锁定；TASK-0010 真实教材验收继续保留 |
+| 当前任务 | `TASK.md` | PLAN-0029 GitHub APK Release/API CI 修复已完成远端验收；PLAN-0028 已完成；TASK-0011/PLAN-0022 孩子英语框架保持锁定；TASK-0010 真实教材验收继续保留 |
 | 复杂任务计划 | `PLANS.md` | PLAN-0028 已完成；PLAN-0022 孩子英语框架继续关闭，PLAN-0018 已部署数学教材主线并等待真实 PDF/Provider/设备验收；其他计划见正文状态 |
 | 系统结构、数据流、接口 | `ARCHITECTURE.md` | P0/P1 单家庭核心闭环已实现；残余边界明确记录 |
 | 测试命令和质量门槛 | `TESTING.md` | API/Web/Flutter 质量命令已有验证；原生构建结果以最新记录为准 |
