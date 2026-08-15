@@ -3,7 +3,7 @@
 ## 1. 服务概览
 
 - 服务：家庭 AI 学习助手（目标包括 Flutter 孩子端、Web/PWA、FastAPI/Worker、PostgreSQL、Redis、S3/MinIO 和 AI Provider）。
-- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.13.0`/`0030_learning_history_retention`；没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
+- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.14.0`/`0031_multisubject_chinese`；没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
 - Owner/值班：`TBD（项目 Owner/运维负责人在 staging 前确认）`。
 - 用户影响：服务中断会阻止同步、拍题、AI 提示和周报；孩子端必须保留离线任务/作答，不能因服务中断丢学习记录。
 - 外部依赖：单一获批云视觉 Provider、Tutor Provider、HMS（或应用内提醒）和对象存储；具体供应商 `TBD`。本地 OCR 仅是目标 PrivacySanitizer 的隐私检测依赖，不是外部 Provider。
@@ -31,7 +31,7 @@ GitHub Actions Android APK 构建、稳定签名 Secret、Artifact 校验/安装
 ### 当前环境
 
 - local：`infra/compose/compose.yml` 已编排 PostgreSQL、Redis、MinIO、API、家长 Web、一次性 Alembic migration 和默认启动的 ImageAnalysis worker；Apple Silicon `linux/arm64` 调试镜像构建成功。NewAPI 默认关闭；此时 worker 保持空闲。
-- Ubuntu 自用验收：宿主为 Ubuntu 24.04/x86_64，远端 `infra/compose/.env` 权限 600。2026-07-31 已在保留数据卷和配置的前提下前滚至 `0030_learning_history_retention`；备份 `/home/syin/study-backups/20260731T020739Z` 已完成 PostgreSQL/MinIO 隔离恢复验证。API `0.13.0`、PostgreSQL、MinIO、Redis、Web、ImageAnalysis、DataLifecycle、MaterialParse 和 CurriculumAnalysis worker 运行健康。新流式上传使用内部 `minio:9000`，宿主/LAN 未发布 MinIO `9000`。PDF-only 解析/发布、错题 closeout、ReviewAttempt、Tutor Hint、私有原页、知识图谱、来源受限推荐、教材范围完整解答、唯一超级管理员、家长自有孩子、显式公开教材复用及 180 天详细学习记录策略已部署；API/Web `/healthz`、远端 current/head、OpenAPI、数据库表/索引和容器内运行源码已校验。Web 使用 Node `24.18`/pnpm `11.7` 重建，真实教材质量/成本、跨家庭登录态浏览器/设备和生产监控仍未实现。
+- Ubuntu 自用验收：宿主为 Ubuntu 24.04/x86_64，远端 `infra/compose/.env` 权限 600。2026-08-15 已在保留数据卷和配置的前提下前滚至 `0031_multisubject_chinese`；备份 `/home/syin/study-backups/20260815T144358Z` 已完成 PostgreSQL/MinIO 隔离恢复验证。API `0.14.0`、PostgreSQL、MinIO、Redis、Web、ImageAnalysis、DataLifecycle、MaterialParse 和 CurriculumAnalysis worker 运行健康。新流式上传使用内部 `minio:9000`，宿主/LAN 未发布 MinIO `9000`。既有数学闭环与新 `math/chinese`、subject-aware 教材、语文确定性 Content/Attempt/Review 已部署；API/Web `/healthz`、远端 current/head、OpenAPI、语文表/复合主键/seed、旧教材数学回填、未认证保护、英语关闭态和容器内运行源码已校验。Web 使用 Node `24.18`/pnpm `11.7` 重建，语文并发/导出集成、正式内容、真实教材质量/成本、跨家庭登录态浏览器/设备和生产监控仍未实现。
 - 真机拍题当前事实：API/Flutter/Compose/Ubuntu 已切换为 App 携带 Session 向 API 上传，且 Compose 不发布 MinIO `9000`。最新 iPad Release `Runner.app` 已安装到无线设备 `00008110-0011356E0E41801E`，但 iOS 首次启动要求用户在“设置 → 通用 → VPN 与设备管理”显式信任开发者 Team `VZ59988J63`；信任后仍需执行拍题、权限、弱网和重启验收。Provider HTTP `402` 只表示 NewAPI 余额/模型额度不可用，不应误判为上传或 MinIO 故障。
 - staging：未建立。
 - production：未建立且未获部署授权。

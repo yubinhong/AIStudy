@@ -1,0 +1,104 @@
+"""Household-scoped Chinese practice routes."""
+
+from typing import Annotated
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi.responses import JSONResponse
+
+from study_api.auth import AuthenticatedPrincipal, get_principal, require_household
+from study_api.chinese_practice import (
+    ChineseAttempt,
+    ChineseAttemptRequest,
+    ChineseContentItemView,
+    ChinesePracticeRepository,
+    ChineseSkill,
+)
+from study_api.domain.models import AccountRole, Subject
+from study_api.domain.repository import IdempotencyConflictError, ProfileRepository
+
+router = APIRouter(
+    prefix="/households/{household_id}/children/{child_id}/chinese",
+    tags=["chinese-practice"],
+)
+Principal = Annotated[AuthenticatedPrincipal, Depends(get_principal)]
+IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=128)]
+
+
+def _repository(request: Request) -> ChinesePracticeRepository:
+    return request.app.state.chinese_practice_repository
+
+
+def _profiles(request: Request) -> ProfileRepository:
+    return request.app.state.profile_repository
+
+
+Repository = Annotated[ChinesePracticeRepository, Depends(_repository)]
+Profiles = Annotated[ProfileRepository, Depends(_profiles)]
+
+
+def _authorize(
+    household_id: UUID,
+    child_id: UUID,
+    principal: AuthenticatedPrincipal,
+    profiles: ProfileRepository,
+) -> int:
+    role = require_household(principal, household_id)
+    child = profiles.get_child(household_id, child_id)
+    if child is None:
+        raise HTTPException(status_code=404, detail="resource not found")
+    if role is AccountRole.CHILD:
+        if principal.child_id != child_id:
+            raise HTTPException(status_code=404, detail="resource not found")
+    elif child.owner_account_id != principal.account_id:
+        raise HTTPException(status_code=404, detail="resource not found")
+    if Subject.CHINESE not in child.subjects:
+        raise HTTPException(status_code=409, detail="chinese subject is not enabled")
+    return child.grade
+
+
+@router.get("/content", response_model=list[ChineseContentItemView])
+def list_content(
+    household_id: UUID,
+    child_id: UUID,
+    principal: Principal,
+    repository: Repository,
+    profiles: Profiles,
+    skill: Annotated[ChineseSkill | None, Query()] = None,
+) -> list[ChineseContentItemView]:
+    grade = _authorize(household_id, child_id, principal, profiles)
+    return [
+        ChineseContentItemView.from_item(item) for item in repository.list_content(grade, skill)
+    ]
+
+
+@router.post("/attempts", response_model=ChineseAttempt, status_code=status.HTTP_201_CREATED)
+def submit_attempt(
+    household_id: UUID,
+    child_id: UUID,
+    body: ChineseAttemptRequest,
+    idempotency_key: IdempotencyKey,
+    principal: Principal,
+    repository: Repository,
+    profiles: Profiles,
+) -> JSONResponse:
+    grade = _authorize(household_id, child_id, principal, profiles)
+    if principal.role is not AccountRole.CHILD:
+        raise HTTPException(status_code=403, detail="bound child principal required")
+    try:
+        attempt, replayed = repository.submit_attempt(
+            household_id, child_id, grade, body, idempotency_key
+        )
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail="content not found") from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    except IdempotencyConflictError as error:
+        raise HTTPException(
+            status_code=409, detail="idempotency key reused with a different payload"
+        ) from error
+    return JSONResponse(
+        status_code=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
+        content=attempt.model_dump(mode="json"),
+        headers={"Idempotency-Replayed": "true"} if replayed else {},
+    )

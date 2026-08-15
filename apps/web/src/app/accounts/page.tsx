@@ -28,6 +28,8 @@ type ChildProfile = {
   id: string;
   display_name: string;
   grade: number;
+  curriculum_version: string;
+  subjects: Array<"math" | "chinese">;
 };
 
 type ChildManagement = {
@@ -77,6 +79,7 @@ export default function AccountsPage() {
   const [password, setPassword] = useState("");
   const [profileName, setProfileName] = useState("");
   const [profileGrade, setProfileGrade] = useState("3");
+  const [enableChinese, setEnableChinese] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [englishSettings, setEnglishSettings] = useState<
     Record<string, EnglishPracticeSettings>
@@ -137,8 +140,8 @@ export default function AccountsPage() {
       body: JSON.stringify({
         display_name: profileName,
         grade: Number(profileGrade),
-        curriculum_version: "math-demo-2026",
-        subjects: ["math"],
+        curriculum_version: "multi-subject-2026",
+        subjects: enableChinese ? ["math", "chinese"] : ["math"],
         username,
         password,
       }),
@@ -153,6 +156,7 @@ export default function AccountsPage() {
       setProfileGrade("3");
       setUsername("");
       setPassword("");
+      setEnableChinese(false);
       await load();
     }
   }
@@ -171,11 +175,29 @@ export default function AccountsPage() {
       body: JSON.stringify({
         display_name: displayName,
         grade: Number(grade),
-        curriculum_version: "math-demo-2026",
-        subjects: ["math"],
+        curriculum_version: child.curriculum_version,
+        subjects: child.subjects,
       }),
     });
     setMessage(response.ok ? "孩子档案已更新" : "更新孩子档案失败");
+    if (response.ok) await load();
+  }
+
+  async function setChineseEnabled(child: ChildProfile, enabled: boolean) {
+    const subjects: ChildProfile["subjects"] = enabled
+      ? ["math", "chinese"]
+      : ["math"];
+    const response = await fetch(`/api/children/${child.id}`, {
+      method: "PATCH",
+      headers: writeHeaders(true),
+      body: JSON.stringify({
+        display_name: child.display_name,
+        grade: child.grade,
+        curriculum_version: child.curriculum_version,
+        subjects,
+      }),
+    });
+    setMessage(response.ok ? "孩子学科已更新" : "更新孩子学科失败");
     if (response.ok) await load();
   }
 
@@ -418,6 +440,22 @@ export default function AccountsPage() {
                         : "启用账号"}
                     </button>
                   ) : null}
+                  <div className="profile-subject-settings">
+                    <div>
+                      <strong>学习学科</strong>
+                      <span>数学默认启用，语文按孩子开放</span>
+                    </div>
+                    <label className="profile-consent-control">
+                      <input
+                        type="checkbox"
+                        checked={child.subjects.includes("chinese")}
+                        onChange={(event) =>
+                          void setChineseEnabled(child, event.target.checked)
+                        }
+                      />
+                      启用语文
+                    </label>
+                  </div>
                   {english ? (
                     <div className="profile-subject-settings">
                       <div>
@@ -547,6 +585,14 @@ export default function AccountsPage() {
                 minLength={8}
                 required
               />
+            </label>
+            <label className="profile-consent-control form-full">
+              <input
+                type="checkbox"
+                checked={enableChinese}
+                onChange={(event) => setEnableChinese(event.target.checked)}
+              />
+              同时启用语文学科
             </label>
             <button className="primary-button form-full" type="submit">
               <Plus size={18} /> 创建孩子档案与账号

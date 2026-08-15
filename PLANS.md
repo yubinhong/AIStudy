@@ -1,3 +1,52 @@
+# PLANS.md — PLAN-0030 多学科基础与语文 MVP
+
+## 计划元数据
+
+- 计划 ID：`PLAN-0030`
+- 关联：`TASK-0012`、`ADR-0027`、`docs/deep-research-report.md`
+- 状态：`COMPLETE（多学科/语文本地纵向切片、v0.14.0 Ubuntu 0031 发布及发布验证完成）`
+- 优先级：`P0 多学科基础 / P0 语文首个纵向切片`
+- Owner：Codex（执行）；项目 Owner（2026-08-15 明确要求先多学科、再语文、英语最后）
+- 创建/更新：`2026-08-15`
+
+## 目标与边界
+
+先把数学唯一的隐式边界改为显式 `math/chinese` 学科模型，再交付语文确定性练习的首个可验收纵向切片。通用 `StudyTask`、`StudySession` 和 Household/Child 授权继续共用；语文只新增版本化内容、答案规范、评分证据和复习事实，不复制一套会话模型。
+
+本计划不接入英语 Provider、不改变英语 PCM/WebSocket/同意与数据最小化合同，也不实现朗读、作文自动打分、公共教材抓取或未经教研审核的正式题库。现有英语插件保持禁用态并排在语文之后。
+
+## 分阶段实施
+
+- [x] M1 — `Subject.CHINESE`、OpenAPI 学科枚举、孩子学科设置和数学回归。
+- [x] M2 — additive `0031_multisubject_chinese_foundation`：放宽孩子学科约束；为教材 Material/Snapshot 增加不可空 subject 并将旧数据回填 `math`；新增语文内容、Attempt 和 Review 表。
+- [x] M3 — 语文内容领域模型、discriminated `AnswerSpec`、版本化 deterministic scorer、Household/Child 授权和幂等提交 API。
+- [x] M4 — 家长 Web 可选择数学/语文并按学科上传教材；Flutter 首页按孩子已启用学科显示语文入口，提供原创 synthetic starter content 的最小练习体验。
+- [x] M5 — API/迁移/OpenAPI/Web/Flutter 定向与全量相关门槛，文档同步和差异/敏感信息审查。
+
+## 验收标准
+
+- 旧孩子、旧任务和旧教材迁移后仍为数学；未启用语文的孩子不能取得或提交语文练习。
+- 教材导入、列表、发布和复用不能跨学科混淆；语文内容必须保存来源类型、授权状态和版本。
+- 客观题评分不调用 LLM，结果保存 `chinese-score.v1`、响应证据和反馈标签；重试不重复追加 Attempt/Review 副作用。
+- Child 只能操作绑定档案，Parent 只能管理自己拥有的孩子；跨 Household/兄弟孩子统一不可枚举。
+- starter content 仅使用仓库原创 synthetic 文本，不复制现行教材、教辅正文或答案。
+
+## 兼容、发布与回滚
+
+迁移只新增表/列并先回填旧数据，不重写历史迁移。应用回滚时保留 `subject`、语文内容、Attempt 和 Review 事实，关闭语文入口并以前向修复恢复；不得删除儿童记录或降级数据库来回滚。项目 Owner 于 2026-08-15 明确授权本计划的 Ubuntu 自用部署、提交、标签和推送；设备安装及公网/商业生产仍不在授权范围。
+
+## v0.14.0 Ubuntu 发布里程碑（2026-08-15）
+
+- [x] 远端 `0.13.0/0030`、服务/worker、MinIO 内网端口、英语关闭态和磁盘预检。
+- [x] 暂停全部写入服务，生成 PostgreSQL custom dump、MinIO 快照、SHA-256 清单并完成隔离恢复。
+- [x] 使用 Git 派生 allowlist 预览并精确同步 API/Web/契约/迁移/文档，保留远端 `.env`、卷和备份。
+- [x] 以 `DOCKER_BUILDKIT=0` 重建，前滚 `0031`，核验 API/Web、current/head、表/列/约束/种子、worker、端口、英语门禁和容器内源码。
+- [x] 同步部署事实后创建 Conventional Commit、`v0.14.0` annotated tag，并推送 `master` 与标签。
+
+本次发布不启用英语或任何新 Provider，不运行真实儿童数据、真实教材或设备操作。若迁移或健康失败，停止切换并保留备份；应用回滚保留 `0031` 数据结构和新增学习事实，使用前向修复恢复。
+
+---
+
 # PLANS.md — PLAN-0029 GitHub APK Release 与 API CI 修复
 
 ## 计划元数据

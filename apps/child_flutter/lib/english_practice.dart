@@ -257,11 +257,15 @@ class SubjectSelectionScreen extends StatefulWidget {
     super.key,
     required this.displayName,
     required this.mathBuilder,
+    this.chineseBuilder,
+    this.enabledSubjects = const {'math'},
     this.englishGateway,
   });
 
   final String displayName;
   final WidgetBuilder mathBuilder;
+  final WidgetBuilder? chineseBuilder;
+  final Set<String> enabledSubjects;
   final EnglishPracticeGateway? englishGateway;
 
   @override
@@ -307,6 +311,18 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
                         MaterialPageRoute<void>(builder: widget.mathBuilder),
                       ),
                     ),
+                    if (widget.enabledSubjects.contains('chinese') &&
+                        widget.chineseBuilder != null)
+                      _SubjectCard(
+                        icon: Icons.menu_book_outlined,
+                        title: '语文',
+                        subtitle: '字词、句子、阅读与古诗文',
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: widget.chineseBuilder!,
+                          ),
+                        ),
+                      ),
                     FutureBuilder<EnglishPracticeSettings>(
                       future: _settings,
                       builder: (context, snapshot) {

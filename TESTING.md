@@ -2,7 +2,11 @@
 
 ## 1. 当前状态与质量目标
 
-当前仓库已有 P0/P1 依赖清单、三类锁文件、核心测试和 CI 草案。API 的 Household/认证/学习/Capture/可信 Tutor/周报/导出、Mistake/Review closeout、教材 PDF-only 私有原页/多模态知识图谱、作答四态/推荐审批、Web/Flutter 入口、SQLite 离线队列和 Compose 已验证；Android/iOS 构建及 PostgreSQL/MinIO 恢复已有记录。本地与 Ubuntu 目标均为 API/OpenAPI `0.13.0`/`0030`；剩余是真实 PDF/Provider、设备和最终 E2E 发布门槛。
+当前仓库已有 P0/P1 依赖清单、三类锁文件、核心测试和 CI 草案。API 的 Household/认证/学习/Capture/可信 Tutor/周报/导出、Mistake/Review closeout、教材 PDF-only 私有原页/多模态知识图谱、作答四态/推荐审批、Web/Flutter 入口、SQLite 离线队列和 Compose 已验证；Android/iOS 构建及 PostgreSQL/MinIO 恢复已有记录。本地与 Ubuntu API/OpenAPI 为 `0.14.0`、迁移头 `0031_multisubject_chinese`。剩余是语文并发/导出集成、正式语文内容、真实 PDF/Provider、设备和最终 E2E 发布门槛。
+
+2026-08-15 Ubuntu `0.14.0`/`0031` 发布验证：升级前 quiesced 备份 `/home/syin/study-backups/20260815T144358Z` 通过隔离恢复，恢复库含 35 个 public 表、MinIO 快照 353 个文件。Git 派生 allowlist 未同步 `.env`、卷、缓存或构建物；以 `DOCKER_BUILDKIT=0` 和锁定 Node `24.18`/pnpm `11.7` 重建。API/Web LAN `/healthz`、OpenAPI 62 paths/语文路径、Alembic current/head、迁移 exit 0、三张语文表、`ChineseContentItem(id, revision)` 复合主键、3 条 synthetic seed、2 份旧教材/2 份旧快照 `subject=math`、四个 worker、未认证语文 `401`、英语 `false/disabled`、MinIO `9000` 内部端口、近端错误日志和容器源码哈希均通过。未写入生产 synthetic Attempt，不计为语文并发/导出、登录态浏览器、真实教材/Provider 或设备验收。
+
+2026-08-15 多学科/语文本地验证：API 语文/档案/教材定向通过，全量非集成 `229 passed, 28 deselected`；Ruff Format/Lint、Mypy（60 source files）、Alembic 单一 head `0031_multisubject_chinese` 与从零离线 SQL 通过。OpenAPI `0.14.0` 可结构化解析，62 paths、本地引用闭合；孩子语文响应不含 AnswerSpec，导出新增字段保持可选兼容。Flutter Dart 格式、Analyze 与全量 `52 passed`；Web `32 passed`、TypeScript、ESLint、Prettier 和 Next `16.2.10` production build（22 pages）通过。本机 Node `20.17`/pnpm `9.10` 低于锁定 Node `24.18`/pnpm `11.7` 并产生 engine warning。`uv lock --check` 解析通过；新临时 uv cache 因沙箱 DNS 无法下载 hatchling，后续测试使用现有锁定 `.venv`。真实 PostgreSQL 集成因 `127.0.0.1:5432` 未运行而未执行；未运行 Flutter release、浏览器登录态/实体设备、真实语文教材/Provider，也未部署 Ubuntu。
 
 2026-08-10 GitHub Actions Android 构建：workflow YAML 已由 Ruby 结构化解析；手动触发保留 Actions Artifact，`v*` 标签触发在独立最小写权限 Job 中创建 GitHub Release 并上传三个 APK、摘要与构建信息。本机以 Flutter `3.44.6` 依次运行 `flutter pub get`、Dart 格式检查（12 files/0 changed）、`flutter analyze`（no issues）、全量 `flutter test`（50 passed）和 `flutter build apk --release --split-per-abi`。远端 `v0.1.1` run `31389022670` 的构建/发布 Job 均成功；公开 Release 的 ARM32 21,540,966 B、ARM64 24,956,504 B、x86_64 26,729,369 B APK、`SHA256SUMS` 和 `BUILD-INFO.txt` 均为 `uploaded`。构建提交 `56260c2`、Flutter `3.44.6`、签名模式 `evaluation`；稳定 keystore 和实体设备未验证。
 
@@ -30,7 +34,7 @@
 
 同日部署复核发现首次同步的 `tutor.py` 路径错误，运行容器仍使用旧路由，导致设备日志中 L1/L2 为 `200` 而 L3 为旧 `409`。已同步到 `services/api/src/study_api/routes/tutor.py`、清除误放的未引用副本并重建 API；远端健康端点、文件检查和容器内 `inspect` 均确认新 `general-solution-policy.v1` 路由已经运行。
 
-- 核心用户路径：家长上传清洁 PDF → 服务端私有渲染原页、分批多模态理解并归纳全书知识图谱 → 家长对照原页批准并发布 → 孩子选择数学/学习模式 → 错题安全拍摄题目+答题区 → 确认题目和作答状态 → L1 看懂题意/L2 找到方法/L3 允许时完整讲解 → 原子 MistakeRecord/ReviewSchedule → 到期或提前加载真实题目、重新作答并追加 ReviewAttempt → 家长审核由错题和已批准知识点生成、包含具体题目/视觉说明/页码/日期/时长的任务 → 孩子执行并可打开教材原页 → 周报。本地与 Ubuntu `0.13.0` 已接通代码和自动化，真实 Provider/PDF/登录态浏览器/设备 E2E 未通过前仍不能判定整条路径完成。
+- 核心用户路径：家长上传清洁 PDF → 服务端私有渲染原页、分批多模态理解并归纳全书知识图谱 → 家长对照原页批准并发布 → 孩子选择数学/学习模式 → 错题安全拍摄题目+答题区 → 确认题目和作答状态 → L1 看懂题意/L2 找到方法/L3 允许时完整讲解 → 原子 MistakeRecord/ReviewSchedule → 到期或提前加载真实题目、重新作答并追加 ReviewAttempt → 家长审核由错题和已批准知识点生成、包含具体题目/视觉说明/页码/日期/时长的任务 → 孩子执行并可打开教材原页 → 周报。本地与 Ubuntu `0.14.0` 已接通代码和自动化，真实 Provider/PDF/登录态浏览器/设备 E2E 未通过前仍不能判定整条路径完成。
 - 不可接受的失败：跨家庭越权；原图/未确认脱敏图/儿童数据/密钥泄漏；同一图片被静默发送给多个 Provider；学习记录丢失或被最后写入覆盖；AI 在练习/复习或缺少错题门禁时直接代答、错误结论静默入库；删除请求未执行却报告成功；未记录的成本失控。
 - 覆盖策略：风险驱动，不设脱离代码基线的统一行覆盖率。家庭权限、幂等/离线合并、Tutor Policy/Schema、数据删除和核心 E2E 必须覆盖成功与失败路径；普通模块在 P0 代码基线后批准覆盖阈值。
 
@@ -93,7 +97,7 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | API 类型 | `cd services/api && uv run mypy src` | 每次 API 变更 | 通过（2026-07-30；58 source files） |
 | API 单元 | `cd services/api && uv run pytest -m "not integration"` | 每次 API 变更 | 部分通过（2026-07-30：`218 passed, 2 failed, 28 deselected`；失败仍是本轮前已记录的拍题 Owner 作用域和孩子删除幂等重放，学习记录定向 9 项通过）。 |
 | Compose 配置 | `docker compose -f infra/compose/compose.yml config` | Compose 变更 | 通过（2026-07-31，Ubuntu 实际 `infra/compose/.env` 展开无错误；权限保持 600） |
-| Compose 完整启动 | `docker compose -f infra/compose/compose.yml up -d --build` | API/数据/跨模块变更 | 通过（2026-07-31，Ubuntu 24.04 x86_64；API `0.13.0`、Web、ImageAnalysis/DataLifecycle/MaterialParse/CurriculumAnalysis worker 重建运行，迁移 `0030`，API/Web healthcheck 通过；PostgreSQL/MinIO/Redis 数据卷保留） |
+| Compose 完整启动 | `docker compose -f infra/compose/compose.yml up -d --build` | API/数据/跨模块变更 | 通过（2026-08-15，Ubuntu 24.04 x86_64；API `0.14.0`、Web、ImageAnalysis/DataLifecycle/MaterialParse/CurriculumAnalysis worker 重建运行，迁移 `0031`，API/Web healthcheck 通过；PostgreSQL/MinIO/Redis 数据卷保留） |
 | Web 镜像 | `cd apps/web && docker buildx build --platform=linux/arm64 --load -t study-web:arm64-debug .` | Web/Compose 变更 | 通过（2026-07-15；Next.js standalone 镜像使用 Node 24.18.0、pnpm 11.7.0，包含 `/healthz`；2026-07-20 Ubuntu 重建验证教材上传幂等键兼容修复） |
 | 集成环境 | `docker compose -f infra/compose/compose.yml up -d postgres minio` | API/数据/跨模块变更 | 当前通过（2026-07-13；旧配置发布 5432/9000）。PLAN-0012 目标要求 MinIO 仅在 Compose 内部网络可达，并增加宿主/LAN `9000` 不开放的断言 |
 | API 集成 | `cd services/api && uv run pytest -m integration` | 跨模块/数据变更 | 本轮相关通过（2026-07-30：学习历史生命周期 1 项，独立 synthetic 行覆盖开放错题保护并全部清理；未运行其余集成套件） |

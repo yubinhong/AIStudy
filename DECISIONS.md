@@ -40,6 +40,7 @@
 | [ADR-0024](docs/adr/0024-multi-household-tenancy-and-curriculum-content-reuse.md) | 唯一超级管理员、多家庭会话作用域、家长自有孩子，以及显式公开教材的跨家庭复用 | Household 继续隔离孩子和学习事实；只有明确声明、精确内容指纹匹配且来源已批准的教材可复用，目标仍须审核 |
 | [ADR-0025](docs/adr/0025-provider-neutral-child-english-speaking-practice.md) | 数学/英语学科首页与供应商中立的有界儿童英语口语插件 | 不接入 Gemini；真实 Provider 合规批准前入口锁定，音频/转写不持久化，数学任务模型不变 |
 | [ADR-0026](docs/adr/0026-learning-history-query-and-retention.md) | 家长学习记录独立查询与详细历史 180 天保留 | 默认近 30 个上海自然日、可选单日；开放错题受保护，Attempt/AuditEvent 等其他事实不在本次清理范围 |
+| [ADR-0027](docs/adr/0027-multisubject-core-and-chinese-content.md) | 通用学习生命周期 subject-aware，语文采用版本化内容与确定性评分层 | 旧数据回填数学；语文 AnswerSpec 不下发孩子；教材按学科隔离；英语保持 ADR-0025 独立禁用门禁并排在后续 |
 
 2026-08-10：未部署的 ADR-0027 成人英语增量已由项目 Owner 撤回，相关文件、代码、配置和测试删除；现行英语边界继续以 ADR-0025 为准。
 

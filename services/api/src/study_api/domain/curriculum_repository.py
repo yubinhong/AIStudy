@@ -11,6 +11,7 @@ from sqlalchemy.engine import Engine
 
 from study_api.curriculum_limits import MAX_DOCUMENT_BYTES
 from study_api.database import database_url
+from study_api.domain.models import Subject
 from study_api.domain.repository import IdempotencyConflictError
 
 
@@ -23,6 +24,7 @@ class CurriculumSection(BaseModel):
 
 
 class ImportCurriculumRequest(BaseModel):
+    subject: Subject = Subject.MATH
     filename: str = Field(min_length=1, max_length=160)
     media_type: str = Field(pattern=r"^(application/pdf|application/json)$")
     byte_size: int = Field(ge=0, le=MAX_DOCUMENT_BYTES)
@@ -41,6 +43,7 @@ class CurriculumMaterial(BaseModel):
     id: UUID
     household_id: UUID
     child_id: UUID
+    subject: Subject
     filename: str
     media_type: str
     byte_size: int
@@ -59,6 +62,7 @@ class CurriculumSnapshot(BaseModel):
     household_id: UUID
     child_id: UUID
     material_id: UUID
+    subject: Subject
     grade: int
     textbook_version: str
     term: str
@@ -202,6 +206,7 @@ class InMemoryCurriculumRepository:
             id=uuid4(),
             household_id=household_id,
             child_id=child_id,
+            subject=request.subject,
             filename=request.filename,
             media_type=request.media_type,
             byte_size=request.byte_size,
@@ -217,6 +222,7 @@ class InMemoryCurriculumRepository:
                 1
                 for snapshot in self._snapshots.values()
                 if snapshot.child_id == child_id
+                and snapshot.subject is request.subject
                 and snapshot.textbook_version == request.textbook_version
             )
             + 1
@@ -226,6 +232,7 @@ class InMemoryCurriculumRepository:
             household_id=household_id,
             child_id=child_id,
             material_id=material.id,
+            subject=request.subject,
             grade=request.grade,
             textbook_version=request.textbook_version,
             term=request.term,
@@ -247,6 +254,8 @@ class InMemoryCurriculumRepository:
             material = self._materials[snapshot.material_id]
             if (
                 material.is_public_reusable
+                and material.subject is request.subject
+                and snapshot.subject is request.subject
                 and material.content_sha256 == request.content_sha256
                 and material.media_type == request.media_type
                 and material.byte_size == request.byte_size
@@ -459,6 +468,7 @@ class PostgresCurriculumRepository:
                     .where(
                         self._snapshots.c.household_id == household_id,
                         self._snapshots.c.child_id == child_id,
+                        self._snapshots.c.subject == request.subject.value,
                         self._snapshots.c.textbook_version == request.textbook_version,
                     )
                     .order_by(self._snapshots.c.version.desc())
@@ -471,6 +481,7 @@ class PostgresCurriculumRepository:
                     id=material_id,
                     household_id=household_id,
                     child_id=child_id,
+                    subject=request.subject.value,
                     filename=request.filename,
                     media_type=request.media_type,
                     byte_size=request.byte_size,
@@ -488,6 +499,7 @@ class PostgresCurriculumRepository:
                     household_id=household_id,
                     child_id=child_id,
                     material_id=material_id,
+                    subject=request.subject.value,
                     grade=request.grade,
                     textbook_version=request.textbook_version,
                     term=request.term,
@@ -532,6 +544,8 @@ class PostgresCurriculumRepository:
                 self._materials.c.content_sha256 == request.content_sha256,
                 self._materials.c.media_type == request.media_type,
                 self._materials.c.byte_size == request.byte_size,
+                self._materials.c.subject == request.subject.value,
+                self._snapshots.c.subject == request.subject.value,
                 self._materials.c.object_key.is_not(None),
                 maps.c.status == KnowledgeMapStatus.APPROVED.value,
             )

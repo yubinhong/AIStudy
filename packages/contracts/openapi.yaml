@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: 家庭 AI 学习助手 API
-  version: 0.13.0
-  description: Self-hosted Household account/session, learning, and gated English speaking contracts.
+  version: 0.14.0
+  description: Self-hosted Household account/session, multi-subject learning, Chinese practice, and gated English speaking contracts.
 servers:
   - url: http://localhost:8000
 paths:
@@ -1678,6 +1678,7 @@ paths:
                 authorization_statement: {type: string, minLength: 1, maxLength: 500}
                 is_public_reusable: {type: boolean, default: false}
                 grade: {type: integer, minimum: 1, maximum: 6}
+                subject: {type: string, enum: [math, chinese], default: math}
                 textbook_version: {type: string, minLength: 1, maxLength: 120, description: Optional parent override. Omit to infer a title locally from the PDF cover/front matter after upload.}
                 term: {type: string, minLength: 1, maxLength: 40, description: Optional parent override. Omit to infer the volume from the PDF cover/front matter after upload.}
       responses:
@@ -2089,6 +2090,76 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/InvalidRequest'}
+  /households/{household_id}/children/{child_id}/chinese/content:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: listChineseContent
+      summary: List approved grade-bounded Chinese practice content
+      description: Returns only content and source metadata. Answer specifications remain server-side.
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - name: skill
+          in: query
+          required: false
+          schema: {$ref: '#/components/schemas/ChineseSkill'}
+      responses:
+        '200':
+          description: Approved Chinese content for the child's grade.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/ChineseContentItem'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: Chinese is not enabled for this child.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+  /households/{household_id}/children/{child_id}/chinese/attempts:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      operationId: submitChineseAttempt
+      summary: Append and deterministically score a Chinese practice attempt
+      description: Bound child only. The scorer does not call an AI provider and records its scoring version.
+      security:
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChineseAttemptRequest'}
+      responses:
+        '201':
+          description: Attempt appended and review state updated.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChineseAttempt'}
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChineseAttempt'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/IdempotencyConflict'}
         '422': {$ref: '#/components/responses/InvalidRequest'}
   /households/{household_id}/children/{child_id}/english-practice/settings:
     parameters:
@@ -2514,7 +2585,7 @@ components:
           minItems: 1
           items:
             type: string
-            enum: [math]
+            enum: [math, chinese]
         username:
           type: string
           minLength: 3
@@ -2571,7 +2642,7 @@ components:
           const: study-api
         version:
           type: string
-          const: 0.13.0
+          const: 0.14.0
     CreateChildRequest:
       type: object
       additionalProperties: false
@@ -2594,7 +2665,7 @@ components:
           minItems: 1
           items:
             type: string
-            enum: [math]
+            enum: [math, chinese]
     UpdateChildRequest:
       allOf:
         - $ref: '#/components/schemas/CreateChildRequest'
@@ -2622,7 +2693,7 @@ components:
           type: array
           items:
             type: string
-            enum: [math]
+            enum: [math, chinese]
         created_at:
           type: string
           format: date-time
@@ -2701,7 +2772,7 @@ components:
           maxLength: 120
         subject:
           type: string
-          enum: [math]
+          enum: [math, chinese]
         scheduled_for:
           type: string
           format: date
@@ -2735,7 +2806,7 @@ components:
           type: string
         subject:
           type: string
-          enum: [math]
+          enum: [math, chinese]
         scheduled_for:
           type: string
           format: date
@@ -3305,6 +3376,128 @@ components:
         answer_exposure:
           type: string
           enum: [none, partial, full]
+    ChineseSkill:
+      type: string
+      enum: [pinyin, character, vocabulary, sentence, reading, recitation, expression]
+    ChineseContentSource:
+      type: object
+      additionalProperties: false
+      required: [type, source_id, license_status, attribution]
+      properties:
+        type: {type: string, enum: [original, private_curriculum]}
+        source_id: {type: string, minLength: 1, maxLength: 120}
+        license_status: {type: string, enum: [cleared, private_authorized]}
+        attribution: {type: string, maxLength: 240, nullable: true}
+    ChineseContentItem:
+      type: object
+      additionalProperties: false
+      description: Child-facing content. The answer specification is intentionally omitted.
+      required: [id, revision, grade_min, grade_max, skill, task_group, title, passage, prompt, options, knowledge_key, difficulty, source]
+      properties:
+        id: {type: string, format: uuid}
+        revision: {type: integer, minimum: 1}
+        grade_min: {type: integer, minimum: 1, maximum: 6}
+        grade_max: {type: integer, minimum: 1, maximum: 6}
+        skill: {$ref: '#/components/schemas/ChineseSkill'}
+        task_group: {type: string, minLength: 1, maxLength: 80}
+        title: {type: string, minLength: 1, maxLength: 120}
+        passage: {type: string, maxLength: 4000, nullable: true}
+        prompt: {type: string, minLength: 1, maxLength: 1000}
+        options:
+          type: array
+          maxItems: 12
+          items: {type: string}
+        knowledge_key: {type: string, minLength: 1, maxLength: 120}
+        difficulty: {type: string, enum: [basic, standard, advanced]}
+        source: {$ref: '#/components/schemas/ChineseContentSource'}
+    ChineseAttemptRequest:
+      type: object
+      additionalProperties: false
+      required: [content_id, content_revision, response, elapsed_ms]
+      properties:
+        content_id: {type: string, format: uuid}
+        content_revision: {type: integer, minimum: 1}
+        response:
+          type: object
+          additionalProperties: false
+          description: Shape is selected by the server-side answer specification.
+          minProperties: 1
+          properties:
+            choice: {type: string, maxLength: 1000}
+            tokens:
+              type: array
+              maxItems: 20
+              items: {type: string, maxLength: 120}
+            text: {type: string, maxLength: 1000}
+            answer: {type: string, maxLength: 1000}
+            evidence: {type: string, maxLength: 1000}
+        elapsed_ms: {type: integer, minimum: 0, maximum: 1800000}
+    ChineseScoreResult:
+      type: object
+      additionalProperties: false
+      required: [score, max_score, correct, feedback_tags, scoring_version]
+      properties:
+        score: {type: number, minimum: 0}
+        max_score: {type: number, exclusiveMinimum: 0}
+        correct: {type: boolean}
+        feedback_tags:
+          type: array
+          items: {type: string, minLength: 1, maxLength: 80}
+        scoring_version: {type: string, const: chinese-score.v1}
+    ChineseAttempt:
+      type: object
+      additionalProperties: false
+      required: [id, household_id, child_id, content_id, content_revision, result, elapsed_ms, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        household_id: {type: string, format: uuid}
+        child_id: {type: string, format: uuid}
+        content_id: {type: string, format: uuid}
+        content_revision: {type: integer, minimum: 1}
+        result: {$ref: '#/components/schemas/ChineseScoreResult'}
+        elapsed_ms: {type: integer, minimum: 0, maximum: 1800000}
+        created_at: {type: string, format: date-time}
+    ChineseAttemptExport:
+      type: object
+      additionalProperties: false
+      required: [id, household_id, child_id, content_id, content_revision, result, response, elapsed_ms, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        household_id: {type: string, format: uuid}
+        child_id: {type: string, format: uuid}
+        content_id: {type: string, format: uuid}
+        content_revision: {type: integer, minimum: 1}
+        result: {$ref: '#/components/schemas/ChineseScoreResult'}
+        response:
+          type: object
+          additionalProperties: false
+          properties:
+            choice: {type: string, maxLength: 1000}
+            tokens:
+              type: array
+              maxItems: 20
+              items: {type: string, maxLength: 120}
+            text: {type: string, maxLength: 1000}
+            answer: {type: string, maxLength: 1000}
+            evidence: {type: string, maxLength: 1000}
+        elapsed_ms: {type: integer, minimum: 0, maximum: 1800000}
+        created_at: {type: string, format: date-time}
+    ChineseReviewItem:
+      type: object
+      additionalProperties: false
+      required: [id, household_id, child_id, content_id, content_revision, skill, knowledge_key, due_at, strength, last_feedback_tag, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        household_id: {type: string, format: uuid}
+        child_id: {type: string, format: uuid}
+        content_id: {type: string, format: uuid}
+        content_revision: {type: integer, minimum: 1}
+        skill: {$ref: '#/components/schemas/ChineseSkill'}
+        knowledge_key: {type: string, minLength: 1, maxLength: 120}
+        due_at: {type: string, format: date-time}
+        strength: {type: integer, minimum: 0, maximum: 5}
+        last_feedback_tag: {type: string, minLength: 1, maxLength: 80}
+        updated_at: {type: string, format: date-time}
     CurriculumSection:
       type: object
       additionalProperties: false
@@ -3322,6 +3515,7 @@ components:
       additionalProperties: false
       required: [filename, media_type, byte_size, content_sha256, authorization_statement, grade, textbook_version, term, sections]
       properties:
+        subject: {type: string, enum: [math, chinese], default: math}
         filename: {type: string, minLength: 1, maxLength: 160}
         media_type:
           type: string
@@ -3341,11 +3535,12 @@ components:
     CurriculumMaterial:
       type: object
       additionalProperties: false
-      required: [id, household_id, child_id, filename, media_type, byte_size, content_sha256, authorization_statement, status, created_at]
+      required: [id, household_id, child_id, subject, filename, media_type, byte_size, content_sha256, authorization_statement, status, created_at]
       properties:
         id: {type: string, format: uuid}
         household_id: {type: string, format: uuid}
         child_id: {type: string, format: uuid}
+        subject: {type: string, enum: [math, chinese]}
         filename: {type: string}
         media_type: {type: string}
         byte_size: {type: integer, minimum: 0}
@@ -3357,12 +3552,13 @@ components:
     CurriculumSnapshot:
       type: object
       additionalProperties: false
-      required: [id, household_id, child_id, material_id, grade, textbook_version, term, sections, status, version, created_at, published_at]
+      required: [id, household_id, child_id, material_id, subject, grade, textbook_version, term, sections, status, version, created_at, published_at]
       properties:
         id: {type: string, format: uuid}
         household_id: {type: string, format: uuid}
         child_id: {type: string, format: uuid}
         material_id: {type: string, format: uuid}
+        subject: {type: string, enum: [math, chinese]}
         grade: {type: integer, minimum: 1, maximum: 6}
         textbook_version: {type: string}
         term: {type: string}
@@ -3768,6 +3964,14 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/EnglishPracticeSession'
+        chinese_attempts:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChineseAttemptExport'
+        chinese_review_items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChineseReviewItem'
     OcrJobReceipt:
       type: object
       additionalProperties: false

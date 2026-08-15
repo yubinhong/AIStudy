@@ -4,7 +4,7 @@ This directory is the single source for the public OpenAPI contract and AI JSON
 Schemas. Generated client SDKs belong in build output directories and are not
 hand-maintained in application code.
 
-The current `0.13.0` contract includes the P0 health endpoint, the synthetic
+The current local `0.14.0` contract includes the P0 health endpoint, the synthetic
 household/child/device vertical slice, Capture upload/correction/save/delete,
 local/CI OCR enqueue/result-read/confirmation paths, and a local/CI-only parent child-profile deletion path that requires
 Capture object cascade success before removing the profile. Every Household
@@ -46,8 +46,16 @@ unverified extraction only after the confirmed derivative hash gate; the
 offline Tutor Policy remains a local zero-cost fallback and never returns a
 direct answer.
 
-ADR-0025 adds a separately gated English speaking plugin without changing the
-math-only `ChildProfile.subjects`, `StudyTask`, or `StudySession` contracts.
+ADR-0027 makes `ChildProfile.subjects` and curriculum material/snapshot records
+explicitly support `math` and `chinese`, with old curriculum rows migrated to
+`math`. Chinese content and attempt endpoints expose versioned prompts and
+scores but never expose the server-side `AnswerSpec`; additive child exports
+include Chinese attempts and review state. Chinese curriculum analysis remains
+blocked until its subject-specific schema and prompt exist.
+
+ADR-0025 adds a separately gated English speaking plugin. English remains after
+Chinese in the product sequence and keeps its independent consent and provider
+gate rather than entering the deterministic Chinese scoring model.
 English live control events are provider-neutral JSON Schema documents; binary
 frames are mono PCM16 little-endian at 16 kHz input and 24 kHz output. The
 public contract contains no cloud key, provider URL, raw audio, transcript, or

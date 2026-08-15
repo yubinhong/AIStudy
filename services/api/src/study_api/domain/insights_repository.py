@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import MetaData, Table, create_engine, delete, exists, func, insert, select
 from sqlalchemy.engine import Engine, RowMapping
 
+from study_api.chinese_practice import ChineseAttemptExport, ChineseReviewItem
 from study_api.database import database_url
 from study_api.domain.mistake_repository import MistakeRecord, ReviewSchedule
 from study_api.domain.models import Attempt, AuditEvent, ChildProfile, StudySession, StudyTask
@@ -61,6 +62,8 @@ class ChildDataExport(BaseModel):
     review_schedules: tuple[ReviewSchedule, ...] = ()
     english_practice_settings: EnglishPracticeSettings | None = None
     english_practice_sessions: tuple[EnglishPracticeSession, ...] = ()
+    chinese_attempts: tuple[ChineseAttemptExport, ...] = ()
+    chinese_review_items: tuple[ChineseReviewItem, ...] = ()
 
 
 class LearningDetail(BaseModel):
@@ -168,6 +171,8 @@ class PostgresInsightsRepository:
         self._english_sessions = Table(
             "english_practice_sessions", metadata, autoload_with=self._engine
         )
+        self._chinese_attempts = Table("chinese_attempts", metadata, autoload_with=self._engine)
+        self._chinese_reviews = Table("chinese_review_items", metadata, autoload_with=self._engine)
         self._idempotency = Table("idempotency_records", metadata, autoload_with=self._engine)
         self._audits = Table("audit_events", metadata, autoload_with=self._engine)
 
@@ -644,6 +649,30 @@ class PostgresInsightsRepository:
                 .mappings()
                 .all()
             )
+            chinese_attempt_rows = (
+                connection.execute(
+                    select(self._chinese_attempts)
+                    .where(
+                        self._chinese_attempts.c.household_id == household_id,
+                        self._chinese_attempts.c.child_id == child_id,
+                    )
+                    .order_by(self._chinese_attempts.c.created_at, self._chinese_attempts.c.id)
+                )
+                .mappings()
+                .all()
+            )
+            chinese_review_rows = (
+                connection.execute(
+                    select(self._chinese_reviews)
+                    .where(
+                        self._chinese_reviews.c.household_id == household_id,
+                        self._chinese_reviews.c.child_id == child_id,
+                    )
+                    .order_by(self._chinese_reviews.c.due_at, self._chinese_reviews.c.id)
+                )
+                .mappings()
+                .all()
+            )
             child_payload = dict(child_row)
             child_payload["subjects"] = list(child_payload["subjects"])
             child_payload.pop("updated_at", None)
@@ -673,6 +702,19 @@ class PostgresInsightsRepository:
                         {**dict(row), "feedback_tags": tuple(row["feedback_tags"] or ())}
                     )
                     for row in english_session_rows
+                ),
+                chinese_attempts=tuple(
+                    ChineseAttemptExport.model_validate(
+                        {
+                            **dict(row),
+                            "response": row["response_json"],
+                            "result": row["result_json"],
+                        }
+                    )
+                    for row in chinese_attempt_rows
+                ),
+                chinese_review_items=tuple(
+                    ChineseReviewItem.model_validate(dict(row)) for row in chinese_review_rows
                 ),
             )
             export_id = uuid4()

@@ -25,7 +25,9 @@ Web 孩子管理修订（2026-07-18）：PLAN-0013 的孩子管理聚合已实�
 
 产品主线修订（2026-07-24）：ADR-0023/PLAN-0018 已在本地及 Ubuntu `0025` 将 PDF 文本抽取降为辅助信息，新增私有原页、多模态页级分析、全书知识图谱、家长批准和知识点任务。真实 PDF/Provider/设备和发布质量门槛未完成。
 
-英语插件修订（2026-07-29）：ADR-0025 在 Flutter 登录后增加学科选择，并在 FastAPI 模块化单体内新增独立 EnglishPractice 设置/摘要仓储、Policy、Provider Adapter 和 WebSocket 中继。它不修改数学 `Subject`、`StudyTask`、`StudySession`，不拆服务。App 只发送 Bearer Session 与 PCM16 分片；Provider Key/URL 留在服务端边界。当前只有 `disabled` 和显式测试 `fake`，不包含 Gemini Adapter，默认部署锁定。
+英语插件修订（2026-07-29）：ADR-0025 在 Flutter 登录后增加学科选择，并在 FastAPI 模块化单体内新增独立 EnglishPractice 设置/摘要仓储、Policy、Provider Adapter 和 WebSocket 中继。App 只发送 Bearer Session 与 PCM16 分片；Provider Key/URL 留在服务端边界。当前只有 `disabled` 和显式测试 `fake`，不包含 Gemini Adapter，默认部署锁定。
+
+多学科/语文修订（2026-08-15）：ADR-0027 将孩子档案、教材 Material/Snapshot 和学科导航扩展为显式 `math/chinese`；迁移把既有教材回填为数学，跨学科不得按相同哈希复用。语文采用独立版本化 ContentItem/AnswerSpec、追加写 Attempt 和 ReviewItem，评分是服务端 `chinese-score.v1` 纯函数，孩子合同不返回答案规范，也不调用 AI。数学 VerifiedQuestion/MistakeRecord/ReviewSchedule 主线保持不变；英语继续使用 ADR-0025 的独立设置、同意和 Provider 门禁，并在产品顺序上排最后。
 
 实时英语数据流：`Flutter 前台按住说话 → API Session/孩子/同意/配额门禁 → 20/40 ms PCM16 中继 → 单一获批 Provider Adapter → 24 kHz PCM 播放`。PostgreSQL 只保存设置与摘要指标；音频、完整转写、Provider 消息和恢复缓存均不持久化。应用后台、权限撤销、账号切换、Session 撤销、空闲或断线立即停止录音并关闭通道。
 
@@ -63,7 +65,7 @@ flowchart LR
 
 | 组件 | 目标路径/服务 | 责任 | 数据所有权 | 上游/下游 | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| 孩子端 | `apps/child_flutter` | 学科/数学三入口、错题讲解、到期/提前复习、今日任务、拍题、SQLite/待同步 | 端侧缓存和待同步操作；服务端数据不是本地主真相 | `image_picker`、Capture/Learning API | 三入口、四态确认、完整解答、无到期项时全部错题回退、当天全部来源任务和具体题目/页码已实现；设备回归待完成 |
+| 孩子端 | `apps/child_flutter` | 学科/数学三入口、语文确定性练习、锁定英语入口、拍题、SQLite/待同步 | 端侧缓存和待同步操作；答案规范与服务端数据不是本地主真相 | `image_picker`、Capture/Learning/Chinese API | 数学闭环与语文首个句子/阅读纵向切片已实现；真实设备、语文完整复习和内容验收待完成 |
 | Web/PWA | `apps/web` | 家长登录、统一孩子管理、多孩子选择、PDF 教材上传、审核/发布、任务建议、周报和导出 | 仅选择/草稿编辑状态；业务事实来自 API | OpenAPI SDK、API | 推荐审批显示计划日期、预计时长、知识点、具体题目和教材页码；真实 PDF/NewAPI 与浏览器 E2E 待完成 |
 | API/BFF | `services/api` | 鉴权、家庭边界、业务编排、契约实现 | PostgreSQL 中 Profile/Learning/Identity 业务事实 | 客户端、数据层、Worker、AI | Compose 默认使用 PostgreSQL 事务仓储和 password 会话认证 |
 | Identity/Profile | `services/api` 内模块 | Household、Account、AuthSession、ChildProfile、Device、孩子管理聚合和权限 | 身份、家庭归属、密码哈希、可撤销会话 | API、所有领域模块 | `0011`/`0012`/`0016`、Argon2id、首次改密、失败锁定、会话撤销、Profile/Device 事务仓储、原子聚合创建和一对一唯一约束已实现；浏览器/双孩子 E2E 待完成 |
@@ -187,7 +189,7 @@ PLAN-0013 的目标聚合不改变上述认证边界：家长通过一个带幂�
 | 同步事件批次 | Flutter | API | `packages/contracts/schemas` | 每事件有 ID/版本/幂等键；追加新事件类型 | `TBD` |
 | AuditEvent | 所有服务端模块 | 审计/可观测性 | `packages/contracts/schemas` | 稳定事件名；字段按敏感级别控制 | `TBD` |
 
-契约目录和结构检查已建立；SDK 生成器和自动兼容检查命令仍未固定。本地 `0.13.0` 在既有教材/英语合同上增加家长学习详情的有界时间查询；Ubuntu 仍为 `0.11.0`/`0028`。图片上传继续保持单一 Session 流式操作。
+契约目录和结构检查已建立；SDK 生成器和自动兼容检查命令仍未固定。本地 `0.14.0` 在既有数学/英语合同上增加 subject-aware 教材、语文内容/Attempt 和导出字段；Ubuntu 仍为 `0.13.0`/`0030`。图片上传继续保持单一 Session 流式操作。
 
 ## 6. 数据架构
 

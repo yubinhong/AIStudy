@@ -114,6 +114,44 @@ def test_parent_uploads_multiple_curriculum_documents_into_private_drafts() -> N
     assert len(storage.objects) == 2
 
 
+def test_chinese_curriculum_is_subject_scoped_and_math_analysis_is_blocked() -> None:
+    storage = MemoryDocumentStorage()
+    client = TestClient(create_app(object_storage=storage))
+    parent = session_headers(client)
+    enabled = client.patch(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}",
+        headers={**parent, "Idempotency-Key": "enable-chinese-curriculum"},
+        json={
+            "display_name": "Synthetic Child A",
+            "grade": 3,
+            "curriculum_version": "multi-subject-2026",
+            "subjects": ["math", "chinese"],
+        },
+    )
+    uploaded = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/imports/files",
+        headers={**parent, "Idempotency-Key": "chinese-curriculum-file"},
+        data={
+            "authorization_statement": "家庭已取得本地自用材料授权",
+            "grade": "3",
+            "subject": "chinese",
+        },
+        files=[("files", ("语文.pdf", b"%PDF-chinese", "application/pdf"))],
+    )
+    snapshot = uploaded.json()[0]["snapshot"]
+    analysis = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/snapshots/{snapshot['id']}/analysis",
+        headers={**parent, "Idempotency-Key": "chinese-analysis-blocked"},
+    )
+
+    assert enabled.status_code == 200
+    assert uploaded.status_code == 201
+    assert uploaded.json()[0]["material"]["subject"] == "chinese"
+    assert snapshot["subject"] == "chinese"
+    assert analysis.status_code == 409
+    assert "subject-aware" in analysis.json()["message"]
+
+
 def test_file_upload_uses_a_pdf_specific_provisional_title_when_metadata_is_omitted() -> None:
     storage = MemoryDocumentStorage()
     client = TestClient(create_app(object_storage=storage))

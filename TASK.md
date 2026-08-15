@@ -1,4 +1,33 @@
-# TASK.md — TASK-0011 英语学科与合规口语练习框架
+# TASK.md — TASK-0012 多学科基础与语文首个纵向切片
+
+## 当前任务元数据
+
+- 状态：`IN_PROGRESS（多学科/语文纵向切片和 v0.14.0 Ubuntu 发布完成；正式内容、并发/导出集成、教材分析和设备验收待完成）`
+- 类型：`FEATURE / API CONTRACT / DATABASE / CHILD UI`
+- 优先级：`P0`
+- Owner：Codex（执行）；项目 Owner（2026-08-15 明确要求先多学科、再语文、英语最后）
+- 关联：`PLAN-0030`、`ADR-0027`、`docs/deep-research-report.md`
+
+## 当前目标与验收
+
+- [x] `Subject`、孩子档案、任务和 OpenAPI 支持 `math/chinese`；旧客户端继续默认 `math`。
+- [x] `0031_multisubject_chinese` 为教材 Material/Snapshot 增加 subject 并回填旧数据为 `math`，新增语文内容、Attempt、Review 表；单 head 和从零离线 SQL 通过。
+- [x] 语文内容保存 grade/skill/task group/revision/source/license；孩子响应不包含服务端 `AnswerSpec`。
+- [x] `exact_choice`、`ordered_tokens`、`normalized_text_set`、`concept_evidence` 使用 `chinese-score.v1` 确定性评分，不调用 Provider；提交幂等且追加 Attempt/更新 Review。
+- [x] Household/Owner/绑定孩子/已启用学科反向授权；只有绑定孩子可提交，家长只读内容并控制学科开关。
+- [x] Flutter 按档案学科显示语文入口并支持句子排序、阅读回答/依据提交；英语仍排最后且保持原禁用门禁。
+- [x] 家长 Web 可逐孩子启用语文、按学科上传教材；语文 subject-aware 教材分析未实现前明确阻断旧数学 Prompt。
+- [x] Ubuntu PostgreSQL `0030 → 0031` 前滚和旧教材/快照 `math` 回填；发布前备份隔离恢复、迁移 current/head、表/主键/种子和运行源码通过。
+- [ ] 语文并发提交与导出 PostgreSQL 集成测试（本机 5432 未运行，Ubuntu 不写入测试学习事实）。
+- [ ] 正式教研/版权审核内容、拼音/字词/古诗文完整 MVP、到期复习 UI、语文教材分析 v2、家长技能报告和设备 E2E。
+
+本轮验证：API Ruff/Mypy（60 source files）与定向测试通过，全量非集成 `229 passed, 28 deselected`；Flutter Analyze 和 52 项测试通过；Web 32 项、TypeScript、ESLint、Prettier、production build 通过。OpenAPI `0.14.0` 62 paths/本地引用闭合，Alembic 单 head 和从零离线 SQL 通过。Ubuntu 发布前备份 `/home/syin/study-backups/20260815T144358Z` 隔离恢复为 35 个 public 表/353 个 MinIO 文件；API/Web、`0031` current/head、三张语文表、复合主键、3 条 synthetic seed、旧教材/快照 `math` 回填、四个 worker、英语关闭态、私有 MinIO 端口和容器源码均通过。未构建本轮 Flutter release，未运行真实 Provider/PDF、登录态浏览器或设备。
+
+回滚：隐藏语文入口并继续只发送 `math`；保留 `0031` 新列/表和已追加学习事实，以前向修复恢复。禁止删除语文 Attempt/Review 或降级数据库作为回滚。
+
+---
+
+## 保留任务：TASK-0011 英语学科与合规口语练习框架
 
 ## 当前任务元数据
 

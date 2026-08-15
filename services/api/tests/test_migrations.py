@@ -46,6 +46,9 @@ def test_learning_schema_is_at_head_in_local_postgresql() -> None:
         "curriculum_knowledge_maps",
         "curriculum_knowledge_points",
         "child_data_exports",
+        "chinese_content_items",
+        "chinese_attempts",
+        "chinese_review_items",
     } <= set(tables)
     assert {
         "object_key",
@@ -159,6 +162,16 @@ def test_learning_schema_is_at_head_in_local_postgresql() -> None:
         "created_at",
         "updated_at",
     } <= profile_columns
+    material_columns = {
+        column["name"] for column in inspect(engine).get_columns("learning_materials")
+    }
+    snapshot_columns = {
+        column["name"] for column in inspect(engine).get_columns("curriculum_snapshots")
+    }
+    assert "subject" in material_columns
+    assert "subject" in snapshot_columns
+    content_primary_key = inspect(engine).get_pk_constraint("chinese_content_items")
+    assert set(content_primary_key["constrained_columns"]) == {"id", "revision"}
     account_foreign_keys = {
         foreign_key["name"] for foreign_key in inspect(engine).get_foreign_keys("accounts")
     }

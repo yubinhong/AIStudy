@@ -18,6 +18,7 @@ class AccountRole(StrEnum):
 
 class Subject(StrEnum):
     MATH = "math"
+    CHINESE = "chinese"
 
 
 class DeviceKind(StrEnum):

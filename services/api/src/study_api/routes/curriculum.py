@@ -38,7 +38,7 @@ from study_api.domain.curriculum_repository import (
     CurriculumSnapshot,
     ImportCurriculumRequest,
 )
-from study_api.domain.models import AccountRole
+from study_api.domain.models import AccountRole, Subject
 from study_api.domain.repository import IdempotencyConflictError
 from study_api.material_parser import provisional_textbook_title
 from study_api.object_storage import CaptureObjectStorage, ObjectStorageError
@@ -87,6 +87,14 @@ def _require_child(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
 
 
+def _require_subject_enabled(
+    request: Request, household_id: UUID, child_id: UUID, subject: Subject
+) -> None:
+    child = request.app.state.profile_repository.get_child(household_id, child_id)
+    if child is None or subject not in child.subjects:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="subject is not enabled")
+
+
 @router.post(
     "/children/{child_id}/curriculum/imports",
     response_model=CurriculumImportResult,
@@ -103,6 +111,7 @@ def import_curriculum(
 ) -> JSONResponse:
     require_parent(require_household(principal, household_id))
     _require_child(principal, app_request, household_id, child_id)
+    _require_subject_enabled(app_request, household_id, child_id, request.subject)
     try:
         result, replayed = repository.import_draft(household_id, child_id, request, idempotency_key)
     except IdempotencyConflictError as error:
@@ -178,11 +187,13 @@ async def import_curriculum_files(
     is_public_reusable: Annotated[bool, Form()] = False,
     textbook_version: Annotated[str | None, Form(min_length=1, max_length=120)] = None,
     term: Annotated[str | None, Form(min_length=1, max_length=40)] = None,
+    subject: Annotated[Subject, Form()] = Subject.MATH,
 ) -> list[CurriculumImportResult]:
     """Upload files or reuse a parent-declared public textbook by exact hash."""
 
     require_parent(require_household(principal, household_id))
     _require_child(principal, app_request, household_id, child_id)
+    _require_subject_enabled(app_request, household_id, child_id, subject)
     if not files:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -218,6 +229,7 @@ async def import_curriculum_files(
         safe_name = filename[:160] or f"document{suffix}"
         section_title = Path(safe_name).stem[:160] or "待解析文档"
         import_request = ImportCurriculumRequest(
+            subject=subject,
             filename=safe_name,
             media_type=media_type,
             byte_size=byte_size,
@@ -422,6 +434,11 @@ def enqueue_curriculum_analysis(
     material = repository.get_material_for_snapshot(household_id, child_id, snapshot_id)
     if material is None or material.object_key is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
+    if material.subject is not Subject.MATH:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="subject-aware curriculum analysis is not available for this subject",
+        )
     del idempotency_key
     try:
         return knowledge_repository.enqueue(household_id, child_id, material.id, snapshot_id)

@@ -20,9 +20,15 @@ import { resolveSelectedChildId } from "@/lib/child-selection";
 import { csrfHeaders } from "../../lib/csrf";
 import { idempotencyKey } from "../../lib/idempotency-key";
 
-type Child = { id: string; display_name: string; grade: number };
+type Child = {
+  id: string;
+  display_name: string;
+  grade: number;
+  subjects: Array<"math" | "chinese">;
+};
 type Snapshot = {
   id: string;
+  subject: "math" | "chinese";
   status: "draft" | "published" | "rejected";
   textbook_version: string;
   term: string;
@@ -120,6 +126,7 @@ function CurriculumPageContent() {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [publicReusable, setPublicReusable] = useState(false);
+  const [subject, setSubject] = useState<"math" | "chinese">("math");
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [previewSnapshot, setPreviewSnapshot] = useState<Snapshot | null>(null);
@@ -209,8 +216,13 @@ function CurriculumPageContent() {
     event.preventDefault();
     if (!childId || selectedFiles.length === 0 || uploading) return;
     const child = children.find((item) => item.id === childId);
+    const uploadSubject =
+      subject === "chinese" && child?.subjects.includes("chinese")
+        ? "chinese"
+        : "math";
     const form = new FormData();
     form.append("grade", String(child?.grade ?? 3));
+    form.append("subject", uploadSubject);
     form.append(
       "authorization_statement",
       "家庭自用教材，已确认来源和使用授权，并确认文件不含儿童姓名、个人批注或其他个人信息",
@@ -233,7 +245,9 @@ function CurriculumPageContent() {
       } | null;
       setMessage(
         response.ok
-          ? `已上传 ${selectedFiles.length} 个文件。服务端将保留原页图像并归纳整本教材知识点；家长审核前不会用于讲解。`
+          ? uploadSubject === "math"
+            ? `已上传 ${selectedFiles.length} 个文件。服务端将保留原页图像并归纳整本教材知识点；家长审核前不会用于讲解。`
+            : `已上传 ${selectedFiles.length} 个语文文件。当前只建立私有草稿；语文教材分析 Schema 完成前不会进入 AI 理解或孩子练习。`
           : response.status === 413 || failure?.detail?.includes("too large")
             ? "上传失败：单个 PDF 上限为 50 MiB（52.4 MB），请重新选择不超过该大小的文件。"
             : "文件上传失败，请检查 PDF 格式、大小和登录状态",
@@ -361,6 +375,10 @@ function CurriculumPageContent() {
   }
 
   const currentChild = children.find((child) => child.id === childId);
+  const effectiveSubject =
+    subject === "chinese" && currentChild?.subjects.includes("chinese")
+      ? "chinese"
+      : "math";
   const previewPage =
     previewPages.find((page) => page.page_number === previewPageNumber) ??
     previewPages[0] ??
@@ -424,6 +442,21 @@ function CurriculumPageContent() {
             </span>
           </div>
           <form onSubmit={uploadDocuments} className="auth-form">
+            <label>
+              教材学科
+              <select
+                value={effectiveSubject}
+                onChange={(event) =>
+                  setSubject(event.target.value as "math" | "chinese")
+                }
+                disabled={uploading}
+              >
+                <option value="math">数学</option>
+                {currentChild?.subjects.includes("chinese") ? (
+                  <option value="chinese">语文</option>
+                ) : null}
+              </select>
+            </label>
             <div className="upload-dropzone">
               <FileArrowUp size={34} weight="duotone" />
               <strong>选择一个或多个教材文件</strong>
@@ -511,6 +544,7 @@ function CurriculumPageContent() {
                 <div className="task-details">
                   <strong>{snapshot.textbook_version}</strong>
                   <span>
+                    {snapshot.subject === "chinese" ? "语文" : "数学"} ·{" "}
                     {snapshot.term} ·{" "}
                     {knowledgeMaps[snapshot.id]
                       ? knowledgeMaps[snapshot.id]?.status === "approved"
@@ -541,7 +575,8 @@ function CurriculumPageContent() {
                       查看原页与知识点
                     </button>
                   ) : null}
-                  {knowledgeMaps[snapshot.id]?.status === "failed" ? (
+                  {snapshot.subject === "math" &&
+                  knowledgeMaps[snapshot.id]?.status === "failed" ? (
                     <button
                       className="secondary-button compact-button"
                       type="button"
@@ -551,7 +586,8 @@ function CurriculumPageContent() {
                       重新理解
                     </button>
                   ) : null}
-                  {knowledgeMaps[snapshot.id]?.status === "needs_review" ? (
+                  {snapshot.subject === "math" &&
+                  knowledgeMaps[snapshot.id]?.status === "needs_review" ? (
                     <button
                       className="secondary-button compact-button"
                       type="button"

@@ -1,5 +1,7 @@
 # Changelog
 
+- 2026-08-15：发布 `v0.14.0` 多学科与语文首个纵向切片。孩子档案、教材和契约支持 `math/chinese`；语文采用版本化原创/授权内容、服务端 AnswerSpec、`chinese-score.v1` 确定性评分及追加写 Attempt/Review，英语继续排最后并保持 Provider 关闭。Ubuntu 已从 `0.13.0/0030` 前滚至 `0.14.0/0031_multisubject_chinese`；发布前 PostgreSQL/MinIO 备份通过隔离恢复，API/Web、迁移、旧教材数学回填、三张语文表/复合主键/seed、四个 worker、未认证保护、MinIO 私有端口和容器源码通过。正式语文内容、语文教材分析、并发/导出集成、登录态浏览器、真实 Provider/PDF 和设备验收仍待完成。
+
 - 2026-07-31：家长工作台的“待复习错题”现在直接显示每道题的题干和到期日；最近学习记录迁移到独立导航页，默认近 30 个上海自然日，并可选择 180 天窗口内的单日。API/OpenAPI `0.13.0` 与迁移 `0030_learning_history_retention` 已部署 Ubuntu；DataLifecycle worker 固定清理超过 180 天且不被开放错题引用的详细题目、讲解和已结束复习链路。开放错题、Attempt、AuditEvent、账号和教材不在本次清理范围。升级前 PostgreSQL/MinIO 备份已隔离恢复验证，API/Web/四个常驻 worker、迁移服务、OpenAPI、数据库索引和运行源码通过复核；英语实时 Provider 保持关闭。
 
 - 2026-07-29：孩子端第 3 级“查看完整解答”不再因没有可靠命中已发布教材知识点而显示阻断错误。确认题目和作答状态仍是前置条件；命中教材时继续严格使用其批准范围，未命中时改用适龄基础方法完整讲解，并明确不附或伪造教材来源。Ubuntu API 已部署健康，修复版 iPad Release 已覆盖安装并启动；真实 Provider 的题目质量仍待设备侧复核。
@@ -23,6 +25,8 @@
 本文件只记录用户可感知、运维可感知或兼容性相关的已发布变化，格式参考 Keep a Changelog，版本计划遵循 Semantic Versioning。
 
 ## [Unreleased]
+
+- 2026-08-15：完成多学科与语文改造。本地 API/OpenAPI 升至 `0.14.0`，`Subject`、孩子档案、任务与教材支持 `math/chinese`；additive `0031_multisubject_chinese` 将旧教材回填为数学并新增版本化语文内容、确定性 Attempt/Review。家长可逐孩子启用语文并选择教材学科，孩子端按档案显示语文入口，首个原创 synthetic 纵向切片支持句子排序和“回答 + 文中依据”。答案规范只留在服务端，评分固定为 `chinese-score.v1` 且不调用 AI。语文教材分析新 Schema 完成前拒绝复用数学 Prompt；英语保持最后、默认锁定。Ubuntu 发布事实见本文件顶部 `v0.14.0` 条目；正式教研内容、并发/导出集成、设备和语文教材分析仍待完成。
 
 - 2026-08-10：修复 GitHub 发布链路：`v*` 标签构建通过后自动创建同名 Release，并上传三个 ABI APK、`SHA256SUMS` 与 `BUILD-INFO.txt`；手动构建继续保留 Actions Artifact。API CI 同步执行仓库正式的 `mypy src` 范围，Ruff 格式化全仓 Python，并修复超级管理员确认题目被误判为孩子角色、孩子删除成功后幂等重放返回 `404` 两个既有回归；删除回执按发起家长账号隔离。
 

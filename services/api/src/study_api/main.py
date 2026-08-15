@@ -20,6 +20,11 @@ from study_api.child_management import (
     InMemoryChildManagementRepository,
     PostgresChildManagementRepository,
 )
+from study_api.chinese_practice import (
+    ChinesePracticeRepository,
+    InMemoryChinesePracticeRepository,
+    PostgresChinesePracticeRepository,
+)
 from study_api.curriculum_analysis_jobs import (
     CurriculumKnowledgeRepository,
     InMemoryCurriculumKnowledgeRepository,
@@ -96,6 +101,7 @@ from study_api.object_storage import (
 from study_api.ocr_jobs import InMemoryOcrJobQueue, OcrJobQueue, PostgresOcrJobQueue
 from study_api.routes.authentication import router as authentication_router
 from study_api.routes.captures import router as capture_router
+from study_api.routes.chinese_practice import router as chinese_practice_router
 from study_api.routes.curriculum import router as curriculum_router
 from study_api.routes.english_practice import router as english_practice_router
 from study_api.routes.image_analysis import router as image_analysis_router
@@ -128,6 +134,7 @@ def create_app(
     english_practice_repository: EnglishPracticeRepository | None = None,
     english_live_config: EnglishLiveConfig | None = None,
     english_live_provider: EnglishLiveProvider | None = None,
+    chinese_practice_repository: ChinesePracticeRepository | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="家庭 AI 学习助手 API",
@@ -177,6 +184,9 @@ def create_app(
     app.state.english_live_provider = english_live_provider or build_english_provider(
         app.state.english_live_config
     )
+    app.state.chinese_practice_repository = (
+        chinese_practice_repository or _default_chinese_practice_repository()
+    )
     app.state.auth_service = AuthService(app.state.account_repository)
     app.state.child_management_repository = _default_child_management_repository(
         app.state.profile_repository,
@@ -194,6 +204,7 @@ def create_app(
     app.include_router(curriculum_router)
     app.include_router(recommendations_router)
     app.include_router(english_practice_router)
+    app.include_router(chinese_practice_router)
 
     @app.exception_handler(HTTPException)
     async def http_error_handler(_: Request, exception: HTTPException) -> JSONResponse:
@@ -357,6 +368,12 @@ def _default_english_practice_repository() -> EnglishPracticeRepository:
     if os.environ.get("STUDY_API_LEARNING_REPOSITORY") == "postgres":
         return PostgresEnglishPracticeRepository()
     return InMemoryEnglishPracticeRepository()
+
+
+def _default_chinese_practice_repository() -> ChinesePracticeRepository:
+    if os.environ.get("STUDY_API_LEARNING_REPOSITORY") == "postgres":
+        return PostgresChinesePracticeRepository()
+    return InMemoryChinesePracticeRepository()
 
 
 class _NoopMaterialParseRepository:

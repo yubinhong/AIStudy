@@ -8,6 +8,8 @@ import 'package:image_picker/image_picker.dart';
 import 'capture_api_client.dart';
 import 'auth_client.dart';
 import 'english_practice.dart';
+import 'features/chinese/chinese_home_page.dart';
+import 'features/chinese/data/chinese_api_client.dart';
 import 'privacy_sanitization_preview.dart';
 import 'startup_transition.dart';
 
@@ -837,9 +839,18 @@ class _ChildProfileScreenState extends State<ChildProfileScreen> {
           }
           final displayName = child['display_name']?.toString() ?? '小禾';
           final captureClient = _buildCaptureClient(child);
+          final subjects =
+              (child['subjects'] as List<dynamic>? ?? const <dynamic>[])
+                  .map((value) => value.toString())
+                  .toSet();
+          final chineseGateway = _buildChineseClient(child);
           return SubjectSelectionScreen(
             displayName: displayName,
+            enabledSubjects: subjects,
             englishGateway: _buildEnglishClient(child),
+            chineseBuilder: chineseGateway == null
+                ? null
+                : (_) => ChineseHomePage(gateway: chineseGateway),
             mathBuilder: (_) => LearningDeskScreen(
               displayName: displayName,
               username: widget.username,
@@ -888,6 +899,26 @@ class _ChildProfileScreenState extends State<ChildProfileScreen> {
     }
     return EnglishPracticeApiClient(
       baseUrl: widget.baseUrl,
+      householdId: householdId,
+      childId: childId,
+      authorizationToken: token,
+    );
+  }
+
+  ChinesePracticeGateway? _buildChineseClient(Map<String, dynamic> child) {
+    final childId = child['id']?.toString();
+    final token = widget.authorizationToken;
+    final householdId = widget.householdId;
+    if (childId == null ||
+        childId.isEmpty ||
+        token == null ||
+        token.isEmpty ||
+        householdId == null ||
+        householdId.isEmpty) {
+      return null;
+    }
+    return HttpChinesePracticeGateway(
+      baseUri: Uri.parse(widget.baseUrl),
       householdId: householdId,
       childId: childId,
       authorizationToken: token,

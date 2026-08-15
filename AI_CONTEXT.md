@@ -5,20 +5,20 @@
 ## 1. 项目快照
 
 - 项目：家庭 AI 学习助手
-- 一句话目标：复用家庭现有设备，以数学为首科提供“家庭教材范围 → 错题讲解 → 错题沉淀 → 到期复习 → 家长反馈”的开源、可控学习闭环。
-- 当前阶段：`P1 SECURITY FOUNDATION / CURRICULUM-MISTAKE / GATED ENGLISH PLUGINS`
+- 一句话目标：复用家庭现有设备，以数学错题闭环为主线，并通过显式多学科核心逐步增加语文确定性练习。
+- 当前阶段：`P1 MULTISUBJECT FOUNDATION / CHINESE MVP / GATED ENGLISH LAST`
 - 主要用户：小学阶段孩子与家长/监护人；辅助角色为家庭内容维护者和项目维护者。
-- 生产状态：`SELF_HOSTED_DEPLOYED`（Ubuntu 自用 Compose 正在运行 API `0.13.0`/`0030_learning_history_retention`；API/Web/四个常驻 worker 健康，迁移服务成功退出；不等同于公网/商业生产批准）
-- 当前版本：本地与 Ubuntu API/OpenAPI `0.13.0`、迁移头 `0030_learning_history_retention`，尚无正式产品发布标签。
-- 最近更新：`2026-08-10`
+- 生产状态：`SELF_HOSTED_DEPLOYED`（Ubuntu 自用 Compose 正在运行 API `0.14.0`/`0031_multisubject_chinese`；API/Web/四个常驻 worker 健康，迁移服务成功退出；不等同于公网/商业生产批准）
+- 当前版本：本地与 Ubuntu API/OpenAPI `0.14.0`、迁移头 `0031_multisubject_chinese`；发布标签 `v0.14.0`。
+- 最近更新：`2026-08-15`
 
 ## 2. 当前工作状态
 
-- 活动计划：`PLAN-0028` 已完成，未部署的成人英语/Gemini 增量已删除，Apache-2.0、README、GitHub 本地远程和 Android APK workflow 已准备；workflow 的本地等价构建通过，但尚未在 GitHub runner 执行。`TASK-0011` / `PLAN-0022` 的孩子英语框架完整保留、继续供应商中立且默认锁定。当前 Ubuntu 运行态开关为关闭、Provider 为 `disabled`。`TASK-0010` 的真实教材/设备剩余验收保持未完成；PLAN-0018 的私有教材原页、分批多模态理解、整本知识图谱、家长批准和来源受限推荐已部署，真实教材/NewAPI 质量与费用、浏览器/设备 E2E 仍待验收。
+- 活动计划：`TASK-0012` / `PLAN-0030` 的多学科基础、语文首个纵向切片及 Ubuntu `0.14.0/0031` 发布已完成；`math/chinese` 学科开关、subject-aware 教材、版本化语文 Content/Attempt/Review、确定性评分及 Flutter/Web 首个纵向切片已经过本地门槛和 Ubuntu 运行核验。英语保持 `TASK-0011` / `PLAN-0022` 的供应商中立锁定框架并排最后，Ubuntu Provider 仍为 `disabled`。正式语文内容、并发/导出集成、语文教材分析、浏览器/设备 E2E 待完成。
 - 任务状态：ADR-0018/PLAN-0012 已完成本地与 Ubuntu API/Flutter/Compose/契约迁移；Ubuntu 不再依赖预签名直传，MinIO `9000` 未向宿主/LAN 暴露。最终真机仍未回归。
 - 当前分支：`master`；工作区包含本轮未提交的 P1 闭环代码、迁移、测试和文档。
-- 当前重点：GitHub 开源整理和 APK workflow 已完成本地准备，本地 `origin` 为 `git@github.com:yubinhong/AIStudy.git`，尚未 commit/push；下一步是在 GitHub 默认分支实际运行 workflow，并继续已部署 API 流式上传、孩子管理聚合和教材知识图谱的真实教材/浏览器/设备验收。Ubuntu 已前滚到 `0.13.0`/`0030_learning_history_retention`；教材 PDF 单文件上限为 `50 MiB`，解析 worker 使用受限私有 `curriculum/` 读取边界，分析 worker 使用 `curriculum-previews/` 私有原页和批准知识图谱。家长教材原页/知识审核、推荐详情、孩子端原页入口和独立学习记录页均已部署 Ubuntu；真实 PDF 多模态分析、发布和推荐验收待后续执行。
-- 已完成：本地与 Ubuntu OpenAPI `0.13.0`、迁移 `0013`～`0030`、视觉四态候选与确认、可信 VerifiedQuestion → 云端递进 L1/L2 → 完整步骤/答案/验算、Mistake/Review closeout，以及 PDF 私有原页、分批多模态教材理解、全书知识图谱、家长批准、“批准知识点 + 全部开放错题”的来源受限推荐和 180 天详细学习历史策略。
+- 当前重点：继续扩展正式语文内容、复习 UI、技能报告与语文教材分析，英语最后。Ubuntu 已前滚到 `0.14.0`/`0031_multisubject_chinese`；既有数学教材原页/知识审核、推荐详情和学习记录继续按已部署合同运行。
+- 已完成：本地与 Ubuntu OpenAPI `0.14.0`、迁移 `0013`～`0031`、视觉四态候选与确认、可信 VerifiedQuestion → 云端递进 L1/L2 → 完整步骤/答案/验算、Mistake/Review closeout、语文确定性 Content/Attempt/Review，以及 PDF 私有原页、分批多模态教材理解、全书知识图谱、家长批准、“批准知识点 + 全部开放错题”的来源受限推荐和 180 天详细学习历史策略。
 - 当前未完成：真实 118 页 PDF 多模态知识质量/费用/重试验收、浏览器 E2E、实际相机四态闭环、教材个人信息自动门禁、自动视觉检测器、四设备回归、正式依赖/镜像安全扫描、监控告警和已批准的 RPO/RTO。NewAPI 合成完整解答已现场通过；云端教材分析、L1/L2 和推荐 planner 尚未进行真实 Provider 质量/成本验收。
 - 新产品主线已完成代码收口：ADR-0020/PLAN-0014 的错题、复习、教材和 Tutor 关键事实链已接通；PLAN-0016 进入设备/E2E/发布验收阶段，ADR-0021 已接受。
 - Web 多孩子/多家庭现状：账号与档案已由孩子管理聚合 API/Web 统一创建、列表和删除；全局顶栏通过 `?child=` 切换并保持当前孩子作用域。`0028` 已将最早 `parent_admin` 收敛为唯一 `super_admin`，其可创建新家庭的普通家长；普通家长只管理自己创建的孩子，当前不支持匿名注册、邀请或账号跨家庭切换。家长显式声明的国家公开 PDF 可按完整内容指纹复用已审核的私有 PDF/页图/知识图谱草稿，目标家庭仍须审核发布；儿童数据和学习事实不共享。2026-07-28 已在 Ubuntu PostgreSQL 前滚并完成 API/Web 健康、角色/孩子归属和备份恢复验证；跨家庭浏览器流程与真机验收仍待执行。
@@ -35,7 +35,7 @@
 - 仓库根目录：`/Users/ybh/PycharmProjects/study`。
 - Git：分支 `master`，最近提交 `c86490f`；工作区有本轮未提交的 P1 闭环、迁移、客户端和文档改动。
 - 现有内容：根目录上下文文档、`prompts/` 工作流模板、`docs/adr/0000-template.md`、`家庭AI学习助手_架构设计_v1.0.docx`。
-- 已创建并验证：`apps/`、`services/`、`packages/`、`evals/`、`infra/` 的 P0/P1 核心路径、配置、锁文件、测试和 Compose；Flutter Android release APK 与 iOS release 无签名 Runner.app 已构建。Ubuntu VM 上的 amd64 完整栈运行 API `0.13.0`/迁移 `0030`，新流式上传、孩子管理、PDF 解析、错题闭环、私有原页、知识图谱、来源受限推荐和学习记录保留已部署；NewAPI synthetic 完整解答已成功，真实 L1/L2/智能规划质量仍待实测；ARM 调试镜像因 PaddlePaddle 3.3.1 无 Linux aarch64 wheel 而不含旧本地 OCR。
+- 已创建并验证：`apps/`、`services/`、`packages/`、`evals/`、`infra/` 的 P0/P1 核心路径、配置、锁文件、测试和 Compose；Flutter Android release APK 与 iOS release 无签名 Runner.app 已构建。Ubuntu VM 上的 amd64 完整栈运行 API `0.14.0`/迁移 `0031`，新流式上传、孩子管理、PDF 解析、错题闭环、私有原页、知识图谱、来源受限推荐、学习记录保留和语文确定性纵向切片已部署；NewAPI synthetic 完整解答已成功，真实 L1/L2/智能规划质量仍待实测；ARM 调试镜像因 PaddlePaddle 3.3.1 无 Linux aarch64 wheel 而不含旧本地 OCR。
 - 设计稿：31 个段落、6 个表格、3 页，定义 P0/P1/P2、设备职责、核心实体/API 和发布门槛；本地渲染缺少部分中文字体，但 OOXML 文本可完整提取。
 
 ## 4. 主文档索引
@@ -44,8 +44,8 @@
 | --- | --- | --- |
 | 项目目标、范围、设备、环境 | `PROJECT.md` | Active；目标与现状已分离 |
 | P1 产品需求与验收 | `PRD.md` | Draft；待产品 Owner 审批 |
-| 当前任务 | `TASK.md` | PLAN-0029 GitHub APK Release/API CI 修复已完成远端验收；PLAN-0028 已完成；TASK-0011/PLAN-0022 孩子英语框架保持锁定；TASK-0010 真实教材验收继续保留 |
-| 复杂任务计划 | `PLANS.md` | PLAN-0028 已完成；PLAN-0022 孩子英语框架继续关闭，PLAN-0018 已部署数学教材主线并等待真实 PDF/Provider/设备验收；其他计划见正文状态 |
+| 当前任务 | `TASK.md` | TASK-0012/PLAN-0030 多学科基础和语文首个纵向切片本地完成，剩余验收继续；TASK-0011 英语框架保持锁定并排最后 |
+| 复杂任务计划 | `PLANS.md` | PLAN-0030 的本地切片与 Ubuntu 发布完成；PLAN-0022 孩子英语框架继续关闭，PLAN-0018 已部署数学教材主线并等待真实 PDF/Provider/设备验收 |
 | 系统结构、数据流、接口 | `ARCHITECTURE.md` | P0/P1 单家庭核心闭环已实现；残余边界明确记录 |
 | 测试命令和质量门槛 | `TESTING.md` | API/Web/Flutter 质量命令已有验证；原生构建结果以最新记录为准 |
 | 儿童数据、权限与 AI 安全 | `SECURITY.md` | 基线草案；生产开放项未决 |
@@ -59,8 +59,8 @@
 
 - 客户端：Flutter iOS/Android；Next.js + TypeScript Web/PWA；端侧 SQLite。
 - 后端：Python 3.12 + FastAPI 模块化单体 + 异步 Worker。
-- 数据：PostgreSQL 为业务事实源；pgvector 做检索；Redis 做缓存/队列；私有 S3/MinIO 存图片。新链路仅由 API/worker 通过内部网络访问；Ubuntu `0.13.0` 已完成流式上传、教材解析、私有原页、知识图谱、学习历史保留和私有 MinIO 成对迁移。
-- 契约：`packages/contracts` 的本地 OpenAPI 已到 `0.13.0`，在既有教材/视觉题与英语合同上新增学习详情的时区时间范围、31 天/500 条上限和 180 天硬窗口；SDK 生成器尚未选择。
+- 数据：PostgreSQL 为业务事实源；pgvector 做检索；Redis 做缓存/队列；私有 S3/MinIO 存图片。新链路仅由 API/worker 通过内部网络访问；Ubuntu `0.14.0` 已完成流式上传、教材解析、私有原页、知识图谱、学习历史保留、语文 Content/Attempt/Review 和私有 MinIO 成对迁移。
+- 契约：`packages/contracts` 的本地与 Ubuntu OpenAPI 已到 `0.14.0`，新增 `math/chinese` 档案/教材学科、语文内容与 Attempt、可选导出字段；孩子合同不包含 AnswerSpec。SDK 生成器尚未选择。
 - AI：本地 PrivacySanitizer、固定 OCR/脱敏/Tutor eval、NewAPI Adapter、ImageAnalysis/CurriculumAnalysis worker、QuestionExtraction/VerifiedQuestion 和服务端可信 TutorTurn 已实现；教材页图有界分批后形成待家长批准的知识图谱，L1/L2 使用已确认文字和最小已批准教材片段，推荐由 NewAPI 在本地来源候选上规划。孩子英语只保留供应商中立接口、`disabled` 和测试注入的 `fake`，没有真实语音 Provider；教材个人信息自动门禁、自动视觉检测器和云端教材/提示/推荐真实质量验收仍未完成。
 - 交付：Ubuntu 自用 Compose 已部署并完成迁移、健康、NewAPI synthetic 和 PostgreSQL/MinIO 恢复验收；OpenTelemetry、正式告警和公网发布未实现。
 - 认证：ADR-0017 已实现代码目标：同一 Household 内家长/孩子账号密码 + 可撤销不透明会话；Web 用 HttpOnly Cookie/CSRF，Flutter 用平台安全存储；不接入短信、邮箱、社交登录、OIDC 或 MFA，也不保留 HMAC/Demo 兼容。
@@ -70,13 +70,13 @@
 
 | 路径 | 责任 | 当前状态 |
 | --- | --- | --- |
-| `apps/child_flutter` | 孩子学习、拍题、提示交互、离线队列 | 数学学习桌与两学科首页、默认锁定英语情景/按住说话框架已实现并完成双平台 release；真实英语 Provider 与实体设备回归待完成 |
-| `apps/web` | 家长后台、内容维护、Windows Web/PWA | 既有家长后台增加逐孩子英语启用、等级和同意设置；真实教材 Provider、英语 Provider 与真实数据库浏览器 E2E 待完成 |
-| `services/api` | FastAPI 模块化单体和 Worker | 本地与 Ubuntu 到 `0030`，已部署学习详情有界查询和 180 天详细历史清理；孩子英语 Provider 中立框架默认关闭 |
-| `packages/contracts` | OpenAPI、JSON Schema、生成 SDK | 本地与 Ubuntu `0.13.0` 增加学习详情时间范围与上限；既有数学、教材、视觉题和英语合同保持兼容，SDK 生成器尚未固定 |
+| `apps/child_flutter` | 孩子学习、拍题、提示交互、离线队列 | 本地数学/语文/英语顺序与语文句子、阅读纵向切片已实现；英语锁定，真实设备待回归 |
+| `apps/web` | 家长后台、内容维护、Windows Web/PWA | 本地增加逐孩子语文开关和教材学科选择；语文分析明确阻断，浏览器 E2E 待完成 |
+| `services/api` | FastAPI 模块化单体和 Worker | 本地与 Ubuntu `0031` 已部署 subject-aware 教材及语文 Content/Attempt/Review；正式内容和语文集成验收待完成 |
+| `packages/contracts` | OpenAPI、JSON Schema、生成 SDK | 本地与 Ubuntu `0.14.0`，SDK 生成器尚未固定 |
 | `evals` | 固定 AI 质量/安全/成本评测 | 既有数学/隐私 eval 增加 7-case 英语安全 Policy；真实英语 Provider 质量、延迟、成本和儿童安全 eval 待批准后执行 |
-| `infra/compose` | PostgreSQL/Redis/MinIO/API/Web/迁移/worker 编排 | Ubuntu 当前 `0.13.0`/`0030`，英语运行态为 `disabled`，持久化卷与恢复验证备份保留 |
-| `docs/adr` | 架构决策 | ADR-0026 学习记录保留、ADR-0025、ADR-0020～0023、ADR-0018 Accepted；替代与 Proposed 状态见索引 |
+| `infra/compose` | PostgreSQL/Redis/MinIO/API/Web/迁移/worker 编排 | Ubuntu 当前 `0.14.0`/`0031`，英语运行态为 `disabled`，发布前恢复验证备份已保留 |
+| `docs/adr` | 架构决策 | ADR-0027 多学科/语文、ADR-0026 学习记录保留、ADR-0025 英语及 ADR-0020～0023 数学主线 Accepted |
 | `prompts` | Codex 工作流启动器 | 已存在 |
 
 ## 7. 不可违反的约束

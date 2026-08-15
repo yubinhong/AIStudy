@@ -18,9 +18,9 @@
 
 ## 2. 当前仓库阶段
 
-- 当前 P0/P1 基础脚手架已存在：`apps/`、`services/`、`packages/`、`evals/`、`infra/compose/`、三类锁文件、CI 草案、OpenAPI `0.13.0`、迁移至 `0030_learning_history_retention`、Profile/Learning/Capture/Identity/VerifiedQuestion/Tutor/Report/Export/Mistake/Review 和 Ubuntu 自用 Compose 均有实现/验收记录；Ubuntu 运行 `0.13.0`/`0030`，正式 production、登录态浏览器 E2E 和最终设备回归仍不存在或未完成。PLAN-0018 的私有原页预览、分批多模态教材分析、整本知识图谱、家长审核和已审核知识点/具体练习推荐已部署，真实 Provider/PDF/设备质量验收仍待完成。
+- 当前 P0/P1 基础脚手架已存在：`apps/`、`services/`、`packages/`、`evals/`、`infra/compose/`、三类锁文件、CI 草案；本地与 Ubuntu OpenAPI 均为 `0.14.0`、迁移头 `0031_multisubject_chinese`。Profile/Learning/Capture/Identity/VerifiedQuestion/Tutor/Report/Export/Mistake/Review 和 Ubuntu 自用 Compose 均有实现/验收记录；显式 `math/chinese`、subject-aware 教材及语文确定性 Content/Attempt/Review 首个纵向切片已部署 Ubuntu，正式内容、语文并发/导出集成、登录态浏览器 E2E 和最终设备回归仍未完成。PLAN-0018 的私有原页预览、分批多模态教材分析、整本知识图谱、家长审核和已审核知识点/具体练习推荐已部署，真实 Provider/PDF/设备质量验收仍待完成。
 - ADR-0017 已接受以账号密码和可撤销会话替换 HMAC/PIN；TASK-0007 进一步删除 HMAC、Demo Header 和 Web 免登录旁路。API/Web/Flutter/Compose 运行时只允许用户名密码登录后的 Cookie/Bearer Session；Flutter 在登录前配置服务端地址，地址变更必须清理旧会话。真实 PostgreSQL、浏览器 E2E 和设备生命周期仍需验收。
-- ADR-0018 已接受以“App 携带 Session → API 有界流式校验/转发 → 私有 MinIO”替代 ADR-0010/0014 的预签名直传。目标 OpenAPI 不返回对象存储 URL，MinIO `9000` 不向宿主/LAN 暴露，且删除 `OBJECT_STORAGE_PUBLIC_ENDPOINT_URL`；当前本地与 Ubuntu `0.13.0` 均已切换到新链路，最终设备回归仍待完成。
+- ADR-0018 已接受以“App 携带 Session → API 有界流式校验/转发 → 私有 MinIO”替代 ADR-0010/0014 的预签名直传。目标 OpenAPI 不返回对象存储 URL，MinIO `9000` 不向宿主/LAN 暴露，且删除 `OBJECT_STORAGE_PUBLIC_ENDPOINT_URL`；本地与 Ubuntu `0.14.0` 均保持新链路，最终设备回归仍待完成。
 - PLAN-0013/Proposed ADR-0019 已实现 Web 将孩子档案与唯一登录账号作为一个管理聚合并支持首页当前孩子选择；`Account`/`ChildProfile` 仍安全分表，聚合创建使用事务和 `0016` 唯一约束。浏览器 E2E 和双孩子回归仍待完成。
 - ADR-0020/0023 已接受以“教材范围 → 多模态知识图谱 → 错题讲解 → 错题沉淀 → 到期复习”为数学首科产品主线；已部署拍题 closeout、实际题目复习/ReviewAttempt、PDF-only 私有原页渲染、云端 L1/L2 递进和来源受限智能推荐。今日任务入口因指定题目执行体验不完整而暂时隐藏。新推荐必须遍历全部开放错题和已批准知识图谱中的具体练习，不得再从残缺页级文字规则抽题；只把有界候选与不透明来源键交给 NewAPI。模型引用不存在来源、忽略已有错题/教材或未把到期错题排到当天时必须整体拒绝。真实 PDF/Provider/设备和固定质量评测仍待完成，不得把自用 Ubuntu 部署描述为公网或商业生产上线。
 - `PROJECT.md` 中的模块路径和命令在实际命令运行成功前不得声称对应能力已经存在；当前状态以 `TASK.md` 和 `TESTING.md` 的逐项验证记录为准。
@@ -62,7 +62,7 @@
 - 孩子端低干扰，一次只做一件事；数学页固定以错题讲解、复习错题、今日任务为三个主入口。练习/复习必须先作答和提示；错题讲解必须有 VerifiedQuestion 和已确认作答状态，有作答时针对错步讲，确认空白/没思路时可从头完整讲。L1 必须帮助看懂题意/定位疑点，L2 必须在同一题的 L1 上增加方法或第一步脚手架，L1/L2 不得泄露最终答案或完整过程。
 - 家长查看趋势、异常和建议，不建立儿童实时监控、公开排名或社交榜单。
 - 家长侧把孩子档案与其唯一登录账号呈现为一个“孩子”管理对象；多孩子工作台必须明确当前孩子，并让任务、档案和周报使用同一孩子作用域。
-- P1 聚焦小学数学教材驱动的单题错题闭环；语文、英语、视频、语音和 Python 编程启蒙通过后续插件扩展，不污染核心任务/会话模型。
+- P1 继续以小学数学教材驱动的单题错题闭环为已部署主线；语文按 ADR-0027 通过显式学科、版本化内容、确定性评分和独立 Attempt/Review 分阶段扩展，不复用数学 Prompt。英语排在语文之后并继续采用 ADR-0025 的独立合规门禁；视频、自由语音和 Python 编程启蒙后置，不污染数学核心任务/会话模型。
 - 不复制或分发未经授权的教材、题库和教辅内容，不承诺专用学习机的护眼或硬件能力。
 
 ### 系统边界

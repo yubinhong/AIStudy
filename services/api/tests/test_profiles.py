@@ -78,6 +78,25 @@ def test_parent_can_update_child_profile_idempotently() -> None:
     assert replay.headers["Idempotency-Replayed"] == "true"
 
 
+def test_parent_can_enable_chinese_without_removing_math() -> None:
+    client = TestClient(create_app())
+    payload = {
+        "display_name": "Synthetic Child A",
+        "grade": 3,
+        "curriculum_version": "multi-demo-2026",
+        "subjects": ["math", "chinese"],
+    }
+
+    response = client.patch(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}",
+        json=payload,
+        headers={**principal(client), "Idempotency-Key": "child-chinese-001"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["subjects"] == ["math", "chinese"]
+
+
 def test_cross_household_reads_are_not_enumerable() -> None:
     client = TestClient(create_app())
 
