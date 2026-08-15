@@ -189,7 +189,7 @@ PLAN-0013 的目标聚合不改变上述认证边界：家长通过一个带幂�
 | 同步事件批次 | Flutter | API | `packages/contracts/schemas` | 每事件有 ID/版本/幂等键；追加新事件类型 | `TBD` |
 | AuditEvent | 所有服务端模块 | 审计/可观测性 | `packages/contracts/schemas` | 稳定事件名；字段按敏感级别控制 | `TBD` |
 
-契约目录和结构检查已建立；SDK 生成器和自动兼容检查命令仍未固定。本地 `0.14.0` 在既有数学/英语合同上增加 subject-aware 教材、语文内容/Attempt 和导出字段；Ubuntu 仍为 `0.13.0`/`0030`。图片上传继续保持单一 Session 流式操作。
+契约目录和结构检查已建立；SDK 生成器和自动兼容检查命令仍未固定。本地与 Ubuntu `0.14.0` 已在既有数学/英语合同上增加 subject-aware 教材、语文内容/Attempt 和导出字段，迁移头为 `0031_multisubject_chinese`。图片上传继续保持单一 Session 流式操作。
 
 ## 6. 数据架构
 
