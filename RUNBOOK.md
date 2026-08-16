@@ -3,7 +3,7 @@
 ## 1. 服务概览
 
 - 服务：家庭 AI 学习助手（目标包括 Flutter 孩子端、Web/PWA、FastAPI/Worker、PostgreSQL、Redis、S3/MinIO 和 AI Provider）。
-- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.14.0`/`0031_multisubject_chinese`；没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
+- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.16.0`/`0035_chinese_poem_skill`；`2026-08-16` 发布前备份已隔离恢复（38 张 PostgreSQL public 表、353 个 MinIO 文件），API/Web/worker 健康。没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
 - Owner/值班：`TBD（项目 Owner/运维负责人在 staging 前确认）`。
 - 用户影响：服务中断会阻止同步、拍题、AI 提示和周报；孩子端必须保留离线任务/作答，不能因服务中断丢学习记录。
 - 外部依赖：单一获批云视觉 Provider、Tutor Provider、HMS（或应用内提醒）和对象存储；具体供应商 `TBD`。本地 OCR 仅是目标 PrivacySanitizer 的隐私检测依赖，不是外部 Provider。
