@@ -15,7 +15,9 @@ from study_api.chinese_practice import (
     ChineseReviewItem,
     ChineseSkill,
     ChineseSkillReport,
+    PublishChinesePoemsRequest,
 )
+from study_api.domain.curriculum_repository import CurriculumRepository
 from study_api.domain.models import AccountRole, Subject
 from study_api.domain.repository import IdempotencyConflictError, ProfileRepository
 
@@ -37,6 +39,13 @@ def _profiles(request: Request) -> ProfileRepository:
 
 Repository = Annotated[ChinesePracticeRepository, Depends(_repository)]
 Profiles = Annotated[ProfileRepository, Depends(_profiles)]
+
+
+def _curriculum(request: Request) -> CurriculumRepository:
+    return request.app.state.curriculum_repository
+
+
+Curriculum = Annotated[CurriculumRepository, Depends(_curriculum)]
 
 
 def _authorize(
@@ -70,7 +79,8 @@ def list_content(
 ) -> list[ChineseContentItemView]:
     grade = _authorize(household_id, child_id, principal, profiles)
     return [
-        ChineseContentItemView.from_item(item) for item in repository.list_content(grade, skill)
+        ChineseContentItemView.from_item(item)
+        for item in repository.list_content(grade, skill, household_id, child_id)
     ]
 
 
@@ -132,3 +142,35 @@ def get_skill_report(
     _authorize(household_id, child_id, principal, profiles)
     require_parent(principal.role)
     return repository.skill_report(household_id, child_id)
+
+
+@router.post("/poems/publish", status_code=status.HTTP_201_CREATED)
+def publish_poems(
+    household_id: UUID,
+    child_id: UUID,
+    body: PublishChinesePoemsRequest,
+    principal: Principal,
+    repository: Repository,
+    profiles: Profiles,
+    curriculum: Curriculum,
+) -> dict[str, int]:
+    """Publish parent-reviewed private poem extraction into this child's question pool."""
+
+    grade = _authorize(household_id, child_id, principal, profiles)
+    require_parent(principal.role)
+    material = curriculum.get_material_for_snapshot(household_id, child_id, body.snapshot_id)
+    snapshot = next(
+        (
+            candidate
+            for candidate in curriculum.list_snapshots(household_id, child_id, published_only=True)
+            if candidate.id == body.snapshot_id
+        ),
+        None,
+    )
+    if material is None or snapshot is None or material.id != body.material_id:
+        raise HTTPException(status_code=404, detail="resource not found")
+    if snapshot.subject is not Subject.CHINESE or snapshot.status != "published":
+        raise HTTPException(status_code=409, detail="published Chinese curriculum is required")
+    if not material.authorization_statement.strip():
+        raise HTTPException(status_code=409, detail="curriculum authorization is required")
+    return {"published_questions": repository.publish_poems(household_id, child_id, grade, body)}

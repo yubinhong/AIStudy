@@ -14,11 +14,11 @@ class _FakeChineseGateway implements ChinesePracticeGateway {
     ChineseContentItem(
       id: '10000000-0000-0000-0000-000000000002',
       revision: 1,
-      skill: 'sentence',
-      title: '句子排排队',
-      prompt: '把词语排成一句通顺的话。',
-      options: ['小树', '的', '的'],
-      sourceLabel: '原创练习',
+      skill: 'poem',
+      title: '春晓',
+      prompt: '春眠不觉晓，下一句是？',
+      options: ['处处闻啼鸟', '月落乌啼霜满天'],
+      sourceLabel: '家庭教材',
     ),
   ];
 
@@ -32,9 +32,7 @@ class _FakeChineseGateway implements ChinesePracticeGateway {
     int elapsedMs,
   ) async {
     submissions += 1;
-    expect(response, {
-      'tokens': ['小树', '的', '的'],
-    });
+    expect(response, {'choice': '处处闻啼鸟'});
     return const ChineseAttemptResult(
       correct: true,
       score: 1,
@@ -65,7 +63,7 @@ void main() {
     expect(find.text('语文练习页'), findsOneWidget);
   });
 
-  testWidgets('Chinese sentence practice submits ordered tokens', (
+  testWidgets('Chinese poem spot check submits the selected next line', (
     tester,
   ) async {
     final gateway = _FakeChineseGateway();
@@ -74,13 +72,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('句子排排队'));
+    expect(find.text('看图写话'), findsOneWidget);
+    await tester.tap(find.text('古诗抽查'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('小树'));
-    await tester.pump();
-    await tester.tap(find.text('的').first);
-    await tester.pump();
-    await tester.tap(find.text('的').first);
+    await tester.tap(find.text('处处闻啼鸟'));
     await tester.tap(find.text('提交回答'));
     await tester.pumpAndSettle();
 
@@ -97,7 +92,7 @@ void main() {
           contentId: '10000000-0000-0000-0000-000000000002',
           contentRevision: 1,
           dueAt: DateTime.utc(2026, 8, 16),
-          skill: 'sentence',
+          skill: 'poem',
         ),
       ];
     await tester.pumpWidget(
@@ -106,7 +101,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('到期复习'), findsOneWidget);
-    await tester.tap(find.text('句子排排队').first);
+    await tester.tap(find.text('春晓').first);
     await tester.pumpAndSettle();
 
     expect(find.text('提交回答'), findsOneWidget);

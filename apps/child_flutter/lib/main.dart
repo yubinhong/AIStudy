@@ -850,7 +850,18 @@ class _ChildProfileScreenState extends State<ChildProfileScreen> {
             englishGateway: _buildEnglishClient(child),
             chineseBuilder: chineseGateway == null
                 ? null
-                : (_) => ChineseHomePage(gateway: chineseGateway),
+                : (context) => ChineseHomePage(
+                    gateway: chineseGateway,
+                    onPictureWriting: captureClient == null
+                        ? null
+                        : () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => PictureWritingCaptureScreen(
+                                captureClient: captureClient,
+                              ),
+                            ),
+                          ),
+                  ),
             mathBuilder: (_) => LearningDeskScreen(
               displayName: displayName,
               username: widget.username,
@@ -2188,6 +2199,260 @@ class _CaptureInputScreenState extends State<CaptureInputScreen> {
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+class PictureWritingCaptureScreen extends StatefulWidget {
+  const PictureWritingCaptureScreen({super.key, required this.captureClient});
+
+  final CaptureApiClient captureClient;
+
+  @override
+  State<PictureWritingCaptureScreen> createState() =>
+      _PictureWritingCaptureScreenState();
+}
+
+class _PictureWritingCaptureScreenState
+    extends State<PictureWritingCaptureScreen> {
+  final ImagePicker _picker = ImagePicker();
+  bool _picking = false;
+
+  Future<void> _pick(ImageSource source) async {
+    setState(() => _picking = true);
+    try {
+      final image = await _picker.pickImage(
+        source: source,
+        maxWidth: 2400,
+        maxHeight: 2400,
+        imageQuality: 90,
+      );
+      if (!mounted || image == null) return;
+      final sanitized = await Navigator.of(context)
+          .push<SanitizedImageSelection>(
+            MaterialPageRoute<SanitizedImageSelection>(
+              builder: (_) => SanitizationPreviewScreen(image: image),
+            ),
+          );
+      if (!mounted || sanitized == null) return;
+      final guide = await widget.captureClient
+          .uploadAndCreatePictureWritingGuideBytes(
+            sanitized.bytes,
+            sanitization: _sanitizationMetadata(sanitized),
+          );
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => PictureWritingGuideScreen(guideRecord: guide),
+        ),
+      );
+    } on CaptureApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } on PlatformException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('暂时无法打开图片入口，请稍后再试。')));
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('看图写话')),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 620),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.auto_stories_outlined, size: 72, color: _mint),
+                const SizedBox(height: 20),
+                Text('先看一看，再写一句', style: _titleStyle(30)),
+                const SizedBox(height: 12),
+                const Text(
+                  '只拍画面内容。系统会给你观察提示，不会替你写作文。',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: _muted, fontSize: 17),
+                ),
+                const SizedBox(height: 30),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _CaptureChoiceButton(
+                        icon: Icons.camera_alt_outlined,
+                        label: '拍照',
+                        onPressed: _picking
+                            ? null
+                            : () => _pick(ImageSource.camera),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _CaptureChoiceButton(
+                        icon: Icons.photo_library_outlined,
+                        label: '从相册选择',
+                        onPressed: _picking
+                            ? null
+                            : () => _pick(ImageSource.gallery),
+                      ),
+                    ),
+                  ],
+                ),
+                if (_picking) ...[
+                  const SizedBox(height: 24),
+                  const CircularProgressIndicator(color: _mint),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class PictureWritingGuideScreen extends StatefulWidget {
+  const PictureWritingGuideScreen({super.key, required this.guideRecord});
+
+  final Map<String, dynamic> guideRecord;
+
+  @override
+  State<PictureWritingGuideScreen> createState() =>
+      _PictureWritingGuideScreenState();
+}
+
+class _PictureWritingGuideScreenState extends State<PictureWritingGuideScreen> {
+  int _step = 0;
+  String? _starter;
+  final _sentence = TextEditingController();
+
+  @override
+  void dispose() {
+    _sentence.dispose();
+    super.dispose();
+  }
+
+  List<String> _strings(String key) {
+    final guide = widget.guideRecord['guide'];
+    if (guide is! Map) return const [];
+    return (guide[key] as List<dynamic>? ?? const <dynamic>[])
+        .map((value) => value.toString())
+        .toList(growable: false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final observations = _strings('scene_observations');
+    final questions = _strings('focus_questions');
+    final starters = _strings('sentence_starters');
+    final details = _strings('detail_prompts');
+    return Scaffold(
+      appBar: AppBar(title: const Text('看图写话')),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Text(
+            '第 ${_step + 1} 步，共 3 步',
+            style: Theme.of(context).textTheme.labelLarge,
+          ),
+          const SizedBox(height: 12),
+          if (_step == 0) ...[
+            Text('先看一看', style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 12),
+            ...observations.map(
+              (item) => ListTile(
+                leading: const Icon(Icons.visibility_outlined),
+                title: Text(item),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...questions.map(
+              (item) => Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Text(item),
+                ),
+              ),
+            ),
+          ] else if (_step == 1) ...[
+            Text('先说一句', style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 12),
+            const Text('选一个开头，再接着写自己的话。'),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: starters
+                  .map(
+                    (item) => ChoiceChip(
+                      label: Text(item),
+                      selected: _starter == item,
+                      onSelected: (_) => setState(() {
+                        _starter = item;
+                        if (_sentence.text.isEmpty) _sentence.text = item;
+                      }),
+                    ),
+                  )
+                  .toList(growable: false),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _sentence,
+              maxLength: 160,
+              minLines: 3,
+              maxLines: 5,
+              decoration: const InputDecoration(
+                labelText: '我来写一句',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ] else ...[
+            Text('补上细节', style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 12),
+            ...details.map(
+              (item) => ListTile(
+                leading: const Icon(Icons.lightbulb_outline),
+                title: Text(item),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              _sentence.text.trim().isEmpty
+                  ? '先回到上一步，写下你自己的第一句。'
+                  : '你已经写好了自己的第一句，可以再补充动作、地点或顺序。',
+              style: const TextStyle(color: _deepGreen, fontSize: 17),
+            ),
+          ],
+          const SizedBox(height: 26),
+          Row(
+            children: [
+              if (_step > 0)
+                OutlinedButton(
+                  onPressed: () => setState(() => _step--),
+                  child: const Text('上一步'),
+                ),
+              const Spacer(),
+              FilledButton(
+                onPressed: _step == 2
+                    ? () => Navigator.of(context).pop()
+                    : () => setState(() => _step++),
+                child: Text(_step == 2 ? '完成' : '下一步'),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

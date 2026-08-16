@@ -83,6 +83,45 @@ def test_newapi_provider_rejects_invalid_response_and_unsafe_config() -> None:
         provider.analyze_sanitized_image(b"synthetic", "image/png", sanitization_schema="v1")
 
 
+def test_newapi_provider_returns_only_bounded_picture_writing_scaffolds() -> None:
+    provider = NewApiVisionProvider(_config())
+    captured: dict[str, Any] = {}
+
+    def fake_post(payload: dict[str, Any]) -> dict[str, Any]:
+        captured.update(payload)
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "schema_version": "picture-writing-guide.v1",
+                                "scene_observations": ["画面里有一棵树。", "一个孩子在浇花。"],
+                                "focus_questions": ["谁在做什么？", "周围还有什么？"],
+                                "sentence_starters": ["图上有", "我看见"],
+                                "detail_prompts": ["说说动作。", "再看看地点。"],
+                                "confidence": 0.9,
+                                "needs_confirmation": True,
+                            },
+                            ensure_ascii=False,
+                        )
+                    }
+                }
+            ]
+        }
+
+    provider._post_json = fake_post  # type: ignore[method-assign]
+    guide = provider.create_picture_writing_guide(
+        b"synthetic", "image/png", sanitization_schema="privacy-sanitization.v1"
+    )
+
+    assert guide.schema_version == "picture-writing-guide.v1"
+    assert guide.scene_observations == ("画面里有一棵树。", "一个孩子在浇花。")
+    prompt = captured["messages"][0]["content"]
+    assert "Never write a complete composition" in prompt
+    assert "question-extraction.v1" not in prompt
+
+
 def test_newapi_provider_bounds_whole_book_observation_payload() -> None:
     provider = NewApiVisionProvider(_config())
 
@@ -536,9 +575,15 @@ def test_newapi_provider_uses_chinese_v2_schema_and_short_passage_boundaries() -
                             {
                                 "title": "春晓",
                                 "start_marker": "春眠",
-                                "end_marker": "花落",
-                                "kind": "poem",
-                                "confidence": 0.9,
+                                    "end_marker": "花落",
+                                    "kind": "poem",
+                                    "confidence": 0.9,
+                                    "lines": [
+                                        "春眠不觉晓",
+                                        "处处闻啼鸟",
+                                        "夜来风雨声",
+                                        "花落知多少",
+                                    ],
                             }
                         ],
                         "confidence": 0.9,

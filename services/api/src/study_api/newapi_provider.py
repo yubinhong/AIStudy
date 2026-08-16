@@ -35,7 +35,7 @@ from study_api.domain.curriculum_knowledge import (
     ProviderPageAnalysisBatch,
 )
 from study_api.domain.models import Subject
-from study_api.privacy_models import QuestionExtraction
+from study_api.privacy_models import PictureWritingGuide, QuestionExtraction
 from study_api.recommendation_engine import (
     ProviderRecommendationPlan,
     RecommendationSource,
@@ -58,6 +58,23 @@ QUESTION_EXTRACTION_INSTRUCTIONS = (
     "visible and clearly empty, answer_area_missing when it is outside the image, and "
     "unclear for any ambiguity. Do not add fields. Never solve the question or infer "
     "missing child work."
+)
+
+PICTURE_WRITING_INSTRUCTIONS = (
+    "Return only one JSON object with no Markdown, explanation, or extra keys. "
+    "It must conform to picture-writing-guide.v1 with exactly these keys: "
+    "schema_version, scene_observations, focus_questions, sentence_starters, "
+    "detail_prompts, confidence, needs_confirmation. schema_version must be "
+    "'picture-writing-guide.v1'; scene_observations must contain 2 to 5 short "
+    "Simplified-Chinese descriptions of only clearly visible objects, actions, and "
+    "setting; focus_questions must contain 2 or 3 child-friendly observation "
+    "questions; sentence_starters must contain 2 to 4 short beginnings a Grade 1 or "
+    "2 child can continue; detail_prompts must contain 2 or 3 prompts about action, "
+    "place, order, or a plainly visible expression; confidence must be a number from "
+    "0 to 1; needs_confirmation must be true. Never write a complete composition, "
+    "paragraph, title, score, correction, or model answer. Do not infer identity, "
+    "age, gender, relationship, private information, or an emotion that is not plainly "
+    "visible. When a detail is unclear, ask the child to look again instead of guessing."
 )
 
 DETAILED_SOLUTION_INSTRUCTIONS = (
@@ -160,8 +177,10 @@ CHINESE_CURRICULUM_PAGE_INSTRUCTIONS = (
     "textbook page once, in supplied order. Each page has page_number, chapter_title, "
     "section_title, summary, knowledge_observations, passages and confidence. passages "
     "contains only visible, reviewable boundaries: title, start_marker, end_marker, kind, "
-    "confidence. kind is exactly pinyin, character, vocabulary, passage, poem, or exercise. "
-    "Use short visible boundary markers, never reconstruct or quote a full passage. "
+    "confidence and lines. kind is exactly pinyin, character, vocabulary, passage, poem, or "
+    "exercise. Use short visible boundary markers. For kind poem only, lines must copy every "
+    "visible verse line in order so a parent can review and publish private next-line practice; "
+    "for all other kinds lines must be []. Do not reconstruct missing or unclear characters. "
     "knowledge_observations uses the standard fields and can identify a deterministic "
     "skill such as pronunciation, character form, word meaning, reading evidence or "
     "recitation, but must not invent learning objectives, answers or missing text. "
@@ -408,6 +427,65 @@ class NewApiVisionProvider:
             raise NewApiProviderError(
                 "Provider response failed question schema validation",
                 code="provider_response_schema_invalid",
+            ) from error
+
+    def create_picture_writing_guide(
+        self, image_bytes: bytes, media_type: str, *, sanitization_schema: str
+    ) -> PictureWritingGuide:
+        """Create child-facing observation scaffolds without reusing math extraction."""
+
+        if media_type not in {"image/jpeg", "image/png"}:
+            raise NewApiProviderError("unsupported sanitized image type")
+        if not 1 <= len(image_bytes) <= 8_000_000:
+            raise NewApiProviderError("sanitized image size is outside the allowed range")
+        image_bytes, media_type = _prepare_provider_image(
+            image_bytes, media_type, max_bytes=self._config.max_image_bytes
+        )
+        response = self._post_json(
+            {
+                "model": self._config.vision_model,
+                "temperature": 0,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            f"{PICTURE_WRITING_INSTRUCTIONS} "
+                            f"Sanitization schema: {sanitization_schema}."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": (
+                                    "Give observation scaffolds for this "
+                                    "picture-writing activity."
+                                ),
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": (
+                                        f"data:{media_type};base64,"
+                                        f"{base64.b64encode(image_bytes).decode()}"
+                                    )
+                                },
+                            },
+                        ],
+                    },
+                ],
+            }
+        )
+        try:
+            content = _completion_content(response)
+            parsed = json.loads(_strip_code_fence(content))
+            return PictureWritingGuide.model_validate(parsed)
+        except (json.JSONDecodeError, TypeError, ValueError, ValidationError) as error:
+            raise NewApiProviderError(
+                "Provider response failed picture writing schema validation",
+                code="provider_picture_writing_schema_invalid",
             ) from error
 
     def create_detailed_solution(

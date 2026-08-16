@@ -45,12 +45,14 @@ class ChineseAttemptResult {
     required this.score,
     required this.maxScore,
     required this.feedbackTags,
+    this.correctAnswer,
   });
 
   final bool correct;
   final double score;
   final double maxScore;
   final List<String> feedbackTags;
+  final String? correctAnswer;
 
   factory ChineseAttemptResult.fromJson(Map<String, dynamic> json) {
     final result = Map<String, dynamic>.from(json['result'] as Map);
@@ -62,6 +64,7 @@ class ChineseAttemptResult {
           (result['feedback_tags'] as List<dynamic>? ?? const <dynamic>[])
               .map((value) => value.toString())
               .toList(growable: false),
+      correctAnswer: result['correct_answer']?.toString(),
     );
   }
 }

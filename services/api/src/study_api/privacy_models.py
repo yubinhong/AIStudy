@@ -146,6 +146,40 @@ class QuestionExtractionRecord(BaseModel):
     created_at: datetime
 
 
+class PictureWritingGuide(BaseModel):
+    """Bounded observations and writing scaffolds for a confirmed safe picture."""
+
+    model_config = ConfigDict(frozen=True)
+
+    schema_version: Literal["picture-writing-guide.v1"] = "picture-writing-guide.v1"
+    scene_observations: tuple[str, ...] = Field(min_length=2, max_length=5)
+    focus_questions: tuple[str, ...] = Field(min_length=2, max_length=3)
+    sentence_starters: tuple[str, ...] = Field(min_length=2, max_length=4)
+    detail_prompts: tuple[str, ...] = Field(min_length=2, max_length=3)
+    confidence: float = Field(ge=0.0, le=1.0)
+    needs_confirmation: Literal[True] = True
+
+    _text_has_no_controls = field_validator(
+        "scene_observations", "focus_questions", "sentence_starters", "detail_prompts"
+    )(lambda values: tuple(_no_control_characters(value) for value in values))
+
+
+class PictureWritingGuideRecord(BaseModel):
+    """Stored provider result; it is not a composition, grade, or learning fact."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: UUID
+    capture_id: UUID
+    household_id: UUID
+    child_id: UUID
+    guide: PictureWritingGuide
+    provider: str = Field(min_length=1, max_length=64)
+    model: str = Field(min_length=1, max_length=128)
+    policy_version: Literal["picture-writing-policy.v1"] = "picture-writing-policy.v1"
+    created_at: datetime
+
+
 class VerifyQuestionRequest(BaseModel):
     """User-edited fields that turn one extraction into a Tutor-safe fact."""
 

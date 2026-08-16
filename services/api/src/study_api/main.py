@@ -99,6 +99,11 @@ from study_api.object_storage import (
     UnavailableObjectStorage,
 )
 from study_api.ocr_jobs import InMemoryOcrJobQueue, OcrJobQueue, PostgresOcrJobQueue
+from study_api.picture_writing import (
+    InMemoryPictureWritingRepository,
+    PictureWritingRepository,
+    PostgresPictureWritingRepository,
+)
 from study_api.routes.authentication import router as authentication_router
 from study_api.routes.captures import router as capture_router
 from study_api.routes.chinese_practice import router as chinese_practice_router
@@ -108,6 +113,7 @@ from study_api.routes.image_analysis import router as image_analysis_router
 from study_api.routes.insights import router as insights_router
 from study_api.routes.learning import router as learning_router
 from study_api.routes.mistakes import router as mistakes_router
+from study_api.routes.picture_writing import router as picture_writing_router
 from study_api.routes.profiles import router as profile_router
 from study_api.routes.recommendations import router as recommendations_router
 from study_api.routes.tutor import router as tutor_router
@@ -135,6 +141,7 @@ def create_app(
     english_live_config: EnglishLiveConfig | None = None,
     english_live_provider: EnglishLiveProvider | None = None,
     chinese_practice_repository: ChinesePracticeRepository | None = None,
+    picture_writing_repository: PictureWritingRepository | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="家庭 AI 学习助手 API",
@@ -187,6 +194,9 @@ def create_app(
     app.state.chinese_practice_repository = (
         chinese_practice_repository or _default_chinese_practice_repository()
     )
+    app.state.picture_writing_repository = (
+        picture_writing_repository or _default_picture_writing_repository()
+    )
     app.state.auth_service = AuthService(app.state.account_repository)
     app.state.child_management_repository = _default_child_management_repository(
         app.state.profile_repository,
@@ -198,6 +208,7 @@ def create_app(
     app.include_router(learning_router)
     app.include_router(capture_router)
     app.include_router(image_analysis_router)
+    app.include_router(picture_writing_router)
     app.include_router(tutor_router)
     app.include_router(insights_router)
     app.include_router(mistakes_router)
@@ -311,6 +322,12 @@ def _default_question_extraction_repository() -> QuestionExtractionRepository:
     if os.environ.get("STUDY_API_IMAGE_ANALYSIS_REPOSITORY") == "postgres":
         return PostgresQuestionExtractionRepository()
     return InMemoryQuestionExtractionRepository()
+
+
+def _default_picture_writing_repository() -> PictureWritingRepository:
+    if os.environ.get("STUDY_API_IMAGE_ANALYSIS_REPOSITORY") == "postgres":
+        return PostgresPictureWritingRepository()
+    return InMemoryPictureWritingRepository()
 
 
 def _default_verified_question_repository() -> VerifiedQuestionRepository:

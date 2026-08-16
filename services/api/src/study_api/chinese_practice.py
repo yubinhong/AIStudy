@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from hashlib import sha256
 from typing import Annotated, Any, Literal, Protocol
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import MetaData, Table, and_, create_engine, func, insert, select
@@ -29,6 +29,7 @@ class ChineseSkill(StrEnum):
     READING = "reading"
     RECITATION = "recitation"
     EXPRESSION = "expression"
+    POEM = "poem"
 
 
 class ExactChoiceSpec(BaseModel):
@@ -82,6 +83,11 @@ class ChineseContentSource(BaseModel):
     source_id: str = Field(min_length=1, max_length=120)
     license_status: Literal["cleared", "private_authorized"]
     attribution: str | None = Field(default=None, max_length=240)
+    household_id: UUID | None = None
+    child_id: UUID | None = None
+    material_id: UUID | None = None
+    snapshot_id: UUID | None = None
+    page_number: int | None = Field(default=None, ge=1, le=400)
     review: ChineseContentReview = Field(default_factory=ChineseContentReview)
 
 
@@ -150,6 +156,29 @@ class ChineseAttemptRequest(BaseModel):
         return response
 
 
+class ChinesePoemDraft(BaseModel):
+    """One private textbook poem after bounded extraction and parent review."""
+
+    title: str = Field(min_length=1, max_length=160)
+    page_number: int = Field(ge=1, le=400)
+    lines: tuple[str, ...] = Field(min_length=2, max_length=80)
+
+    @field_validator("lines")
+    @classmethod
+    def validate_lines(cls, lines: tuple[str, ...]) -> tuple[str, ...]:
+        if any(not line.strip() or len(line) > 120 for line in lines):
+            raise ValueError("poem lines must be non-empty and bounded")
+        return tuple(line.strip() for line in lines)
+
+
+class PublishChinesePoemsRequest(BaseModel):
+    """Parent confirmation of poems extracted from one already-approved snapshot."""
+
+    material_id: UUID
+    snapshot_id: UUID
+    poems: tuple[ChinesePoemDraft, ...] = Field(min_length=1, max_length=100)
+
+
 class ChineseScoreResult(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -157,6 +186,9 @@ class ChineseScoreResult(BaseModel):
     max_score: float = Field(gt=0)
     correct: bool
     feedback_tags: tuple[str, ...]
+    # Deliberately populated only after a failed objective submission. It is
+    # feedback for the child, never part of the content-list response.
+    correct_answer: str | None = Field(default=None, max_length=120)
     scoring_version: Literal["chinese-score.v1"] = "chinese-score.v1"
 
 
@@ -242,7 +274,8 @@ def score_chinese(
     spec = item.answer_spec
     if isinstance(spec, ExactChoiceSpec):
         correct = response.get("choice") == spec.answer
-        return _binary_score(correct, "choice")
+        result = _binary_score(correct, "choice")
+        return result if correct else result.model_copy(update={"correct_answer": spec.answer})
     if isinstance(spec, OrderedTokensSpec):
         tokens = response.get("tokens")
         correct = isinstance(tokens, list) and tuple(tokens) == spec.tokens
@@ -299,7 +332,11 @@ def _binary_score(correct: bool, kind: str) -> ChineseScoreResult:
 
 class ChinesePracticeRepository(Protocol):
     def list_content(
-        self, grade: int, skill: ChineseSkill | None = None
+        self,
+        grade: int,
+        skill: ChineseSkill | None = None,
+        household_id: UUID | None = None,
+        child_id: UUID | None = None,
     ) -> list[ChineseContentItem]: ...
 
     def submit_attempt(
@@ -317,106 +354,27 @@ class ChinesePracticeRepository(Protocol):
 
     def skill_report(self, household_id: UUID, child_id: UUID) -> ChineseSkillReport: ...
 
+    def publish_poems(
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        grade: int,
+        request: PublishChinesePoemsRequest,
+    ) -> int: ...
+
 
 def _starter_content() -> tuple[ChineseContentItem, ...]:
-    source = ChineseContentSource(
-        type="original",
-        source_id="study-synthetic-chinese-v1",
-        license_status="cleared",
-        attribution="AIStudy original synthetic starter content",
-    )
-    return (
-        ChineseContentItem(
-            id=UUID("10000000-0000-0000-0000-000000000001"),
-            revision=1,
-            grade_min=1,
-            grade_max=2,
-            skill=ChineseSkill.PINYIN,
-            task_group="language_accumulation",
-            title="声调辨一辨",
-            prompt="选择读音为 qing（第一声）的汉字。",
-            options=("青", "请", "庆"),
-            answer_spec=ExactChoiceSpec(type="exact_choice", answer="青"),
-            knowledge_key="pinyin-qing-tone-1",
-            source=source,
-        ),
-        ChineseContentItem(
-            id=UUID("10000000-0000-0000-0000-000000000002"),
-            revision=1,
-            grade_min=2,
-            grade_max=4,
-            skill=ChineseSkill.SENTENCE,
-            task_group="language_accumulation",
-            title="句子排排队",
-            prompt="把词语排成一句通顺的话。",
-            options=("小树", "长出了", "嫩绿的", "新叶"),
-            answer_spec=OrderedTokensSpec(
-                type="ordered_tokens", tokens=("小树", "长出了", "嫩绿的", "新叶")
-            ),
-            knowledge_key="sentence-basic-order",
-            source=source,
-        ),
-        ChineseContentItem(
-            id=UUID("10000000-0000-0000-0000-000000000003"),
-            revision=1,
-            grade_min=3,
-            grade_max=6,
-            skill=ChineseSkill.READING,
-            task_group="literary_reading_expression",
-            title="从文中找依据",
-            passage="春风吹来，小树长出了嫩绿的新叶。小鸟站在枝头唱起了歌。",
-            prompt="为什么说小树感受到了春天？请回答并写出文中的依据。",
-            answer_spec=ConceptEvidenceSpec(
-                type="concept_evidence",
-                required_concepts=(("新叶", "嫩叶", "长叶子"),),
-                evidence_spans=("小树长出了嫩绿的新叶",),
-            ),
-            knowledge_key="reading-find-evidence",
-            source=source,
-        ),
-        ChineseContentItem(
-            id=UUID("10000000-0000-0000-0000-000000000004"),
-            revision=1,
-            grade_min=1,
-            grade_max=2,
-            skill=ChineseSkill.CHARACTER,
-            task_group="language_accumulation",
-            title="偏旁找朋友",
-            prompt="选出和天气有关的汉字。",
-            options=("晴", "清", "请"),
-            answer_spec=ExactChoiceSpec(type="exact_choice", answer="晴"),
-            knowledge_key="character-sun-radical-weather",
-            source=source,
-        ),
-        ChineseContentItem(
-            id=UUID("10000000-0000-0000-0000-000000000005"),
-            revision=1,
-            grade_min=2,
-            grade_max=4,
-            skill=ChineseSkill.VOCABULARY,
-            task_group="language_accumulation",
-            title="词语放进句子",
-            prompt="早晨的空气很（  ），让人觉得舒服。",
-            options=("清新", "安静", "明亮"),
-            answer_spec=ExactChoiceSpec(type="exact_choice", answer="清新"),
-            knowledge_key="vocabulary-context-meaning",
-            source=source,
-        ),
-        ChineseContentItem(
-            id=UUID("10000000-0000-0000-0000-000000000006"),
-            revision=1,
-            grade_min=1,
-            grade_max=6,
-            skill=ChineseSkill.RECITATION,
-            task_group="literary_reading_expression",
-            title="原创短句积累",
-            prompt="“晨风吹过小花园”，下一句最合适的是哪一句？",
-            options=("小树向着太阳笑", "月亮落在书包里", "雨伞飞到操场上"),
-            answer_spec=ExactChoiceSpec(type="exact_choice", answer="小树向着太阳笑"),
-            knowledge_key="recitation-original-short-line",
-            source=source,
-        ),
-    )
+    # Production content is curriculum-scoped and requires parent approval.
+    # Keeping this empty prevents demos from being mistaken for courseware.
+    return ()
+
+
+def _is_visible_to(item: ChineseContentItem, household_id: UUID, child_id: UUID) -> bool:
+    """Original content is global; curriculum-derived content is household scoped."""
+
+    if item.source.type == "original":
+        return True
+    return item.source.household_id == household_id and item.source.child_id == child_id
 
 
 class InMemoryChinesePracticeRepository:
@@ -427,7 +385,11 @@ class InMemoryChinesePracticeRepository:
         self._idempotency: dict[tuple[UUID, UUID, str], tuple[str, UUID]] = {}
 
     def list_content(
-        self, grade: int, skill: ChineseSkill | None = None
+        self,
+        grade: int,
+        skill: ChineseSkill | None = None,
+        household_id: UUID | None = None,
+        child_id: UUID | None = None,
     ) -> list[ChineseContentItem]:
         return [
             item
@@ -435,6 +397,11 @@ class InMemoryChinesePracticeRepository:
             if item.status == "approved"
             and item.grade_min <= grade <= item.grade_max
             and (skill is None or item.skill is skill)
+            and (
+                household_id is None
+                or child_id is None
+                or _is_visible_to(item, household_id, child_id)
+            )
         ]
 
     def submit_attempt(
@@ -457,6 +424,7 @@ class InMemoryChinesePracticeRepository:
             item is None
             or item.status != "approved"
             or not item.grade_min <= grade <= item.grade_max
+            or not _is_visible_to(item, household_id, child_id)
         ):
             raise LookupError("content not found")
         if item.revision != request.content_revision:
@@ -546,6 +514,17 @@ class InMemoryChinesePracticeRepository:
             ),
         )
 
+    def publish_poems(
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        grade: int,
+        request: PublishChinesePoemsRequest,
+    ) -> int:
+        items = _poem_question_items(household_id, child_id, grade, request)
+        self._content.update({item.id: item for item in items})
+        return len(items)
+
 
 class PostgresChinesePracticeRepository:
     def __init__(self, url: str | None = None) -> None:
@@ -597,7 +576,11 @@ class PostgresChinesePracticeRepository:
         )
 
     def list_content(
-        self, grade: int, skill: ChineseSkill | None = None
+        self,
+        grade: int,
+        skill: ChineseSkill | None = None,
+        household_id: UUID | None = None,
+        child_id: UUID | None = None,
     ) -> list[ChineseContentItem]:
         statement = select(self._content).where(
             self._content.c.status == "approved",
@@ -608,7 +591,10 @@ class PostgresChinesePracticeRepository:
             statement = statement.where(self._content.c.skill == skill.value)
         statement = statement.order_by(self._content.c.skill, self._content.c.id)
         with self._engine.connect() as connection:
-            return [self._item(dict(row)) for row in connection.execute(statement).mappings()]
+            items = [self._item(dict(row)) for row in connection.execute(statement).mappings()]
+        if household_id is None or child_id is None:
+            return items
+        return [item for item in items if _is_visible_to(item, household_id, child_id)]
 
     def submit_attempt(
         self,
@@ -659,6 +645,8 @@ class PostgresChinesePracticeRepository:
             if content_row is None:
                 raise LookupError("content not found")
             item = self._item(dict(content_row))
+            if not _is_visible_to(item, household_id, child_id):
+                raise LookupError("content not found")
             if item.revision != request.content_revision:
                 raise ValueError("content revision conflict")
             result = score_chinese(item, request.response)
@@ -807,3 +795,98 @@ class PostgresChinesePracticeRepository:
                 for skill, summary in sorted(summaries.items(), key=lambda entry: entry[0].value)
             ),
         )
+
+    def publish_poems(
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        grade: int,
+        request: PublishChinesePoemsRequest,
+    ) -> int:
+        items = _poem_question_items(household_id, child_id, grade, request)
+        with self._engine.begin() as connection:
+            for item in items:
+                statement = pg_insert(self._content).values(
+                    id=item.id,
+                    revision=item.revision,
+                    grade_min=item.grade_min,
+                    grade_max=item.grade_max,
+                    skill=item.skill.value,
+                    task_group=item.task_group,
+                    title=item.title,
+                    content_json={
+                        "passage": item.passage,
+                        "prompt": item.prompt,
+                        "options": list(item.options),
+                    },
+                    answer_spec_json=item.answer_spec.model_dump(mode="json"),
+                    knowledge_key=item.knowledge_key,
+                    difficulty=item.difficulty,
+                    source_json=item.source.model_dump(mode="json"),
+                    status=item.status,
+                    created_at=datetime.now(UTC),
+                )
+                connection.execute(
+                    statement.on_conflict_do_update(
+                        index_elements=[self._content.c.id, self._content.c.revision],
+                        set_={
+                            "content_json": statement.excluded.content_json,
+                            "answer_spec_json": statement.excluded.answer_spec_json,
+                            "source_json": statement.excluded.source_json,
+                            "status": statement.excluded.status,
+                        },
+                    )
+                )
+        return len(items)
+
+
+def _poem_question_items(
+    household_id: UUID,
+    child_id: UUID,
+    grade: int,
+    request: PublishChinesePoemsRequest,
+) -> tuple[ChineseContentItem, ...]:
+    """Compile reviewed poem lines into deterministic next-line questions.
+
+    Only a prompt line and answer choices reach the learner. Full source text remains
+    confined to the approved household snapshot and the server-side answer spec.
+    """
+
+    all_lines = tuple(dict.fromkeys(line for poem in request.poems for line in poem.lines))
+    items: list[ChineseContentItem] = []
+    for poem in request.poems:
+        for index, answer in enumerate(poem.lines[1:]):
+            clue = poem.lines[index]
+            distractors = [line for line in all_lines if line != answer and line != clue][:2]
+            options = tuple(dict.fromkeys((answer, *distractors)))
+            stable_key = (
+                f"{request.snapshot_id}:{poem.page_number}:{poem.title}:{index}:{clue}:{answer}"
+            )
+            source = ChineseContentSource(
+                type="private_curriculum",
+                source_id=f"curriculum-poem:{request.snapshot_id}:{poem.page_number}",
+                license_status="private_authorized",
+                attribution="家庭已审核教材诗文；仅用于本家庭学习",
+                household_id=household_id,
+                child_id=child_id,
+                material_id=request.material_id,
+                snapshot_id=request.snapshot_id,
+                page_number=poem.page_number,
+            )
+            items.append(
+                ChineseContentItem(
+                    id=uuid5(NAMESPACE_URL, stable_key),
+                    revision=1,
+                    grade_min=grade,
+                    grade_max=grade,
+                    skill=ChineseSkill.POEM,
+                    task_group="poem_spot_check",
+                    title=poem.title,
+                    prompt=f"“{clue}”的下一句是哪一句？",
+                    options=options,
+                    answer_spec=ExactChoiceSpec(type="exact_choice", answer=answer),
+                    knowledge_key=f"poem:{request.snapshot_id}:{poem.page_number}:{index}",
+                    source=source,
+                )
+            )
+    return tuple(items)

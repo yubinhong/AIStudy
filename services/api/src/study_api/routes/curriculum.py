@@ -27,6 +27,7 @@ from study_api.auth import (
     require_household,
     require_parent,
 )
+from study_api.chinese_practice import PublishChinesePoemsRequest
 from study_api.curriculum_analysis_jobs import CurriculumKnowledgeRepository
 from study_api.curriculum_limits import MAX_DOCUMENT_BYTES, MAX_TOTAL_DOCUMENT_BYTES
 from study_api.domain.curriculum_knowledge import CurriculumKnowledgeMap, KnowledgeMapStatus
@@ -463,13 +464,32 @@ def approve_curriculum_analysis(
     _require_child(principal, app_request, household_id, child_id)
     del idempotency_key
     try:
-        return knowledge_repository.approve(household_id, child_id, snapshot_id)
+        approved = knowledge_repository.approve(household_id, child_id, snapshot_id)
     except LookupError as error:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="analysis not found"
         ) from error
     except ValueError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    material = app_request.app.state.curriculum_repository.get_material_for_snapshot(
+        household_id, child_id, snapshot_id
+    )
+    if material is not None and material.subject is Subject.CHINESE:
+        poems = knowledge_repository.list_chinese_poems(household_id, child_id, snapshot_id)
+        if poems:
+            child = app_request.app.state.profile_repository.get_child(household_id, child_id)
+            if child is not None:
+                app_request.app.state.chinese_practice_repository.publish_poems(
+                    household_id,
+                    child_id,
+                    child.grade,
+                    PublishChinesePoemsRequest(
+                        material_id=approved.material_id,
+                        snapshot_id=snapshot_id,
+                        poems=poems,
+                    ),
+                )
+    return approved
 
 
 @router.get(

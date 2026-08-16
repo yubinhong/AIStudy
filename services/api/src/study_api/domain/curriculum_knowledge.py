@@ -97,6 +97,19 @@ class ChinesePassageEvidence(BaseModel):
     end_marker: str = Field(min_length=1, max_length=160)
     kind: Literal["pinyin", "character", "vocabulary", "passage", "poem", "exercise"]
     confidence: float = Field(ge=0, le=1)
+    # Only poem extraction carries lines. This stays in the private page-analysis
+    # record and is released to the child solely as one question/answer pair.
+    lines: tuple[str, ...] = Field(default=(), max_length=80)
+
+    @model_validator(mode="after")
+    def validate_poem_lines(self) -> ChinesePassageEvidence:
+        if self.kind == "poem" and len(self.lines) < 2:
+            raise ValueError("poem evidence requires at least two lines")
+        if self.kind != "poem" and self.lines:
+            raise ValueError("only poem evidence may include lines")
+        if any(not line.strip() or len(line) > 120 for line in self.lines):
+            raise ValueError("poem lines must be non-empty and bounded")
+        return self
 
 
 class ChineseProviderPageAnalysis(ProviderPageAnalysis):

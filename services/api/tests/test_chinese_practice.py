@@ -1,4 +1,4 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from auth_helpers import DEFAULT_HOUSEHOLD_ID, session_headers
 from fastapi.testclient import TestClient
@@ -9,6 +9,7 @@ from study_api.chinese_practice import (
     ChineseSkill,
     ConceptEvidenceSpec,
     OrderedTokensSpec,
+    PublishChinesePoemsRequest,
     score_chinese,
 )
 from study_api.main import create_app
@@ -33,43 +34,53 @@ def _enable_chinese(client: TestClient) -> None:
     assert response.status_code == 200
 
 
+def _publish_test_poems(client: TestClient) -> None:
+    client.app.state.chinese_practice_repository.publish_poems(
+        DEFAULT_HOUSEHOLD_ID,
+        CHILD_ID,
+        3,
+        PublishChinesePoemsRequest(
+            material_id=uuid4(),
+            snapshot_id=uuid4(),
+            poems=(
+                {
+                    "title": "春晓",
+                    "page_number": 12,
+                    "lines": ("春眠不觉晓", "处处闻啼鸟", "夜来风雨声", "花落知多少"),
+                },
+            ),
+        ),
+    )
+
+
 def test_chinese_content_requires_subject_and_is_grade_bounded() -> None:
     client = TestClient(create_app())
     path = f"/households/{DEFAULT_HOUSEHOLD_ID}/children/{CHILD_ID}/chinese/content"
 
     disabled = client.get(path, headers=session_headers(client, role="child", child_id=CHILD_ID))
     _enable_chinese(client)
+    _publish_test_poems(client)
     enabled = client.get(path, headers=session_headers(client, role="child", child_id=CHILD_ID))
 
     assert disabled.status_code == 409
     assert enabled.status_code == 200
-    assert {item["skill"] for item in enabled.json()} == {
-        "sentence",
-        "reading",
-        "vocabulary",
-        "recitation",
-    }
-    assert all(item["source"]["license_status"] == "cleared" for item in enabled.json())
-    assert all(
-        item["source"]["review"]["status"] == "pending_owner_review" for item in enabled.json()
-    )
+    assert {item["skill"] for item in enabled.json()} == {"poem"}
+    assert all(item["source"]["license_status"] == "private_authorized" for item in enabled.json())
     assert all("answer_spec" not in item for item in enabled.json())
 
 
 def test_child_submits_chinese_attempt_idempotently_and_parent_cannot_submit() -> None:
     client = TestClient(create_app())
     _enable_chinese(client)
+    _publish_test_poems(client)
     root = f"/households/{DEFAULT_HOUSEHOLD_ID}/children/{CHILD_ID}/chinese"
     child_headers = session_headers(client, role="child", child_id=CHILD_ID)
     items = client.get(f"{root}/content", headers=child_headers).json()
-    reading = next(item for item in items if item["skill"] == "reading")
+    poem = next(item for item in items if item["skill"] == "poem")
     payload = {
-        "content_id": reading["id"],
-        "content_revision": reading["revision"],
-        "response": {
-            "answer": "因为小树长出了新叶",
-            "evidence": "小树长出了嫩绿的新叶",
-        },
+        "content_id": poem["id"],
+        "content_revision": poem["revision"],
+        "response": {"choice": poem["options"][0]},
         "elapsed_ms": 12000,
     }
     headers = {**child_headers, "Idempotency-Key": "chinese-attempt-001"}
@@ -100,18 +111,19 @@ def test_child_submits_chinese_attempt_idempotently_and_parent_cannot_submit() -
 def test_chinese_review_queue_and_parent_skill_report_are_role_scoped() -> None:
     client = TestClient(create_app())
     _enable_chinese(client)
+    _publish_test_poems(client)
     root = f"/households/{DEFAULT_HOUSEHOLD_ID}/children/{CHILD_ID}/chinese"
     child_headers = session_headers(client, role="child", child_id=CHILD_ID)
     content = client.get(f"{root}/content", headers=child_headers).json()
-    vocabulary = next(item for item in content if item["skill"] == "vocabulary")
+    poem = next(item for item in content if item["skill"] == "poem")
 
     submitted = client.post(
         f"{root}/attempts",
         headers={**child_headers, "Idempotency-Key": "chinese-report-attempt-001"},
         json={
-            "content_id": vocabulary["id"],
-            "content_revision": vocabulary["revision"],
-            "response": {"choice": "清新"},
+            "content_id": poem["id"],
+            "content_revision": poem["revision"],
+            "response": {"choice": poem["options"][0]},
             "elapsed_ms": 900,
         },
     )
@@ -122,11 +134,11 @@ def test_chinese_review_queue_and_parent_skill_report_are_role_scoped() -> None:
 
     assert submitted.status_code == 201
     assert reviews.status_code == 200
-    assert reviews.json()[0]["content_id"] == vocabulary["id"]
+    assert reviews.json()[0]["content_id"] == poem["id"]
     assert parent_report.status_code == 200
     assert parent_report.json()["skills"] == [
         {
-            "skill": "vocabulary",
+            "skill": "poem",
             "attempts": 1,
             "correct_attempts": 1,
             "due_reviews": 0,
@@ -170,47 +182,27 @@ def test_deterministic_scorer_handles_order_and_evidence_without_provider() -> N
     assert partial.feedback_tags == ("evidence_missing",)
 
 
-def test_original_chinese_mvp_pack_covers_pinyin_character_vocabulary_and_recitation() -> None:
+def test_retired_demos_are_not_listed_and_private_poems_are_child_scoped() -> None:
     client = TestClient(create_app())
     _enable_chinese(client)
+    _publish_test_poems(client)
     root = f"/households/{DEFAULT_HOUSEHOLD_ID}/children/{CHILD_ID}/chinese"
     headers = session_headers(client, role="child", child_id=CHILD_ID)
 
     grade_three = client.get(f"{root}/content", headers=headers)
-    grade_one = client.patch(
-        f"/households/{DEFAULT_HOUSEHOLD_ID}/children/{CHILD_ID}",
-        headers={**session_headers(client), "Idempotency-Key": "set-grade-one-chinese"},
-        json={
-            "display_name": "Synthetic Child A",
-            "grade": 1,
-            "curriculum_version": "multi-demo-2026",
-            "subjects": ["math", "chinese"],
-        },
-    )
-    grade_one_content = client.get(f"{root}/content", headers=headers)
-
     assert grade_three.status_code == 200
-    assert {item["skill"] for item in grade_three.json()} >= {
-        "sentence",
-        "reading",
-        "vocabulary",
-        "recitation",
-    }
-    assert grade_one.status_code == 200
-    assert {item["skill"] for item in grade_one_content.json()} >= {
-        "pinyin",
-        "character",
-        "recitation",
-    }
+    assert {item["skill"] for item in grade_three.json()} == {"poem"}
     assert all(
-        item["source"]["license_status"] == "cleared" and "answer_spec" not in item
-        for item in grade_one_content.json()
+        item["source"]["license_status"] == "private_authorized"
+        and "answer_spec" not in item
+        for item in grade_three.json()
     )
 
 
 def test_chinese_attempt_rejects_unbounded_or_unknown_response_fields() -> None:
     client = TestClient(create_app())
     _enable_chinese(client)
+    _publish_test_poems(client)
     root = f"/households/{DEFAULT_HOUSEHOLD_ID}/children/{CHILD_ID}/chinese"
     child_headers = session_headers(client, role="child", child_id=CHILD_ID)
     content = client.get(f"{root}/content", headers=child_headers).json()[0]

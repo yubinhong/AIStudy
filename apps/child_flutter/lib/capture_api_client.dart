@@ -305,6 +305,53 @@ class CaptureApiClient {
     );
   }
 
+  Future<Map<String, dynamic>> uploadAndCreatePictureWritingGuideBytes(
+    Uint8List bytes, {
+    required Map<String, dynamic> sanitization,
+    String? retryNonce,
+  }) async {
+    if (bytes.isEmpty) {
+      throw const CaptureApiException('图片内容为空，请重新拍摄。');
+    }
+    if (bytes.length > maxCaptureBytes) {
+      throw const CaptureApiException('图片超过 8 MB，请重新裁剪后再试。');
+    }
+    final mediaType = _mediaTypeFor(bytes);
+    final contentSha256 = sha256.convert(bytes).toString();
+    final activeSessionId = await _ensureCaptureSession();
+    final capture = await _uploadCapture(
+      activeSessionId,
+      bytes,
+      mediaType: mediaType,
+      contentSha256: contentSha256,
+      idempotencyKey: _captureUploadIdempotencyKey(
+        contentSha256,
+        retryNonce: retryNonce,
+      ),
+    );
+    final captureId = _string(capture['id']);
+    final version = _int(capture['version']);
+    return _postJson(
+      _path(
+        '/households/$householdId/captures/$captureId/picture-writing-guides',
+      ),
+      headers: {
+        'Idempotency-Key': retryNonce == null
+            ? 'picture-writing-$captureId'
+            : 'picture-writing-$captureId-retry-$retryNonce',
+      },
+      body: {
+        'expected_capture_version': version,
+        'sanitization': {
+          ...sanitization,
+          'sanitized_derivative_sha256': contentSha256,
+        },
+        'user_confirmed': true,
+      },
+      acceptedStatuses: const {200, 201},
+    );
+  }
+
   Future<Map<String, dynamic>> getImageAnalysisJob(
     CaptureUploadReceipt receipt,
   ) async {

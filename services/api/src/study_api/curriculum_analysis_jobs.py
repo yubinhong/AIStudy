@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import MetaData, Table, create_engine, delete, func, insert, select, update
 from sqlalchemy.engine import Engine
 
+from study_api.chinese_practice import ChinesePoemDraft
 from study_api.curriculum_limits import MAX_DOCUMENT_BYTES
 from study_api.database import database_url
 from study_api.domain.curriculum_knowledge import (
@@ -74,6 +75,10 @@ class CurriculumKnowledgeRepository(Protocol):
     def approve(
         self, household_id: UUID, child_id: UUID, snapshot_id: UUID
     ) -> CurriculumKnowledgeMap: ...
+
+    def list_chinese_poems(
+        self, household_id: UUID, child_id: UUID, snapshot_id: UUID
+    ) -> tuple[ChinesePoemDraft, ...]: ...
 
     def get_page_asset(
         self, household_id: UUID, child_id: UUID, snapshot_id: UUID, page_number: int
@@ -177,6 +182,14 @@ class InMemoryCurriculumKnowledgeRepository:
         )
         self._maps[snapshot_id] = approved
         return approved
+
+    def list_chinese_poems(
+        self, household_id: UUID, child_id: UUID, snapshot_id: UUID
+    ) -> tuple[ChinesePoemDraft, ...]:
+        # API tests can inject poem drafts through the Chinese repository; the
+        # production repository reads private persisted page analyses below.
+        del household_id, child_id, snapshot_id
+        return ()
 
     def get_page_asset(
         self, household_id: UUID, child_id: UUID, snapshot_id: UUID, page_number: int
@@ -338,6 +351,44 @@ class PostgresCurriculumKnowledgeRepository:
 
     def close(self) -> None:
         self._engine.dispose()
+
+    def list_chinese_poems(
+        self, household_id: UUID, child_id: UUID, snapshot_id: UUID
+    ) -> tuple[ChinesePoemDraft, ...]:
+        statement = (
+            select(self._pages.c.page_number, self._pages.c.knowledge_observations)
+            .join(self._maps, self._maps.c.id == self._pages.c.knowledge_map_id)
+            .where(
+                self._pages.c.household_id == household_id,
+                self._pages.c.child_id == child_id,
+                self._pages.c.snapshot_id == snapshot_id,
+                self._maps.c.status == KnowledgeMapStatus.APPROVED.value,
+            )
+            .order_by(self._pages.c.page_number)
+        )
+        poems: list[ChinesePoemDraft] = []
+        with self._engine.connect() as connection:
+            for row in connection.execute(statement).mappings():
+                for observation in row["knowledge_observations"]:
+                    if not isinstance(observation, dict):
+                        continue
+                    for passage in observation.get("passages", []):
+                        if not isinstance(passage, dict) or passage.get("kind") != "poem":
+                            continue
+                        lines = passage.get("lines", [])
+                        if not isinstance(lines, list):
+                            continue
+                        try:
+                            poems.append(
+                                ChinesePoemDraft(
+                                    title=passage.get("title") or "教材古诗",
+                                    page_number=row["page_number"],
+                                    lines=tuple(str(line) for line in lines),
+                                )
+                            )
+                        except ValueError:
+                            continue
+        return tuple(poems)
 
     def enqueue(
         self, household_id: UUID, child_id: UUID, material_id: UUID, snapshot_id: UUID

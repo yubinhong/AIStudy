@@ -1,12 +1,19 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 import 'data/chinese_api_client.dart';
 import 'domain/chinese_models.dart';
 
 class ChineseHomePage extends StatefulWidget {
-  const ChineseHomePage({super.key, required this.gateway});
+  const ChineseHomePage({
+    super.key,
+    required this.gateway,
+    this.onPictureWriting,
+  });
 
   final ChinesePracticeGateway gateway;
+  final VoidCallback? onPictureWriting;
 
   @override
   State<ChineseHomePage> createState() => _ChineseHomePageState();
@@ -55,9 +62,9 @@ class _ChineseHomePageState extends State<ChineseHomePage> {
           }
           final dashboard = snapshot.data;
           final items = dashboard?.content ?? const <ChineseContentItem>[];
-          if (items.isEmpty) {
-            return const Center(child: Text('当前年级还没有已审核的语文练习。'));
-          }
+          final poemItems = items
+              .where((item) => item.skill == 'poem')
+              .toList(growable: false);
           final contentByRevision = {
             for (final item in items) '${item.id}:${item.revision}': item,
           };
@@ -70,10 +77,23 @@ class _ChineseHomePageState extends State<ChineseHomePage> {
               .toList(growable: false);
           return ListView.separated(
             padding: const EdgeInsets.all(20),
-            itemCount: items.length + (dueItems.isEmpty ? 0 : 1),
+            itemCount:
+                1 + (dueItems.isEmpty ? 0 : 1) + (poemItems.isEmpty ? 0 : 1),
             separatorBuilder: (_, _) => const SizedBox(height: 12),
             itemBuilder: (context, index) {
-              if (index == 0 && dueItems.isNotEmpty) {
+              if (index == 0) {
+                return Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.edit_note_outlined),
+                    title: const Text('看图写话'),
+                    subtitle: const Text('拍一张图，先观察，再写一句'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: widget.onPictureWriting,
+                  ),
+                );
+              }
+              final afterPictureWriting = index - 1;
+              if (afterPictureWriting == 0 && dueItems.isNotEmpty) {
                 return Card(
                   color: Theme.of(context).colorScheme.secondaryContainer,
                   child: Padding(
@@ -113,23 +133,27 @@ class _ChineseHomePageState extends State<ChineseHomePage> {
                   ),
                 );
               }
-              final item = items[index - (dueItems.isEmpty ? 0 : 1)];
+              if (poemItems.isEmpty) {
+                return const Text('家长上传并审核教材后，这里会出现古诗抽查。');
+              }
               return Card(
                 child: ListTile(
-                  leading: Icon(_skillIcon(item.skill)),
-                  title: Text(item.title),
-                  subtitle: Text(
-                    '${_skillLabel(item.skill)} · ${item.sourceLabel}',
-                  ),
+                  leading: const Icon(Icons.menu_book_outlined),
+                  title: const Text('古诗抽查'),
+                  subtitle: const Text('随机抽一首，选择下一句'),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => _ChinesePracticePage(
-                        gateway: widget.gateway,
-                        item: item,
+                  onTap: () {
+                    final item =
+                        poemItems[Random.secure().nextInt(poemItems.length)];
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => _ChinesePracticePage(
+                          gateway: widget.gateway,
+                          item: item,
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
               );
             },
@@ -294,7 +318,9 @@ class _ChinesePracticePageState extends State<_ChinesePracticePage> {
                       ? widget.isReview
                             ? '复习完成，已更新下一次复习时间。'
                             : '回答正确，已加入后续复习。'
-                      : _feedback(result.feedbackTags),
+                      : result.correctAnswer == null
+                      ? _feedback(result.feedbackTags)
+                      : '${_feedback(result.feedbackTags)}\n正确答案：${result.correctAnswer}',
                 ),
               ),
             ),
@@ -373,23 +399,6 @@ class _SentenceOrder extends StatelessWidget {
     );
   }
 }
-
-IconData _skillIcon(String skill) => switch (skill) {
-  'reading' => Icons.menu_book_outlined,
-  'sentence' => Icons.sort_by_alpha,
-  'pinyin' => Icons.record_voice_over_outlined,
-  _ => Icons.text_fields,
-};
-
-String _skillLabel(String skill) => switch (skill) {
-  'reading' => '阅读理解',
-  'sentence' => '句子运用',
-  'pinyin' => '拼音',
-  'character' => '生字',
-  'vocabulary' => '词语',
-  'recitation' => '古诗文',
-  _ => '语文表达',
-};
 
 String _feedback(List<String> tags) {
   if (tags.contains('evidence_missing')) return '再回到短文中，找出能支持回答的原句。';

@@ -9,7 +9,7 @@
 - 当前阶段：`P1 MULTISUBJECT FOUNDATION / CHINESE MVP / GATED ENGLISH LAST`
 - 主要用户：小学阶段孩子与家长/监护人；辅助角色为家庭内容维护者和项目维护者。
 - 生产状态：`SELF_HOSTED_DEPLOYED`（Ubuntu 自用 Compose 正在运行 API `0.14.0`/`0031_multisubject_chinese`；API/Web/四个常驻 worker 健康，迁移服务成功退出；不等同于公网/商业生产批准）
-- 当前版本：本地 API/OpenAPI `0.15.0`、迁移头 `0032_chinese_original_content_pack`；Ubuntu 发布状态以本次发布记录为准，发布标签待本次修复发布确认。
+- 当前版本：本地 API/OpenAPI `0.15.0`、迁移头 `0035_chinese_poem_skill`；Ubuntu 仍停留在已发布的 `0032`，本轮未部署。
 - 最近更新：`2026-08-16`
 
 ## 2. 当前工作状态
@@ -19,6 +19,7 @@
 - 当前分支：`master`；工作区包含本轮未提交的 PLAN-0031 Playwright/CI/文档变更。
 - 当前重点：继续扩展正式语文内容、复习 UI、技能报告与语文教材分析，英语最后。Ubuntu 已前滚到 `0.14.0`/`0031_multisubject_chinese`；既有数学教材原页/知识审核、推荐详情和学习记录继续按已部署合同运行。
 - 已完成：本地与 Ubuntu OpenAPI `0.14.0`、迁移 `0013`～`0031`、视觉四态候选与确认、可信 VerifiedQuestion → 云端递进 L1/L2 → 完整步骤/答案/验算、Mistake/Review closeout、语文确定性 Content/Attempt/Review，以及 PDF 私有原页、分批多模态教材理解、全书知识图谱、家长批准、“批准知识点 + 全部开放错题”的来源受限推荐和 180 天详细学习历史策略。
+- 2026-08-16 本地未部署增量：`0033` 退役六项语文演示并从已审核教材逐行古诗生成抽查；`0034` 增加独立 `picture_writing_guides` 与 `picture-writing-guide.v1`。看图写话只消耗用户确认的脱敏派生图，Provider 只返回观察/提问/句式支架，绝不走数学抽题、生成范文或评分；真实 PostgreSQL、Provider 和设备仍待验收。
 - 当前未完成：真实 118 页 PDF 多模态知识质量/费用/重试验收、Ubuntu 真实账号/PostgreSQL 浏览器链路、实际相机四态闭环、教材个人信息自动门禁、自动视觉检测器、四设备回归、正式依赖/镜像安全扫描、监控告警和已批准的 RPO/RTO。NewAPI 合成完整解答和隔离登录态浏览器 E2E 已通过；云端教材分析、L1/L2 和推荐 planner 尚未进行真实 Provider 质量/成本验收。PLAN-0032 本地实现已补齐语文到期复习、家长技能汇总及 `chinese-curriculum-*.v2` 独立 Schema/Prompt/短边界证据；内容仍为待具名教研和版权签核的原创演示包，不能作为正式课程或部署验收。
 - 新产品主线已完成代码收口：ADR-0020/PLAN-0014 的错题、复习、教材和 Tutor 关键事实链已接通；PLAN-0016 进入设备/E2E/发布验收阶段，ADR-0021 已接受。
 - Web 多孩子/多家庭现状：账号与档案已由孩子管理聚合 API/Web 统一创建、列表和删除；全局顶栏通过 `?child=` 切换并保持当前孩子作用域。`0028` 已将最早 `parent_admin` 收敛为唯一 `super_admin`，其可创建新家庭的普通家长；普通家长只管理自己创建的孩子，当前不支持匿名注册、邀请或账号跨家庭切换。家长显式声明的国家公开 PDF 可按完整内容指纹复用已审核的私有 PDF/页图/知识图谱草稿，目标家庭仍须审核发布；儿童数据和学习事实不共享。2026-07-28 已在 Ubuntu PostgreSQL 前滚并完成 API/Web 健康、角色/孩子归属和备份恢复验证；跨家庭浏览器流程与真机验收仍待执行。
