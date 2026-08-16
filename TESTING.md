@@ -2,7 +2,7 @@
 
 ## 1. 当前状态与质量目标
 
-当前仓库已有 P0/P1 依赖清单、三类锁文件、核心测试和 CI 草案。API 的 Household/认证/学习/Capture/可信 Tutor/周报/导出、Mistake/Review closeout、教材 PDF-only 私有原页/多模态知识图谱、作答四态/推荐审批、Web/Flutter 入口、SQLite 离线队列和 Compose 已验证；Android/iOS 构建及 PostgreSQL/MinIO 恢复已有记录。本地 API/OpenAPI 为 `0.15.0`、迁移头 `0032_chinese_original_content_pack`，Ubuntu 仍为 `0.14.0`/`0031`。剩余是正式语文内容签核、真实 PDF/Provider、设备和最终 E2E 发布门槛。
+当前仓库已有 P0/P1 依赖清单、三类锁文件、核心测试和 CI 草案。API 的 Household/认证/学习/Capture/可信 Tutor/周报/导出、Mistake/Review closeout、教材 PDF-only 私有原页/多模态知识图谱、作答四态/推荐审批、Web/Flutter 入口、SQLite 离线队列和 Compose 已验证；Android/iOS 构建及 PostgreSQL/MinIO 恢复已有记录。本地 API/OpenAPI 为 `0.15.0`、迁移头 `0032_chinese_original_content_pack`，Ubuntu 发布状态以本次发布记录为准。剩余是正式语文内容签核、真实 PDF/Provider、设备和最终 E2E 发布门槛。
 
 2026-08-16 语文内容增量：本地新增 `0032_chinese_original_content_pack`，补充生字、词语与原创短句积累的确定性选择题；语文路由 golden tests `6 passed`，Ruff、Mypy、Alembic 单 head 及从零离线 SQL 通过。内容为项目原创演示包，不构成已完成的教研/版权审核，不得作为正式课程发布或部署声明。
 

@@ -16,6 +16,15 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # Older deployments retain Alembic's default varchar(32), while this
+    # established revision identifier is longer. Expand before Alembic records it.
+    op.alter_column(
+        "alembic_version",
+        "version_num",
+        existing_type=sa.String(length=32),
+        type_=sa.String(length=64),
+        existing_nullable=False,
+    )
     op.execute(
         sa.text(
             """

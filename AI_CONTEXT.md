@@ -9,7 +9,7 @@
 - 当前阶段：`P1 MULTISUBJECT FOUNDATION / CHINESE MVP / GATED ENGLISH LAST`
 - 主要用户：小学阶段孩子与家长/监护人；辅助角色为家庭内容维护者和项目维护者。
 - 生产状态：`SELF_HOSTED_DEPLOYED`（Ubuntu 自用 Compose 正在运行 API `0.14.0`/`0031_multisubject_chinese`；API/Web/四个常驻 worker 健康，迁移服务成功退出；不等同于公网/商业生产批准）
-- 当前版本：本地 API/OpenAPI `0.14.0`、迁移头 `0032_chinese_original_content_pack`；Ubuntu 仍为 `0.14.0`/`0031_multisubject_chinese`，发布标签 `v0.14.0`。
+- 当前版本：本地 API/OpenAPI `0.15.0`、迁移头 `0032_chinese_original_content_pack`；Ubuntu 发布状态以本次发布记录为准，发布标签待本次修复发布确认。
 - 最近更新：`2026-08-16`
 
 ## 2. 当前工作状态
