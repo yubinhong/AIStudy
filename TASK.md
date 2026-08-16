@@ -28,6 +28,8 @@
 
 2026-08-16 PLAN-0033 实现增量：旧六项原创演示内容通过 `0033` 前向退役而不删除 Attempt/Review；已审核语文教材的逐行古诗自动生成相邻句选择题，错答返回正确下一句并进入确定性 Review。看图写话新增 `0034_picture_writing_guides`、独立 `picture-writing-guide.v1` Provider Schema 与 child-scoped `/picture-writing-guides` API；它只保存有界场景观察、提问和句式支架，不复用数学 `ImageAnalysisJob`/`QuestionExtraction`，也不生成范文或评分。`0035` 将语文内容技能约束前向扩展为 `poem`。Flutter 提供拍照/相册、脱敏确认后的“观察-说一句-补细节”页面。API 定向 `27 passed`、Ruff/Mypy、OpenAPI YAML 与 Alembic 单 head、Flutter Analyze/`53 passed` 通过；本机 PostgreSQL 已前滚至 `0035`，古诗并发 Attempt/Review/导出集成 `1 passed`。`v0.16.0` 已推送并前向部署 Ubuntu，备份隔离恢复、API/Web/worker、`0035`、OpenAPI 路径、私有 MinIO 端口和容器源码均复核。真实 NewAPI Adapter 对无人物/无文字的合成图返回合规 Schema；Nova 9 已安装 `0.16.0 (2)` 并配置 LAN 地址，WLAN 可达 Ubuntu 且健康检测未再报连接错误。重装后无会话，真实登录、相机/相册、权限、上传、复习和弱网 E2E 未执行。
 
+2026-08-17 Nova 9 相册联调增量：登录态恢复后进入语文看图写话，使用无人物/无文字的合成图完成系统相册选择、脱敏确认和上传；Ubuntu picture-writing API 返回 `201`，设备展示第 1 步的观察与提问。相机、句子输入/细节第 2～3 步和完成返回因 USB 调试在下一步点击时断开而继续待验收。
+
 2026-08-16 发布/设备记录：`1b5ecc1` 和 `v0.15.0` 已推送；首次 Ubuntu 迁移因历史 `alembic_version.version_num varchar(32)` 不能写入长 `0032` revision 而事务回滚，随后 `4b95757`/`v0.15.1` 前向扩展该列至 `varchar(64)` 并成功发布。备份 `/home/syin/study-backups/20260816T072837Z` 已隔离恢复为 38 张 public 表和 353 个 MinIO 文件；Ubuntu API `0.15.0`、Web、四个 worker、`0032` current/head、语文 v2 运行时常量和 MinIO 非宿主暴露均通过。Nova 9（Android 12）以 `adb install -r` 保留会话升级并实际显示学习桌的数学/语文/锁定英语及语文的生字、拼音、古诗文、句子、词语内容；未作答或写入 Attempt。当前账号无到期 ReviewItem，故空状态不显示复习卡，真实到期复习提交、相机/相册、弱网、重启、切换账号，以及 iPad mini 6/iPhone 11/Windows E2E 仍未执行。
 
 回滚：隐藏语文入口并继续只发送 `math`；保留 `0031` 新列/表和已追加学习事实，以前向修复恢复。禁止删除语文 Attempt/Review 或降级数据库作为回滚。
