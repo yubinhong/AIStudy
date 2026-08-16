@@ -575,15 +575,15 @@ def test_newapi_provider_uses_chinese_v2_schema_and_short_passage_boundaries() -
                             {
                                 "title": "春晓",
                                 "start_marker": "春眠",
-                                    "end_marker": "花落",
-                                    "kind": "poem",
-                                    "confidence": 0.9,
-                                    "lines": [
-                                        "春眠不觉晓",
-                                        "处处闻啼鸟",
-                                        "夜来风雨声",
-                                        "花落知多少",
-                                    ],
+                                "end_marker": "花落",
+                                "kind": "poem",
+                                "confidence": 0.9,
+                                "lines": [
+                                    "春眠不觉晓",
+                                    "处处闻啼鸟",
+                                    "夜来风雨声",
+                                    "花落知多少",
+                                ],
                             }
                         ],
                         "confidence": 0.9,

@@ -460,8 +460,7 @@ class NewApiVisionProvider:
                             {
                                 "type": "text",
                                 "text": (
-                                    "Give observation scaffolds for this "
-                                    "picture-writing activity."
+                                    "Give observation scaffolds for this picture-writing activity."
                                 ),
                             },
                             {

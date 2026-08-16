@@ -193,8 +193,7 @@ def test_retired_demos_are_not_listed_and_private_poems_are_child_scoped() -> No
     assert grade_three.status_code == 200
     assert {item["skill"] for item in grade_three.json()} == {"poem"}
     assert all(
-        item["source"]["license_status"] == "private_authorized"
-        and "answer_spec" not in item
+        item["source"]["license_status"] == "private_authorized" and "answer_spec" not in item
         for item in grade_three.json()
     )
 

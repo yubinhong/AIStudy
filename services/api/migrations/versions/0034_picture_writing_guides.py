@@ -31,9 +31,19 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["child_id"], ["child_profiles.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["capture_id"], ["captures.id"], ondelete="RESTRICT"),
-        sa.UniqueConstraint("household_id", "capture_id", "child_id", "idempotency_key", name="uq_picture_writing_guide_idempotency"),
+        sa.UniqueConstraint(
+            "household_id",
+            "capture_id",
+            "child_id",
+            "idempotency_key",
+            name="uq_picture_writing_guide_idempotency",
+        ),
     )
-    op.create_index("ix_picture_writing_guides_lookup", "picture_writing_guides", ["household_id", "child_id", "capture_id", "created_at"])
+    op.create_index(
+        "ix_picture_writing_guides_lookup",
+        "picture_writing_guides",
+        ["household_id", "child_id", "capture_id", "created_at"],
+    )
 
 
 def downgrade() -> None:
