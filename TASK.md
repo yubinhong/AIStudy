@@ -26,6 +26,8 @@
 
 2026-08-16 PLAN-0032 实现增量：语文内容响应加入待项目 Owner 审核的来源/权利凭证摘要，`docs/chinese-content-review.md` 建立不可伪造的签核台账；新增拼音、生字、词语和原创古诗文积累样例的确定性题型。孩子端可读取到期 ReviewItem 并以相同内容版本重做，家长首页按当前孩子汇总拼音/生字/词语/句子/阅读/背诵技能的 Attempt、正确数与到期数；本机 PostgreSQL 集成 `1 passed` 覆盖并发、导出、复习队列和报告。教材分析现按 Material subject 分派：数学继续 `curriculum-*.v1`，语文使用独立 `chinese-curriculum-*.v2` schema/prompt 和短篇章边界证据，保留既有父母审核与私有页图边界；定向 API `21 passed`、Ruff/Mypy 通过，未上传真实 PDF 或调用 Provider。正式具名教研/版权签核、Ubuntu 发布、真实账号浏览器和四设备完整 E2E 仍未完成。
 
+2026-08-16 发布/设备记录：`1b5ecc1` 和 `v0.15.0` 已推送；首次 Ubuntu 迁移因历史 `alembic_version.version_num varchar(32)` 不能写入长 `0032` revision 而事务回滚，随后 `4b95757`/`v0.15.1` 前向扩展该列至 `varchar(64)` 并成功发布。备份 `/home/syin/study-backups/20260816T072837Z` 已隔离恢复为 38 张 public 表和 353 个 MinIO 文件；Ubuntu API `0.15.0`、Web、四个 worker、`0032` current/head、语文 v2 运行时常量和 MinIO 非宿主暴露均通过。Nova 9（Android 12）以 `adb install -r` 保留会话升级并实际显示学习桌的数学/语文/锁定英语及语文的生字、拼音、古诗文、句子、词语内容；未作答或写入 Attempt。当前账号无到期 ReviewItem，故空状态不显示复习卡，真实到期复习提交、相机/相册、弱网、重启、切换账号，以及 iPad mini 6/iPhone 11/Windows E2E 仍未执行。
+
 回滚：隐藏语文入口并继续只发送 `math`；保留 `0031` 新列/表和已追加学习事实，以前向修复恢复。禁止删除语文 Attempt/Review 或降级数据库作为回滚。
 
 ---

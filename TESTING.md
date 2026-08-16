@@ -8,6 +8,8 @@
 
 2026-08-16 PLAN-0032：`./.venv/bin/pytest -q -m integration tests/test_postgres_chinese_practice.py` 为 `1 passed`，覆盖 PostgreSQL 语文并发 Attempt、导出、Review 队列和家长技能汇总；Flutter 语文定向 Analyze/Test、Web format/typecheck/test 均通过。教材分析 `v2` 定向 Ruff/Mypy 和 `tests/test_curriculum_analysis_jobs.py tests/test_newapi_provider.py` 为 `21 passed`，分别验证数学 v1 回归及语文 v2 的独立 Schema、短篇章边界和不复用数学提示词。未执行真实 Provider/PDF、Ubuntu 真实账号浏览器或四设备 E2E。
 
+2026-08-16 Ubuntu/真机发布验收：`v0.15.1` 在 `/home/syin/study` 前向发布；发布前备份和隔离恢复为 38 张 PostgreSQL public 表、353 个 MinIO 文件。首次 `v0.15.0` 的迁移在长 revision 写入旧 `varchar(32)` 时原子回滚，`v0.15.1` 将该元数据列前向扩展为 `varchar(64)` 后，远端 API `0.15.0`、Web、四个 worker、`0032_chinese_original_content_pack` current/head 和 `chinese-curriculum-page-analysis.v2` 运行时常量均通过；MinIO `9000` 的 Compose host port 查询为 `:0`。Nova 9 实际保留会话升级并加载新增语文内容，未提交答案或读取学习记录；当前账号没有到期复习，未验证真实复习提交。
+
 2026-08-16 登录态浏览器 E2E：`apps/web` 固定 `@playwright/test 1.61.1`，以独立进程内存 API 和 Next 服务运行 Chromium。`pnpm test:e2e` 为 `1 passed`，覆盖未登录重定向、一次性管理员改密前数据 `403`、HttpOnly/SameSite Cookie、缺失 CSRF `403`、改密 Session 轮换与旧会话 `401`、退出撤销、超级管理员开通新家庭、普通家长角色/跨家庭 `404`、双孩子聚合创建、`math/chinese` 差异和 `?child=` 切换。Web 32 项、格式/Lint/类型/build 及认证/档案 API 25 项通过；CI 增加独立 Chromium Job。测试只用运行时 synthetic 凭据，不上传 Trace、视频、截图或 HTML 报告。Ubuntu 真实账号/PostgreSQL 浏览器和设备生命周期未执行。
 
 2026-08-16 语文 PostgreSQL 集成：本机 `127.0.0.1:5432` 从 `0025_curriculum_knowledge_map` 前滚到 `0031_multisubject_chinese`，再执行 `services/api/.venv/bin/pytest -q -m integration tests/test_postgres_chinese_practice.py`，结果 `1 passed`。随机 Household、普通 Parent 与 Child 均在 `finally` 清理；两个不同幂等键的语文提交均追加 Attempt，同一 Review 以 PostgreSQL upsert 原子合并为强度 `2`，导出包含两条 Attempt 与一条 Review，删除 Child 后两张语文事实表均无残留。未读取或写入 Ubuntu 数据。

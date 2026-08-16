@@ -1,5 +1,7 @@
 # Changelog
 
+- 2026-08-16：发布修复版 `v0.15.1` 到 Ubuntu 自用 Compose。前置备份 `/home/syin/study-backups/20260816T072837Z` 已隔离恢复验证（38 张 PostgreSQL public 表、353 个 MinIO 文件）；API `0.15.0`、Web、四个 worker、`0032_chinese_original_content_pack` 迁移和私有 MinIO 端口均已运行验证。首次 `v0.15.0` 发布暴露历史 Alembic version 列为 `varchar(32)`，长 revision 写入失败且事务回滚；`v0.15.1` 先前向扩展为 `varchar(64)` 后成功迁移。Nova 9 保留登录态升级后加载数学、语文、锁定英语及新增语文内容；未提交答案、未读取或导出学习记录。
+
 - 2026-08-16：本地 API/OpenAPI 前移至 `0.15.0`，新增语文到期复习读取、家长按技能汇总和孩子端同版本复习入口；拼音、生字、词语与古诗文积累仅作为待具名教研/版权审核的原创演示内容。语文教材分析改为 subject-aware 队列：数学保持 `curriculum-*.v1`，语文使用独立 `chinese-curriculum-*.v2` Schema/Prompt，并只记录短篇章边界证据，禁止复用数学提示或重建教材全文。正式签核、真实 PDF/Provider 和设备验收仍待完成。
 
 - 2026-08-16：语文 PostgreSQL 持久化增加并发安全的 Review upsert：两个不同幂等键提交同一内容时均保留追加 Attempt，并原子更新同一条 Review。新增随机 Household/Parent/Child 的集成测试，验证并发提交、导出字段和删除级联清理；本机数据库已前滚到 `0031`，未重新部署 Ubuntu。
