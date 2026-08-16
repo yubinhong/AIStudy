@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 家庭 AI 学习助手 API
-  version: 0.14.0
+  version: 0.15.0
   description: Self-hosted Household account/session, multi-subject learning, Chinese practice, and gated English speaking contracts.
 servers:
   - url: http://localhost:8000
@@ -2161,6 +2161,59 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/IdempotencyConflict'}
         '422': {$ref: '#/components/responses/InvalidRequest'}
+  /households/{household_id}/children/{child_id}/chinese/reviews:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: listChineseReviews
+      summary: List a bound child's due Chinese reviews
+      description: Returns review scheduling facts only. The child reloads the same approved content revision before answering.
+      security:
+        - BearerSession: []
+      parameters:
+        - name: due_only
+          in: query
+          required: false
+          schema: {type: boolean, default: true}
+      responses:
+        '200':
+          description: Grade-bounded Chinese review items.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/ChineseReviewItem'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/InvalidRequest'}
+  /households/{household_id}/children/{child_id}/chinese/skill-report:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: getChineseSkillReport
+      summary: Read a parent-only Chinese skill report
+      description: Aggregates appended attempts and review schedules; it never infers mastery from an AI model.
+      security:
+        - SessionCookie: []
+      responses:
+        '200':
+          description: Per-skill parent report for one child.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChineseSkillReport'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/InvalidRequest'}
   /households/{household_id}/children/{child_id}/english-practice/settings:
     parameters:
       - $ref: '#/components/parameters/HouseholdId'
@@ -2642,7 +2695,7 @@ components:
           const: study-api
         version:
           type: string
-          const: 0.14.0
+          const: 0.15.0
     CreateChildRequest:
       type: object
       additionalProperties: false
@@ -3382,12 +3435,23 @@ components:
     ChineseContentSource:
       type: object
       additionalProperties: false
-      required: [type, source_id, license_status, attribution]
+      required: [type, source_id, license_status, attribution, review]
       properties:
         type: {type: string, enum: [original, private_curriculum]}
         source_id: {type: string, minLength: 1, maxLength: 120}
         license_status: {type: string, enum: [cleared, private_authorized]}
         attribution: {type: string, maxLength: 240, nullable: true}
+        review: {$ref: '#/components/schemas/ChineseContentReview'}
+    ChineseContentReview:
+      type: object
+      additionalProperties: false
+      required: [status, protocol_version, rights_evidence_sha256, reviewed_at, reviewer_role]
+      properties:
+        status: {type: string, enum: [pending_owner_review, approved]}
+        protocol_version: {type: string, const: chinese-content-review.v1}
+        rights_evidence_sha256: {type: string, pattern: '^[0-9a-f]{64}$', nullable: true}
+        reviewed_at: {type: string, format: date-time, nullable: true}
+        reviewer_role: {type: string, enum: [project_owner], nullable: true}
     ChineseContentItem:
       type: object
       additionalProperties: false
@@ -3498,6 +3562,26 @@ components:
         strength: {type: integer, minimum: 0, maximum: 5}
         last_feedback_tag: {type: string, minLength: 1, maxLength: 80}
         updated_at: {type: string, format: date-time}
+    ChineseSkillSummary:
+      type: object
+      additionalProperties: false
+      required: [skill, attempts, correct_attempts, due_reviews, last_attempt_at]
+      properties:
+        skill: {$ref: '#/components/schemas/ChineseSkill'}
+        attempts: {type: integer, minimum: 0}
+        correct_attempts: {type: integer, minimum: 0}
+        due_reviews: {type: integer, minimum: 0}
+        last_attempt_at: {type: string, format: date-time, nullable: true}
+    ChineseSkillReport:
+      type: object
+      additionalProperties: false
+      required: [child_id, generated_at, skills]
+      properties:
+        child_id: {type: string, format: uuid}
+        generated_at: {type: string, format: date-time}
+        skills:
+          type: array
+          items: {$ref: '#/components/schemas/ChineseSkillSummary'}
     CurriculumSection:
       type: object
       additionalProperties: false

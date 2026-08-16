@@ -65,3 +65,30 @@ class ChineseAttemptResult {
     );
   }
 }
+
+class ChineseReviewItem {
+  const ChineseReviewItem({
+    required this.contentId,
+    required this.contentRevision,
+    required this.dueAt,
+    required this.skill,
+  });
+
+  final String contentId;
+  final int contentRevision;
+  final DateTime dueAt;
+  final String skill;
+
+  factory ChineseReviewItem.fromJson(Map<String, dynamic> json) {
+    return ChineseReviewItem(
+      contentId: json['content_id']?.toString() ?? '',
+      contentRevision: json['content_revision'] is int
+          ? json['content_revision'] as int
+          : 1,
+      dueAt:
+          DateTime.tryParse(json['due_at']?.toString() ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      skill: json['skill']?.toString() ?? 'vocabulary',
+    );
+  }
+}

@@ -2,7 +2,7 @@
 
 这套 Compose 适合单家庭、自用部署，包含 PostgreSQL、Redis、私有 MinIO、FastAPI API、家长 Web、数据库迁移一次性服务、NewAPI 图片分析 worker 和数据生命周期 worker。Compose 会从同目录的 `.env` 注入服务变量，不需要在启动命令中传入 `--env-file`。它不会部署 NewAPI；NewAPI 由部署者单独提供，API 通过 OpenAI-compatible `/v1/chat/completions` 访问。
 
-当前本地与 Ubuntu 服务端状态：API `0.14.0`、迁移头 `0031_multisubject_chinese`。账号密码/可撤销会话、PostgreSQL 业务事实、MinIO、ImageAnalysis/VerifiedQuestion/TutorTurn、周报/导出、家长 Web、worker 和备份恢复脚本已实现。真实自动视觉检测器、正式监控和四设备回归仍未完成，因此本文件提供的是自用部署说明，不是公网或商业生产发布证明。
+当前本地服务端状态：API `0.15.0`、迁移头 `0032_chinese_original_content_pack`；Ubuntu 发布状态须以本次发布记录为准。账号密码/可撤销会话、PostgreSQL 业务事实、MinIO、ImageAnalysis/VerifiedQuestion/TutorTurn、周报/导出、家长 Web、worker 和备份恢复脚本已实现。真实自动视觉检测器、正式监控和四设备回归仍未完成，因此本文件提供的是自用部署说明，不是公网或商业生产发布证明。
 
 ## 1. 前置条件
 
@@ -96,7 +96,7 @@ docker compose -f infra/compose/compose.yml down
 docker volume ls | grep study
 ```
 
-升级步骤：先备份 PostgreSQL 和 MinIO 数据，再拉取/切换到目标代码版本，运行 `config`，执行 `up -d --build`，确认 `migrate` 成功和 `/healthz` 正常。本地目标 head 为 `0031_multisubject_chinese`；回退应用时保留新增表、列和索引，不在正式数据上执行 downgrade。发生学习历史范围异常时先设置 `LEARNING_HISTORY_CLEANUP_ENABLED=false` 并重启 DataLifecycle worker，再前向修复；已经按策略删除的数据不能靠应用回滚恢复。发生 Provider 问题时关闭 NewAPI 开关并停止 ImageAnalysis worker；不得破坏性回滚 Profile、Account、Attempt 或 AuditEvent。
+升级步骤：先备份 PostgreSQL 和 MinIO 数据，再拉取/切换到目标代码版本，运行 `config`，执行 `up -d --build`，确认 `migrate` 成功和 `/healthz` 正常。本地目标 head 为 `0032_chinese_original_content_pack`；回退应用时保留新增表、列和索引，不在正式数据上执行 downgrade。发生学习历史范围异常时先设置 `LEARNING_HISTORY_CLEANUP_ENABLED=false` 并重启 DataLifecycle worker，再前向修复；已经按策略删除的数据不能靠应用回滚恢复。发生 Provider 问题时关闭 NewAPI 开关并停止 ImageAnalysis worker；不得破坏性回滚 Profile、Account、Attempt 或 AuditEvent。
 
 ### 备份与恢复验证
 

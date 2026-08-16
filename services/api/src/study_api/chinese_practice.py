@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from hashlib import sha256
@@ -10,7 +11,8 @@ from typing import Annotated, Any, Literal, Protocol
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import MetaData, Table, create_engine, insert, select, update
+from sqlalchemy import MetaData, Table, and_, create_engine, func, insert, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Engine
 
 from study_api.database import database_url
@@ -56,6 +58,23 @@ AnswerSpec = Annotated[
 ]
 
 
+class ChineseContentReview(BaseModel):
+    """Auditable editorial/rightsholder review state for original content.
+
+    ``approved`` is reserved for a real project-owner signoff. Demo content may
+    remain technically available to exercise the product, but never becomes
+    formal courseware merely because its source is original.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    status: Literal["pending_owner_review", "approved"] = "pending_owner_review"
+    protocol_version: Literal["chinese-content-review.v1"] = "chinese-content-review.v1"
+    rights_evidence_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    reviewed_at: datetime | None = None
+    reviewer_role: Literal["project_owner"] | None = None
+
+
 class ChineseContentSource(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -63,6 +82,7 @@ class ChineseContentSource(BaseModel):
     source_id: str = Field(min_length=1, max_length=120)
     license_status: Literal["cleared", "private_authorized"]
     attribution: str | None = Field(default=None, max_length=240)
+    review: ChineseContentReview = Field(default_factory=ChineseContentReview)
 
 
 class ChineseContentItem(BaseModel):
@@ -173,6 +193,41 @@ class ChineseReviewItem(BaseModel):
     updated_at: datetime
 
 
+class ChineseSkillSummary(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    skill: ChineseSkill
+    attempts: int = Field(ge=0)
+    correct_attempts: int = Field(ge=0)
+    due_reviews: int = Field(ge=0)
+    last_attempt_at: datetime | None = None
+
+
+class ChineseSkillReport(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    child_id: UUID
+    generated_at: datetime
+    skills: tuple[ChineseSkillSummary, ...]
+
+
+@dataclass
+class _SkillAccumulator:
+    attempts: int = 0
+    correct_attempts: int = 0
+    due_reviews: int = 0
+    last_attempt_at: datetime | None = None
+
+    def to_summary(self, skill: ChineseSkill) -> ChineseSkillSummary:
+        return ChineseSkillSummary(
+            skill=skill,
+            attempts=self.attempts,
+            correct_attempts=self.correct_attempts,
+            due_reviews=self.due_reviews,
+            last_attempt_at=self.last_attempt_at,
+        )
+
+
 def normalize_chinese(text: str) -> str:
     """Normalize bounded learner text for deterministic comparison."""
 
@@ -256,6 +311,12 @@ class ChinesePracticeRepository(Protocol):
         idempotency_key: str,
     ) -> tuple[ChineseAttempt, bool]: ...
 
+    def list_reviews(
+        self, household_id: UUID, child_id: UUID, grade: int, due_only: bool
+    ) -> list[ChineseReviewItem]: ...
+
+    def skill_report(self, household_id: UUID, child_id: UUID) -> ChineseSkillReport: ...
+
 
 def _starter_content() -> tuple[ChineseContentItem, ...]:
     source = ChineseContentSource(
@@ -313,6 +374,48 @@ def _starter_content() -> tuple[ChineseContentItem, ...]:
             knowledge_key="reading-find-evidence",
             source=source,
         ),
+        ChineseContentItem(
+            id=UUID("10000000-0000-0000-0000-000000000004"),
+            revision=1,
+            grade_min=1,
+            grade_max=2,
+            skill=ChineseSkill.CHARACTER,
+            task_group="language_accumulation",
+            title="偏旁找朋友",
+            prompt="选出和天气有关的汉字。",
+            options=("晴", "清", "请"),
+            answer_spec=ExactChoiceSpec(type="exact_choice", answer="晴"),
+            knowledge_key="character-sun-radical-weather",
+            source=source,
+        ),
+        ChineseContentItem(
+            id=UUID("10000000-0000-0000-0000-000000000005"),
+            revision=1,
+            grade_min=2,
+            grade_max=4,
+            skill=ChineseSkill.VOCABULARY,
+            task_group="language_accumulation",
+            title="词语放进句子",
+            prompt="早晨的空气很（  ），让人觉得舒服。",
+            options=("清新", "安静", "明亮"),
+            answer_spec=ExactChoiceSpec(type="exact_choice", answer="清新"),
+            knowledge_key="vocabulary-context-meaning",
+            source=source,
+        ),
+        ChineseContentItem(
+            id=UUID("10000000-0000-0000-0000-000000000006"),
+            revision=1,
+            grade_min=1,
+            grade_max=6,
+            skill=ChineseSkill.RECITATION,
+            task_group="literary_reading_expression",
+            title="原创短句积累",
+            prompt="“晨风吹过小花园”，下一句最合适的是哪一句？",
+            options=("小树向着太阳笑", "月亮落在书包里", "雨伞飞到操场上"),
+            answer_spec=ExactChoiceSpec(type="exact_choice", answer="小树向着太阳笑"),
+            knowledge_key="recitation-original-short-line",
+            source=source,
+        ),
     )
 
 
@@ -320,6 +423,7 @@ class InMemoryChinesePracticeRepository:
     def __init__(self) -> None:
         self._content = {item.id: item for item in _starter_content()}
         self._attempts: dict[UUID, ChineseAttempt] = {}
+        self._reviews: dict[tuple[UUID, UUID, UUID], ChineseReviewItem] = {}
         self._idempotency: dict[tuple[UUID, UUID, str], tuple[str, UUID]] = {}
 
     def list_content(
@@ -368,8 +472,79 @@ class InMemoryChinesePracticeRepository:
             created_at=datetime.now(UTC),
         )
         self._attempts[attempt.id] = attempt
+        review_key = (household_id, child_id, item.id)
+        previous = self._reviews.get(review_key)
+        self._reviews[review_key] = ChineseReviewItem(
+            id=previous.id if previous is not None else uuid4(),
+            household_id=household_id,
+            child_id=child_id,
+            content_id=item.id,
+            content_revision=item.revision,
+            skill=item.skill,
+            knowledge_key=item.knowledge_key,
+            due_at=attempt.created_at + timedelta(days=3 if attempt.result.correct else 1),
+            strength=min(5, previous.strength + 1)
+            if attempt.result.correct and previous
+            else 1
+            if attempt.result.correct
+            else 0,
+            last_feedback_tag=attempt.result.feedback_tags[0],
+            updated_at=attempt.created_at,
+        )
         self._idempotency[key] = (fingerprint, attempt.id)
         return attempt, False
+
+    def list_reviews(
+        self, household_id: UUID, child_id: UUID, grade: int, due_only: bool
+    ) -> list[ChineseReviewItem]:
+        now = datetime.now(UTC)
+        return sorted(
+            (
+                review
+                for review in self._reviews.values()
+                if review.household_id == household_id
+                and review.child_id == child_id
+                and (item := self._content.get(review.content_id)) is not None
+                and item.revision == review.content_revision
+                and item.status == "approved"
+                and item.grade_min <= grade <= item.grade_max
+                and (not due_only or review.due_at <= now)
+            ),
+            key=lambda review: (review.due_at, review.id),
+        )
+
+    def skill_report(self, household_id: UUID, child_id: UUID) -> ChineseSkillReport:
+        now = datetime.now(UTC)
+        summaries: dict[ChineseSkill, _SkillAccumulator] = {}
+        for attempt in self._attempts.values():
+            if attempt.household_id != household_id or attempt.child_id != child_id:
+                continue
+            item = self._content.get(attempt.content_id)
+            if item is None:
+                continue
+            summary = summaries.setdefault(item.skill, _SkillAccumulator())
+            summary.attempts += 1
+            summary.correct_attempts += int(attempt.result.correct)
+            last_attempt = summary.last_attempt_at
+            if last_attempt is None or attempt.created_at > last_attempt:
+                summary.last_attempt_at = attempt.created_at
+        for review in self._reviews.values():
+            if (
+                review.household_id != household_id
+                or review.child_id != child_id
+                or review.due_at > now
+            ):
+                continue
+            summary = summaries.setdefault(review.skill, _SkillAccumulator())
+            summary.due_reviews += 1
+        return ChineseSkillReport(
+            child_id=child_id,
+            generated_at=now,
+            skills=tuple(
+                summary.to_summary(skill)
+                for skill, summary in sorted(summaries.items(), key=lambda entry: entry[0].value)
+            ),
+        )
 
 
 class PostgresChinesePracticeRepository:
@@ -502,46 +677,34 @@ class PostgresChinesePracticeRepository:
                     created_at=now,
                 )
             )
-            review = (
-                connection.execute(
-                    select(self._reviews).where(
-                        self._reviews.c.household_id == household_id,
-                        self._reviews.c.child_id == child_id,
-                        self._reviews.c.content_id == item.id,
-                    )
-                )
-                .mappings()
-                .one_or_none()
-            )
             due_at = now + timedelta(days=3 if result.correct else 1)
-            if review is None:
-                connection.execute(
-                    insert(self._reviews).values(
-                        id=uuid4(),
-                        household_id=household_id,
-                        child_id=child_id,
-                        content_id=item.id,
-                        content_revision=item.revision,
-                        skill=item.skill.value,
-                        knowledge_key=item.knowledge_key,
-                        due_at=due_at,
-                        strength=1 if result.correct else 0,
-                        last_feedback_tag=result.feedback_tags[0],
-                        updated_at=now,
-                    )
+            review_insert = pg_insert(self._reviews).values(
+                id=uuid4(),
+                household_id=household_id,
+                child_id=child_id,
+                content_id=item.id,
+                content_revision=item.revision,
+                skill=item.skill.value,
+                knowledge_key=item.knowledge_key,
+                due_at=due_at,
+                strength=1 if result.correct else 0,
+                last_feedback_tag=result.feedback_tags[0],
+                updated_at=now,
+            )
+            connection.execute(
+                review_insert.on_conflict_do_update(
+                    constraint="uq_chinese_review_child_content",
+                    set_={
+                        "content_revision": item.revision,
+                        "due_at": due_at,
+                        "strength": (
+                            func.least(5, self._reviews.c.strength + 1) if result.correct else 0
+                        ),
+                        "last_feedback_tag": result.feedback_tags[0],
+                        "updated_at": now,
+                    },
                 )
-            else:
-                connection.execute(
-                    update(self._reviews)
-                    .where(self._reviews.c.id == review["id"])
-                    .values(
-                        content_revision=item.revision,
-                        due_at=due_at,
-                        strength=min(5, review["strength"] + 1) if result.correct else 0,
-                        last_feedback_tag=result.feedback_tags[0],
-                        updated_at=now,
-                    )
-                )
+            )
             connection.execute(
                 insert(self._idempotency).values(
                     household_id=household_id,
@@ -563,3 +726,84 @@ class PostgresChinesePracticeRepository:
                 elapsed_ms=request.elapsed_ms,
                 created_at=now,
             ), False
+
+    def list_reviews(
+        self, household_id: UUID, child_id: UUID, grade: int, due_only: bool
+    ) -> list[ChineseReviewItem]:
+        statement = (
+            select(self._reviews)
+            .join(
+                self._content,
+                and_(
+                    self._content.c.id == self._reviews.c.content_id,
+                    self._content.c.revision == self._reviews.c.content_revision,
+                ),
+            )
+            .where(
+                self._reviews.c.household_id == household_id,
+                self._reviews.c.child_id == child_id,
+                self._content.c.status == "approved",
+                self._content.c.grade_min <= grade,
+                self._content.c.grade_max >= grade,
+            )
+            .order_by(self._reviews.c.due_at, self._reviews.c.id)
+        )
+        if due_only:
+            statement = statement.where(self._reviews.c.due_at <= datetime.now(UTC))
+        with self._engine.connect() as connection:
+            return [
+                ChineseReviewItem.model_validate(dict(row))
+                for row in connection.execute(statement).mappings()
+            ]
+
+    def skill_report(self, household_id: UUID, child_id: UUID) -> ChineseSkillReport:
+        now = datetime.now(UTC)
+        summaries: dict[ChineseSkill, _SkillAccumulator] = {}
+        attempt_statement = (
+            select(
+                self._attempts.c.created_at,
+                self._attempts.c.result_json,
+                self._content.c.skill,
+            )
+            .join(
+                self._content,
+                and_(
+                    self._content.c.id == self._attempts.c.content_id,
+                    self._content.c.revision == self._attempts.c.content_revision,
+                ),
+            )
+            .where(
+                self._attempts.c.household_id == household_id,
+                self._attempts.c.child_id == child_id,
+            )
+        )
+        review_statement = (
+            select(self._reviews.c.skill, func.count().label("due_reviews"))
+            .where(
+                self._reviews.c.household_id == household_id,
+                self._reviews.c.child_id == child_id,
+                self._reviews.c.due_at <= now,
+            )
+            .group_by(self._reviews.c.skill)
+        )
+        with self._engine.connect() as connection:
+            for row in connection.execute(attempt_statement).mappings():
+                skill = ChineseSkill(row["skill"])
+                summary = summaries.setdefault(skill, _SkillAccumulator())
+                summary.attempts += 1
+                summary.correct_attempts += int(bool(row["result_json"].get("correct")))
+                last_attempt = summary.last_attempt_at
+                if last_attempt is None or row["created_at"] > last_attempt:
+                    summary.last_attempt_at = row["created_at"]
+            for row in connection.execute(review_statement).mappings():
+                skill = ChineseSkill(row["skill"])
+                summary = summaries.setdefault(skill, _SkillAccumulator())
+                summary.due_reviews = int(row["due_reviews"])
+        return ChineseSkillReport(
+            child_id=child_id,
+            generated_at=now,
+            skills=tuple(
+                summary.to_summary(skill)
+                for skill, summary in sorted(summaries.items(), key=lambda entry: entry[0].value)
+            ),
+        )

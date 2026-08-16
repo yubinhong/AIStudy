@@ -1,3 +1,6 @@
+blob-report/
+playwright-report/
+test-results/
 pnpm-lock.yaml
 .next/
 node_modules/

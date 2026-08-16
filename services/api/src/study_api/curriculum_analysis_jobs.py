@@ -17,10 +17,16 @@ from sqlalchemy.engine import Engine
 from study_api.curriculum_limits import MAX_DOCUMENT_BYTES
 from study_api.database import database_url
 from study_api.domain.curriculum_knowledge import (
+    CHINESE_CURRICULUM_BOOK_ANALYSIS_SCHEMA,
+    CHINESE_CURRICULUM_BOOK_PROMPT,
+    CHINESE_CURRICULUM_PAGE_ANALYSIS_SCHEMA,
+    CHINESE_CURRICULUM_PAGE_PROMPT,
     CURRICULUM_BOOK_ANALYSIS_SCHEMA,
     CURRICULUM_BOOK_PROMPT,
     CURRICULUM_PAGE_ANALYSIS_SCHEMA,
     CURRICULUM_PAGE_PROMPT,
+    ChineseProviderBookAnalysis,
+    ChineseProviderPageAnalysis,
     CurriculumChapterSummary,
     CurriculumKnowledgeExercise,
     CurriculumKnowledgeMap,
@@ -30,6 +36,7 @@ from study_api.domain.curriculum_knowledge import (
     ProviderBookAnalysis,
     ProviderPageAnalysis,
 )
+from study_api.domain.models import Subject
 from study_api.material_parser import RENDERER_VERSION, iter_rendered_pdf_pages
 from study_api.newapi_provider import (
     CurriculumProviderPage,
@@ -282,11 +289,36 @@ class CurriculumAnalysisJob:
     material_id: UUID
     snapshot_id: UUID
     object_key: str
+    subject: Subject
     attempt: int
 
 
 class CurriculumBookReferenceError(ValueError):
     """The consolidated book map points outside the validated page evidence."""
+
+
+def _page_schema(subject: Subject) -> str:
+    return (
+        CHINESE_CURRICULUM_PAGE_ANALYSIS_SCHEMA
+        if subject is Subject.CHINESE
+        else CURRICULUM_PAGE_ANALYSIS_SCHEMA
+    )
+
+
+def _book_schema(subject: Subject) -> str:
+    return (
+        CHINESE_CURRICULUM_BOOK_ANALYSIS_SCHEMA
+        if subject is Subject.CHINESE
+        else CURRICULUM_BOOK_ANALYSIS_SCHEMA
+    )
+
+
+def _page_prompt(subject: Subject) -> str:
+    return CHINESE_CURRICULUM_PAGE_PROMPT if subject is Subject.CHINESE else CURRICULUM_PAGE_PROMPT
+
+
+def _book_prompt(subject: Subject) -> str:
+    return CHINESE_CURRICULUM_BOOK_PROMPT if subject is Subject.CHINESE else CURRICULUM_BOOK_PROMPT
 
 
 class PostgresCurriculumKnowledgeRepository:
@@ -396,13 +428,18 @@ class PostgresCurriculumKnowledgeRepository:
             )
             if row is None:
                 return None
-            object_key = connection.execute(
-                select(self._materials.c.object_key).where(
+            material = connection.execute(
+                select(self._materials.c.object_key, self._materials.c.subject).where(
                     self._materials.c.id == row["material_id"]
                 )
-            ).scalar_one_or_none()
-            if not isinstance(object_key, str):
+            ).one_or_none()
+            if material is None or not isinstance(material.object_key, str):
                 self._mark_failed(connection, row["id"], "material_object_missing")
+                return None
+            try:
+                subject = Subject(str(material.subject))
+            except ValueError:
+                self._mark_failed(connection, row["id"], "material_subject_invalid")
                 return None
             now = datetime.now(UTC)
             attempt = int(row["attempt"]) + 1
@@ -422,7 +459,8 @@ class PostgresCurriculumKnowledgeRepository:
                 child_id=row["child_id"],
                 material_id=row["material_id"],
                 snapshot_id=row["snapshot_id"],
-                object_key=object_key,
+                object_key=material.object_key,
+                subject=subject,
                 attempt=attempt,
             )
 
@@ -480,8 +518,8 @@ class PostgresCurriculumKnowledgeRepository:
         self,
         job: CurriculumAnalysisJob,
         *,
-        page_analyses: tuple[ProviderPageAnalysis, ...],
-        book: ProviderBookAnalysis,
+        page_analyses: tuple[ProviderPageAnalysis | ChineseProviderPageAnalysis, ...],
+        book: ProviderBookAnalysis | ChineseProviderBookAnalysis,
         exercises_by_key: dict[str, CurriculumKnowledgeExercise],
         provider: str,
         model: str,
@@ -527,12 +565,17 @@ class PostgresCurriculumKnowledgeRepository:
                         knowledge_observations=[
                             observation.model_dump(mode="json")
                             for observation in page.knowledge_observations
-                        ],
+                        ]
+                        + (
+                            [{"passages": [item.model_dump(mode="json") for item in page.passages]}]
+                            if isinstance(page, ChineseProviderPageAnalysis)
+                            else []
+                        ),
                         confidence=page.confidence,
                         provider=provider,
                         model=model,
-                        schema_version=CURRICULUM_PAGE_ANALYSIS_SCHEMA,
-                        prompt_version=CURRICULUM_PAGE_PROMPT,
+                        schema_version=_page_schema(job.subject),
+                        prompt_version=_page_prompt(job.subject),
                         input_fingerprint=input_fingerprint,
                         output_fingerprint=page_fingerprint,
                         latency_ms=None,
@@ -564,8 +607,8 @@ class PostgresCurriculumKnowledgeRepository:
                     analyzed_page_count=len(page_analyses),
                     provider=provider,
                     model=model,
-                    schema_version=CURRICULUM_BOOK_ANALYSIS_SCHEMA,
-                    prompt_version=CURRICULUM_BOOK_PROMPT,
+                    schema_version=_book_schema(job.subject),
+                    prompt_version=_book_prompt(job.subject),
                     input_fingerprint=input_fingerprint,
                     output_fingerprint=output_fingerprint,
                     latency_ms=latency_ms,
@@ -860,7 +903,7 @@ def _read_map(
 
 def _resolve_knowledge_points(
     job: CurriculumAnalysisJob,
-    book: ProviderBookAnalysis,
+    book: ProviderBookAnalysis | ChineseProviderBookAnalysis,
     exercises_by_key: dict[str, CurriculumKnowledgeExercise],
     now: datetime,
 ) -> tuple[CurriculumKnowledgePoint, ...]:
@@ -956,7 +999,9 @@ def _page_payloads(
     return tuple(payloads), exercises
 
 
-def _validate_book_coverage(book: ProviderBookAnalysis, known_pages: set[int]) -> None:
+def _validate_book_coverage(
+    book: ProviderBookAnalysis | ChineseProviderBookAnalysis, known_pages: set[int]
+) -> None:
     for chapter in book.chapters:
         if any(page not in known_pages for page in range(chapter.start_page, chapter.end_page + 1)):
             raise CurriculumBookReferenceError("book analysis chapter references an unknown page")
@@ -977,7 +1022,7 @@ def run_once(
     try:
         document = storage.read_document(job.object_key, MAX_DOCUMENT_BYTES)
         page_texts = repository.page_texts(job)
-        analyses: list[ProviderPageAnalysis] = []
+        analyses: list[ProviderPageAnalysis | ChineseProviderPageAnalysis] = []
         batch: list[CurriculumProviderPage] = []
         image_hashes: list[str] = []
         provider_metrics: list[ProviderCallMetrics] = []
@@ -1005,18 +1050,22 @@ def run_once(
                 )
             )
             if len(batch) == 4:
-                analyses.extend(provider.analyze_curriculum_pages(tuple(batch)))
+                analyses.extend(
+                    provider.analyze_curriculum_pages(tuple(batch), subject=job.subject)
+                )
                 if provider.last_call_metrics is not None:
                     provider_metrics.append(provider.last_call_metrics)
                 batch.clear()
         if batch:
-            analyses.extend(provider.analyze_curriculum_pages(tuple(batch)))
+            analyses.extend(provider.analyze_curriculum_pages(tuple(batch), subject=job.subject))
             if provider.last_call_metrics is not None:
                 provider_metrics.append(provider.last_call_metrics)
         if not analyses:
             raise ValueError("curriculum analysis rendered no pages")
         page_payloads, exercises = _page_payloads(tuple(analyses))
-        book = provider.consolidate_curriculum_book(page_observations=page_payloads)
+        book = provider.consolidate_curriculum_book(
+            page_observations=page_payloads, subject=job.subject
+        )
         if provider.last_call_metrics is not None:
             provider_metrics.append(provider.last_call_metrics)
         known_pages = {page.page_number for page in analyses}

@@ -2,7 +2,23 @@
 
 ## 1. 当前状态与质量目标
 
-当前仓库已有 P0/P1 依赖清单、三类锁文件、核心测试和 CI 草案。API 的 Household/认证/学习/Capture/可信 Tutor/周报/导出、Mistake/Review closeout、教材 PDF-only 私有原页/多模态知识图谱、作答四态/推荐审批、Web/Flutter 入口、SQLite 离线队列和 Compose 已验证；Android/iOS 构建及 PostgreSQL/MinIO 恢复已有记录。本地与 Ubuntu API/OpenAPI 为 `0.14.0`、迁移头 `0031_multisubject_chinese`。剩余是语文并发/导出集成、正式语文内容、真实 PDF/Provider、设备和最终 E2E 发布门槛。
+当前仓库已有 P0/P1 依赖清单、三类锁文件、核心测试和 CI 草案。API 的 Household/认证/学习/Capture/可信 Tutor/周报/导出、Mistake/Review closeout、教材 PDF-only 私有原页/多模态知识图谱、作答四态/推荐审批、Web/Flutter 入口、SQLite 离线队列和 Compose 已验证；Android/iOS 构建及 PostgreSQL/MinIO 恢复已有记录。本地 API/OpenAPI 为 `0.15.0`、迁移头 `0032_chinese_original_content_pack`，Ubuntu 仍为 `0.14.0`/`0031`。剩余是正式语文内容签核、真实 PDF/Provider、设备和最终 E2E 发布门槛。
+
+2026-08-16 语文内容增量：本地新增 `0032_chinese_original_content_pack`，补充生字、词语与原创短句积累的确定性选择题；语文路由 golden tests `6 passed`，Ruff、Mypy、Alembic 单 head 及从零离线 SQL 通过。内容为项目原创演示包，不构成已完成的教研/版权审核，不得作为正式课程发布或部署声明。
+
+2026-08-16 PLAN-0032：`./.venv/bin/pytest -q -m integration tests/test_postgres_chinese_practice.py` 为 `1 passed`，覆盖 PostgreSQL 语文并发 Attempt、导出、Review 队列和家长技能汇总；Flutter 语文定向 Analyze/Test、Web format/typecheck/test 均通过。教材分析 `v2` 定向 Ruff/Mypy 和 `tests/test_curriculum_analysis_jobs.py tests/test_newapi_provider.py` 为 `21 passed`，分别验证数学 v1 回归及语文 v2 的独立 Schema、短篇章边界和不复用数学提示词。未执行真实 Provider/PDF、Ubuntu 真实账号浏览器或四设备 E2E。
+
+2026-08-16 登录态浏览器 E2E：`apps/web` 固定 `@playwright/test 1.61.1`，以独立进程内存 API 和 Next 服务运行 Chromium。`pnpm test:e2e` 为 `1 passed`，覆盖未登录重定向、一次性管理员改密前数据 `403`、HttpOnly/SameSite Cookie、缺失 CSRF `403`、改密 Session 轮换与旧会话 `401`、退出撤销、超级管理员开通新家庭、普通家长角色/跨家庭 `404`、双孩子聚合创建、`math/chinese` 差异和 `?child=` 切换。Web 32 项、格式/Lint/类型/build 及认证/档案 API 25 项通过；CI 增加独立 Chromium Job。测试只用运行时 synthetic 凭据，不上传 Trace、视频、截图或 HTML 报告。Ubuntu 真实账号/PostgreSQL 浏览器和设备生命周期未执行。
+
+2026-08-16 语文 PostgreSQL 集成：本机 `127.0.0.1:5432` 从 `0025_curriculum_knowledge_map` 前滚到 `0031_multisubject_chinese`，再执行 `services/api/.venv/bin/pytest -q -m integration tests/test_postgres_chinese_practice.py`，结果 `1 passed`。随机 Household、普通 Parent 与 Child 均在 `finally` 清理；两个不同幂等键的语文提交均追加 Attempt，同一 Review 以 PostgreSQL upsert 原子合并为强度 `2`，导出包含两条 Attempt 与一条 Review，删除 Child 后两张语文事实表均无残留。未读取或写入 Ubuntu 数据。
+
+2026-08-16 iPad 联调准备：Xcode 的 Devices 窗口确认 iPad mini 6（iPad14,1）已配对、已启动、Developer Mode 启用，`Study Child 0.1.0 (1)`（`com.example.studyChild`）已安装；既有 release 包的初始服务端地址为 `http://192.168.1.4:8000`。`xcrun devicectl device process launch` 连续两次均因 macOS `CoreDeviceService` 初始化超时失败，故未从 Mac 远程启动或覆盖安装应用，未读取账户/学习数据，也未发生登录、相机、本地网络、语文作答或到期复习的设备验收。须由用户在 iPad 上手动打开并输入测试账号后继续。
+
+2026-08-16 iPad 开发签名续期：以 Flutter `3.44.6` 执行 `flutter build ios --release --dart-define=STUDY_API_URL=http://192.168.1.4:8000`，构建完成代码编译后在自动签名阶段失败。Xcode 报告没有已登录账号，且找不到 Team `VZ59988J63` 对 `com.example.studyChild` 的 iOS App Development provisioning profile；因此没有产出或安装新包，旧设备包和其数据未变。项目 Owner 须在 Xcode 的 Accounts 中登录拥有该 Team 的开发者账号，成功下载描述文件后再重试构建和覆盖安装。
+
+2026-08-16 Nova 9 启动 smoke：本机 SDK `platform-tools/adb 37.0.0` 已识别 USB 调试设备 `NAM-AL00`（Android 12 / API 31）。已安装 `Study Child 0.1.0 (1)`（Android application ID `com.example.study_child`，最后更新 `2026-07-27 17:36:38`）；以 package launcher 启动后进程存活、`MainActivity` 在前台，crash buffer 未见该应用崩溃。未读取屏幕、账号、会话或学习数据，尚未执行登录、局域网健康检查、语文作答/提交、到期复习、相机/相册权限、弱网、重启或账号切换 E2E；这些步骤须由用户在设备输入测试账号后继续。
+
+2026-08-16 Nova 9 语文 E2E：以 Flutter `3.44.6` 构建 64.3 MB Android Release，并以 `adb install -r` 覆盖安装，保留现有应用数据，初始服务端地址为 `http://192.168.1.4:8000`。用户在设备完成登录后，学习桌同时显示数学、语文与锁定英语；语文页从 Ubuntu `0031` 加载“拼音 · 原创练习”和“句子运用 · 原创练习”。进入“句子排排队”后，未作答点击提交只显示“先完成当前题目，再提交”，源码 `_response()` 返回空且未调用 API，故未创建 Attempt。语文页和客户端源代码均没有到期复习入口或列表，当前仅在正确提交后的反馈中说明“已加入后续复习”；到期复习 UI 仍为未完成项。未提交答案、未读取账户/会话/学习记录，且未执行相机/相册、弱网、重启、账号切换或真实到期复习。
 
 2026-08-15 Ubuntu `0.14.0`/`0031` 发布验证：升级前 quiesced 备份 `/home/syin/study-backups/20260815T144358Z` 通过隔离恢复，恢复库含 35 个 public 表、MinIO 快照 353 个文件。Git 派生 allowlist 未同步 `.env`、卷、缓存或构建物；以 `DOCKER_BUILDKIT=0` 和锁定 Node `24.18`/pnpm `11.7` 重建。API/Web LAN `/healthz`、OpenAPI 62 paths/语文路径、Alembic current/head、迁移 exit 0、三张语文表、`ChineseContentItem(id, revision)` 复合主键、3 条 synthetic seed、2 份旧教材/2 份旧快照 `subject=math`、四个 worker、未认证语文 `401`、英语 `false/disabled`、MinIO `9000` 内部端口、近端错误日志和容器源码哈希均通过。未写入生产 synthetic Attempt，不计为语文并发/导出、登录态浏览器、真实教材/Provider 或设备验收。
 
@@ -99,8 +115,9 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | Compose 配置 | `docker compose -f infra/compose/compose.yml config` | Compose 变更 | 通过（2026-07-31，Ubuntu 实际 `infra/compose/.env` 展开无错误；权限保持 600） |
 | Compose 完整启动 | `docker compose -f infra/compose/compose.yml up -d --build` | API/数据/跨模块变更 | 通过（2026-08-15，Ubuntu 24.04 x86_64；API `0.14.0`、Web、ImageAnalysis/DataLifecycle/MaterialParse/CurriculumAnalysis worker 重建运行，迁移 `0031`，API/Web healthcheck 通过；PostgreSQL/MinIO/Redis 数据卷保留） |
 | Web 镜像 | `cd apps/web && docker buildx build --platform=linux/arm64 --load -t study-web:arm64-debug .` | Web/Compose 变更 | 通过（2026-07-15；Next.js standalone 镜像使用 Node 24.18.0、pnpm 11.7.0，包含 `/healthz`；2026-07-20 Ubuntu 重建验证教材上传幂等键兼容修复） |
+| Web 登录态 E2E | `cd apps/web && pnpm test:e2e:install && pnpm test:e2e` | 认证、Cookie/CSRF、多家庭/多孩子或 Web 路由变更 | 通过（2026-08-16；Chromium `1 passed`，隔离内存 API，不读取 Ubuntu 数据；本机 Node 22.23 低于锁定 Node 24.18，仅产生 engines warning） |
 | 集成环境 | `docker compose -f infra/compose/compose.yml up -d postgres minio` | API/数据/跨模块变更 | 当前通过（2026-07-13；旧配置发布 5432/9000）。PLAN-0012 目标要求 MinIO 仅在 Compose 内部网络可达，并增加宿主/LAN `9000` 不开放的断言 |
-| API 集成 | `cd services/api && uv run pytest -m integration` | 跨模块/数据变更 | 本轮相关通过（2026-07-30：学习历史生命周期 1 项，独立 synthetic 行覆盖开放错题保护并全部清理；未运行其余集成套件） |
+| API 集成 | `cd services/api && uv run pytest -m integration` | 跨模块/数据变更 | 本轮相关通过（2026-08-16：语文并发/导出 `1 passed`，随机 synthetic Household/账号/Child 全部清理；2026-07-30 生命周期 1 项；未运行其余集成套件） |
 | API 镜像 | `cd services/api && docker buildx build --platform=linux/arm64 --load -t study-api:arm64-debug .`；发布仍构建 `linux/amd64` | 合并/发布前 | ARM 本地通过（2026-07-15）；amd64 Ubuntu 远端通过（2026-07-16，构建期模型目录 26 文件/清单标记、Paddle 3.3.1 + PaddleOCR 3.7.0、容器预检 ready、内存 synthetic OCR 4/4）；运行时无模型下载 |
 | AI eval | `cd services/api && ./.venv/bin/python ../../evals/run_ocr_eval.py`；`./.venv/bin/python ../../evals/run_privacy_sanitizer_eval.py`；`./.venv/bin/python ../../evals/run_tutor_policy_eval.py` | OCR/脱敏/Provider/模型路由/Tutor Policy 变更 | Tutor 通过（2026-07-23；offline Tutor Policy 5 cases，新增同时经过时间 L1/L2，固定输入不含真实数据）；OCR/PrivacySanitizer 最近结果仍为 2026-07-17 |
 | PrivacySanitizer / Tutor eval | `cd services/api && ./.venv/bin/python ../../evals/run_privacy_sanitizer_eval.py && ./.venv/bin/python ../../evals/run_tutor_policy_eval.py` | 脱敏规则/OCR/视觉检测、图片外发、Tutor Policy/Provider/Schema/路由变更 | 通过（2026-07-17）；NewAPI Adapter/live synthetic 已验证，真实自动视觉检测器仍未实现，外发继续要求手动确认 |
@@ -159,7 +176,7 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 - [ ] PrivacySanitizer、用户外发确认、单 Provider、云视觉 Schema/人工确认和临时脱敏副本删除门禁通过；未实现前保持图片外发功能关闭。
 - [ ] 无未批准的高危依赖/镜像/密钥扫描问题；SBOM/签名策略在生产前确定。
 - [x] Android/iOS/Web/API 构建产物可生成，迁移与 PostgreSQL/MinIO 备份恢复经过验证。
-- [ ] ADR-0017 认证门槛全部通过：API 认证回归、认证审计和孩子账号反向越权已通过；Web Cookie/CSRF、Flutter 安全存储真实设备生命周期、PostgreSQL 迁移往返和浏览器 E2E 仍待执行。
+- [ ] ADR-0017 认证门槛全部通过：API 认证回归、认证审计、孩子账号反向越权及隔离 synthetic Web Cookie/CSRF/跨家庭/双孩子 Chromium E2E 已通过；Flutter 安全存储真实设备生命周期、PostgreSQL 迁移往返和 Ubuntu 真实账号浏览器验收仍待执行。
 - [ ] PLAN-0016/0017/0018：本地与 Ubuntu `0.11.0`/`0025` 代码/部署门槛已通过；仍需真实 118 页 PDF/NewAPI、固定 Tutor/教材 eval、成本审计、双孩子/设备/E2E、删除和发布安全门槛。
 - [ ] P1 核心 E2E 全通过，四类设备完成职责内弱网/横竖屏/权限回归。
 - [ ] AI eval、成本告警、周报追溯和儿童数据删除有可审查记录。

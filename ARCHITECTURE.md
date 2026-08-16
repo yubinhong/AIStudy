@@ -21,7 +21,7 @@
 
 认证实现修订（2026-07-16）：ADR-0017 已进入实现验收。API 以 PostgreSQL `Account`/`AuthSession`、Argon2id 密码哈希和可撤销不透明会话作为唯一认证机制；HMAC、Demo Header、静态 Web Token 和 Web 免登录开关已删除。Web 使用 Cookie/CSRF；Flutter 在登录前验证并持久化服务端地址，地址变更先清理旧会话，新会话使用平台安全存储。认证审计仅写稳定事件名、家庭/资源 UUID 和时间。
 
-Web 孩子管理修订（2026-07-18）：PLAN-0013 的孩子管理聚合已实现 API/Web 首版并部署 Ubuntu：家长通过一个幂等命令创建 ChildProfile 与唯一 child Account，列表返回联合视图，删除档案同时清理 child Account；首页支持 query 选择当前孩子并按孩子过滤任务/周报。认证与档案仍保持物理分表；浏览器 E2E、旧数据审计和双孩子实体验收仍待完成。
+Web 孩子管理修订（2026-08-16）：PLAN-0013 的孩子管理聚合已实现并部署 Ubuntu：家长通过一个幂等命令创建 ChildProfile 与唯一 child Account，列表返回联合视图，删除档案同时清理 child Account；首页支持 query 选择当前孩子并按孩子过滤任务/周报。认证与档案仍保持物理分表；隔离 Chromium 已验证双孩子聚合创建、学科差异与 query 切换，真实 PostgreSQL/设备验收仍待完成。
 
 产品主线修订（2026-07-24）：ADR-0023/PLAN-0018 已在本地及 Ubuntu `0025` 将 PDF 文本抽取降为辅助信息，新增私有原页、多模态页级分析、全书知识图谱、家长批准和知识点任务。真实 PDF/Provider/设备和发布质量门槛未完成。
 
@@ -66,9 +66,9 @@ flowchart LR
 | 组件 | 目标路径/服务 | 责任 | 数据所有权 | 上游/下游 | 状态 |
 | --- | --- | --- | --- | --- | --- |
 | 孩子端 | `apps/child_flutter` | 学科/数学三入口、语文确定性练习、锁定英语入口、拍题、SQLite/待同步 | 端侧缓存和待同步操作；答案规范与服务端数据不是本地主真相 | `image_picker`、Capture/Learning/Chinese API | 数学闭环与语文首个句子/阅读纵向切片已实现；真实设备、语文完整复习和内容验收待完成 |
-| Web/PWA | `apps/web` | 家长登录、统一孩子管理、多孩子选择、PDF 教材上传、审核/发布、任务建议、周报和导出 | 仅选择/草稿编辑状态；业务事实来自 API | OpenAPI SDK、API | 推荐审批显示计划日期、预计时长、知识点、具体题目和教材页码；真实 PDF/NewAPI 与浏览器 E2E 待完成 |
+| Web/PWA | `apps/web` | 家长登录、统一孩子管理、多孩子选择、PDF 教材上传、审核/发布、任务建议、周报和导出 | 仅选择/草稿编辑状态；业务事实来自 API | OpenAPI SDK、API | 登录态/跨家庭/双孩子隔离 Chromium E2E 已实现；真实 PDF/NewAPI、Ubuntu 真实账号浏览器待完成 |
 | API/BFF | `services/api` | 鉴权、家庭边界、业务编排、契约实现 | PostgreSQL 中 Profile/Learning/Identity 业务事实 | 客户端、数据层、Worker、AI | Compose 默认使用 PostgreSQL 事务仓储和 password 会话认证 |
-| Identity/Profile | `services/api` 内模块 | Household、Account、AuthSession、ChildProfile、Device、孩子管理聚合和权限 | 身份、家庭归属、密码哈希、可撤销会话 | API、所有领域模块 | `0011`/`0012`/`0016`、Argon2id、首次改密、失败锁定、会话撤销、Profile/Device 事务仓储、原子聚合创建和一对一唯一约束已实现；浏览器/双孩子 E2E 待完成 |
+| Identity/Profile | `services/api` 内模块 | Household、Account、AuthSession、ChildProfile、Device、孩子管理聚合和权限 | 身份、家庭归属、密码哈希、可撤销会话 | API、所有领域模块 | 认证、事务仓储、原子聚合和唯一约束已实现；隔离 Chromium 登录态/跨家庭/双孩子通过，真实 PostgreSQL 浏览器与设备待完成 |
 | Curriculum/Content | `services/api` 内模块 + parser/analysis worker | PDF 授权/私有上传、文字辅助解析、PDFium 私有页图、NewAPI 页批次理解、全书知识图谱和家长批准 | 原件、页图元数据、页级分析、知识点与版本 | Web、Tutor、Task、Mistake | 本地 `0025` 已实现；Provider 失败/Schema 或来源越界会进入 failed，批准前不能发布 |
 | Plan/Task/Session | `services/api` 内模块 | 全量错题/批准知识点排序、来源受限云端规划、家长审批、任务/会话/Attempt | 学习任务与过程记录 | 客户端、Curriculum、Report、Mistake、NewAPI | 不再从页文字正则抽题；具体题来自批准知识点，视觉题携带描述和受鉴权来源页 |
 | Capture / PrivacySanitizer | `services/api` 内模块 | 受限媒体、API 有界流式上传、本地脱敏/手动涂抹；ImageAnalysis、NewAPI 结构化和人工确认 | Capture/脱敏/解析状态；图片在私有 MinIO；Extraction/VerifiedQuestion 在 PostgreSQL | 对象存储、NewAPI Provider、Tutor | 已实现 Session 鉴权流式上传、安全读取/实际 SHA-256、提取/确认和生命周期，并部署 Ubuntu；当前 Provider HTTP `402` 阻断真实 Extraction，自动视觉检测器尚未完成 |
@@ -104,7 +104,7 @@ PLAN-0013 的目标聚合不改变上述认证边界：家长通过一个带幂�
 3. 家庭孩子总数是 Household 级指标；设备在尚无孩子绑定关系时也是 Household 级指标。两者不得因选择器变化或被标成当前孩子专属数据。
 4. 服务端不信任查询参数/Cookie；每次仍按 Session、角色、Household 和 ChildProfile 绑定授权。家长可切换本家庭孩子，孩子账号只能访问自己的绑定档案。
 
-当前 `apps/web/src/app/page.tsx` 优先使用 URL 的 `?child=` 并回退到稳定排序后的首个孩子，按同一孩子作用域加载任务、周报和到期错题；双孩子浏览器 E2E 仍待完成。
+当前 `apps/web/src/app/page.tsx` 优先使用 URL 的 `?child=` 并回退到稳定排序后的首个孩子，按同一孩子作用域加载任务、周报和到期错题；2026-08-16 隔离 Chromium 已验证双孩子 `?child=` 切换，真实 PostgreSQL/设备仍待完成。
 
 ### 4.1 任务、作答与离线同步
 
@@ -277,7 +277,7 @@ flowchart TD
 
 | 项目 | 当前影响 | 触发改造的阈值 | 目标方向 | 跟踪 |
 | --- | --- | --- | --- | --- |
-| 教材驱动错题主线仍待发布验收 | Ubuntu 已接通 closeout、ReviewAttempt、PDF 私有原页/多模态知识图谱、批准知识来源、孩子原页和 L1/L2 递进；真实 118 页 PDF、设备/Provider、浏览器 E2E 和质量/成本 eval 尚未完成 | 数学首科进入家庭日常使用前 | 完成设备/E2E、固定 eval、备份恢复/删除和成本门槛 | `TODO-016`～`TODO-020`、`ADR-0020～0023` |
+| 教材驱动错题主线仍待发布验收 | Ubuntu 已接通 closeout、ReviewAttempt、PDF 私有原页/多模态知识图谱、批准知识来源、孩子原页和 L1/L2 递进；隔离认证 Chromium 已通过，真实 118 页 PDF、设备/Provider、教材浏览器流程和质量/成本 eval 尚未完成 | 数学首科进入家庭日常使用前 | 完成设备/E2E、固定 eval、备份恢复/删除和成本门槛 | `TODO-016`～`TODO-020`、`ADR-0020～0023` |
 | ADR-0015/0016 新路线仍在联调阶段 | 当前代码保留本地 PaddleOCR 回滚路线；ImageAnalysis 可在 NewAPI 开启时排队、worker 可持久化未确认提取，人工确认和成功/失败派生对象清理已实现，实际 Provider 联调仍未完成 | 自用真实图片进入 NewAPI 前 | 完成真实视觉检测器、NewAPI 联调、失败重试/监控和备份演练，兼容旧 OCR Job | `TODO-008` |
 | ADR-0017 已进入实现验收 | API/Web/Flutter/Compose 已接入 Account/AuthSession、Argon2id、受限引导账号、Cookie/CSRF、孩子账号管理、Flutter 登录前服务地址配置和安全存储；PostgreSQL/浏览器/iPad/备份验收仍未执行 | 自用 Compose 或真实设备切换前 | 完成迁移往返、E2E、真实设备会话生命周期和恢复演练；旧 HMAC/Demo 客户端必须升级 | `TODO-012`、`PLAN-0008` |
 | Web 暴露账号/档案分离且首页固定首个孩子 | 家长需先建档案再绑定账号；两个孩子时首页任务/周报无法选择，易误解数据作用域 | 自用多孩子正式使用前 | 单事务孩子聚合、旧数据审计/唯一约束、首页当前孩子选择和端到端授权过滤 | `TODO-015`、`PLAN-0013` |

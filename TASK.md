@@ -2,11 +2,11 @@
 
 ## 当前任务元数据
 
-- 状态：`IN_PROGRESS（多学科/语文纵向切片和 v0.14.0 Ubuntu 发布完成；正式内容、并发/导出集成、教材分析和设备验收待完成）`
-- 类型：`FEATURE / API CONTRACT / DATABASE / CHILD UI`
+- 状态：`IN_PROGRESS（PLAN-0031 登录态浏览器 E2E、语文 PostgreSQL 并发/导出集成都完成；正式内容和设备验收继续）`
+- 类型：`FEATURE / AUTH / BROWSER E2E / CHILD UI`
 - 优先级：`P0`
 - Owner：Codex（执行）；项目 Owner（2026-08-15 明确要求先多学科、再语文、英语最后）
-- 关联：`PLAN-0030`、`ADR-0027`、`docs/deep-research-report.md`
+- 关联：`PLAN-0031`、`PLAN-0030`、`PLAN-0007`、`ADR-0017`、`ADR-0027`、`docs/deep-research-report.md`
 
 ## 当前目标与验收
 
@@ -18,10 +18,13 @@
 - [x] Flutter 按档案学科显示语文入口并支持句子排序、阅读回答/依据提交；英语仍排最后且保持原禁用门禁。
 - [x] 家长 Web 可逐孩子启用语文、按学科上传教材；语文 subject-aware 教材分析未实现前明确阻断旧数学 Prompt。
 - [x] Ubuntu PostgreSQL `0030 → 0031` 前滚和旧教材/快照 `math` 回填；发布前备份隔离恢复、迁移 current/head、表/主键/种子和运行源码通过。
-- [ ] 语文并发提交与导出 PostgreSQL 集成测试（本机 5432 未运行，Ubuntu 不写入测试学习事实）。
+- [x] 本机 PostgreSQL 语文并发提交与导出集成：两条不同幂等键 Attempt 均追加、Review 原子合并、导出和 child cascade 清理通过；随机 Household/Parent/Child synthetic 行均已删除。
 - [ ] 正式教研/版权审核内容、拼音/字词/古诗文完整 MVP、到期复习 UI、语文教材分析 v2、家长技能报告和设备 E2E。
+- [x] 登录态 Chromium E2E：首次改密、Cookie/CSRF/撤销、跨家庭角色、双孩子聚合创建与当前孩子切换，并接入 GitHub Actions。
 
-本轮验证：API Ruff/Mypy（60 source files）与定向测试通过，全量非集成 `229 passed, 28 deselected`；Flutter Analyze 和 52 项测试通过；Web 32 项、TypeScript、ESLint、Prettier、production build 通过。OpenAPI `0.14.0` 62 paths/本地引用闭合，Alembic 单 head 和从零离线 SQL 通过。Ubuntu 发布前备份 `/home/syin/study-backups/20260815T144358Z` 隔离恢复为 35 个 public 表/353 个 MinIO 文件；API/Web、`0031` current/head、三张语文表、复合主键、3 条 synthetic seed、旧教材/快照 `math` 回填、四个 worker、英语关闭态、私有 MinIO 端口和容器源码均通过。未构建本轮 Flutter release，未运行真实 Provider/PDF、登录态浏览器或设备。
+本轮验证：API Ruff/Mypy（60 source files）与定向测试通过，全量非集成 `229 passed, 28 deselected`；Flutter Analyze 和 52 项测试通过；Web 32 项、TypeScript、ESLint、Prettier、production build 通过。OpenAPI `0.14.0` 62 paths/本地引用闭合，Alembic 单 head 和从零离线 SQL 通过。Ubuntu 发布前备份 `/home/syin/study-backups/20260815T144358Z` 隔离恢复为 35 个 public 表/353 个 MinIO 文件；API/Web、`0031` current/head、三张语文表、复合主键、3 条 synthetic seed、旧教材/快照 `math` 回填、四个 worker、英语关闭态、私有 MinIO 端口和容器源码均通过。2026-08-16 新增隔离 synthetic Chromium 登录态 E2E，Web 32 项/构建、认证与档案 API 25 项及 E2E `1 passed`；本机 PostgreSQL 从 `0025` 前滚到 `0031` 后，语文并发/导出集成 `1 passed`。同日 Xcode 已确认 iPad mini 6 在线、开发者模式启用且安装 `Study Child 0.1.0 (1)`，但 `devicectl` 两次远程启动均被 macOS `CoreDeviceService` 初始化超时阻断；随后带 Ubuntu 地址的 Release 构建在签名阶段因 Xcode 没有登录账号及 Team `VZ59988J63` 缺少 `com.example.studyChild` 开发描述文件失败，未产出或安装新包。Nova 9 已由 ADB 识别为 Android 12 的 `NAM-AL00`；当前 Release 已以 `adb install -r` 覆盖安装、登录并显示数学/语文/英语入口，Ubuntu 语文拼音与句子原创练习可加载，未作答提交被设备端拦截且未产生 Attempt。语文到期复习列表尚未实现，不能把“答对后加入后续复习”反馈视为完成；相机/相册、弱网、重启、账号切换和真实到期复习仍未执行。Ubuntu 真实账号/PostgreSQL 浏览器链路、Flutter release、真实 Provider/PDF 和设备仍未运行。
+
+2026-08-16 PLAN-0032 实现增量：语文内容响应加入待项目 Owner 审核的来源/权利凭证摘要，`docs/chinese-content-review.md` 建立不可伪造的签核台账；新增拼音、生字、词语和原创古诗文积累样例的确定性题型。孩子端可读取到期 ReviewItem 并以相同内容版本重做，家长首页按当前孩子汇总拼音/生字/词语/句子/阅读/背诵技能的 Attempt、正确数与到期数；本机 PostgreSQL 集成 `1 passed` 覆盖并发、导出、复习队列和报告。教材分析现按 Material subject 分派：数学继续 `curriculum-*.v1`，语文使用独立 `chinese-curriculum-*.v2` schema/prompt 和短篇章边界证据，保留既有父母审核与私有页图边界；定向 API `21 passed`、Ruff/Mypy 通过，未上传真实 PDF 或调用 Provider。正式具名教研/版权签核、Ubuntu 发布、真实账号浏览器和四设备完整 E2E 仍未完成。
 
 回滚：隐藏语文入口并继续只发送 `math`；保留 `0031` 新列/表和已追加学习事实，以前向修复恢复。禁止删除语文 Attempt/Review 或降级数据库作为回滚。
 

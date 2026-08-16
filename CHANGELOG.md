@@ -1,5 +1,11 @@
 # Changelog
 
+- 2026-08-16：本地 API/OpenAPI 前移至 `0.15.0`，新增语文到期复习读取、家长按技能汇总和孩子端同版本复习入口；拼音、生字、词语与古诗文积累仅作为待具名教研/版权审核的原创演示内容。语文教材分析改为 subject-aware 队列：数学保持 `curriculum-*.v1`，语文使用独立 `chinese-curriculum-*.v2` Schema/Prompt，并只记录短篇章边界证据，禁止复用数学提示或重建教材全文。正式签核、真实 PDF/Provider 和设备验收仍待完成。
+
+- 2026-08-16：语文 PostgreSQL 持久化增加并发安全的 Review upsert：两个不同幂等键提交同一内容时均保留追加 Attempt，并原子更新同一条 Review。新增随机 Household/Parent/Child 的集成测试，验证并发提交、导出字段和删除级联清理；本机数据库已前滚到 `0031`，未重新部署 Ubuntu。
+
+- 2026-08-16：新增隔离 Chromium 登录态 E2E 与 GitHub Actions 门槛。真实 Next/API 链路覆盖首次强制改密、HttpOnly/SameSite Cookie、CSRF 拒绝、Session 轮换/退出撤销、超级管理员开通家庭、普通家长角色/跨家庭拒绝、双孩子聚合创建、`math/chinese` 学科差异和当前孩子切换；只使用运行时 synthetic 凭据，不读取 Ubuntu 家庭数据或上传浏览器 Trace/视频/截图。Ubuntu 真实账号/PostgreSQL 浏览器与设备生命周期仍待验收。
+
 - 2026-08-15：发布 `v0.14.0` 多学科与语文首个纵向切片。孩子档案、教材和契约支持 `math/chinese`；语文采用版本化原创/授权内容、服务端 AnswerSpec、`chinese-score.v1` 确定性评分及追加写 Attempt/Review，英语继续排最后并保持 Provider 关闭。Ubuntu 已从 `0.13.0/0030` 前滚至 `0.14.0/0031_multisubject_chinese`；发布前 PostgreSQL/MinIO 备份通过隔离恢复，API/Web、迁移、旧教材数学回填、三张语文表/复合主键/seed、四个 worker、未认证保护、MinIO 私有端口和容器源码通过。正式语文内容、语文教材分析、并发/导出集成、登录态浏览器、真实 Provider/PDF 和设备验收仍待完成。
 
 - 2026-07-31：家长工作台的“待复习错题”现在直接显示每道题的题干和到期日；最近学习记录迁移到独立导航页，默认近 30 个上海自然日，并可选择 180 天窗口内的单日。API/OpenAPI `0.13.0` 与迁移 `0030_learning_history_retention` 已部署 Ubuntu；DataLifecycle worker 固定清理超过 180 天且不被开放错题引用的详细题目、讲解和已结束复习链路。开放错题、Attempt、AuditEvent、账号和教材不在本次清理范围。升级前 PostgreSQL/MinIO 备份已隔离恢复验证，API/Web/四个常驻 worker、迁移服务、OpenAPI、数据库索引和运行源码通过复核；英语实时 Provider 保持关闭。

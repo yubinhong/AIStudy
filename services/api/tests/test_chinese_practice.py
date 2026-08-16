@@ -43,8 +43,16 @@ def test_chinese_content_requires_subject_and_is_grade_bounded() -> None:
 
     assert disabled.status_code == 409
     assert enabled.status_code == 200
-    assert {item["skill"] for item in enabled.json()} == {"sentence", "reading"}
+    assert {item["skill"] for item in enabled.json()} == {
+        "sentence",
+        "reading",
+        "vocabulary",
+        "recitation",
+    }
     assert all(item["source"]["license_status"] == "cleared" for item in enabled.json())
+    assert all(
+        item["source"]["review"]["status"] == "pending_owner_review" for item in enabled.json()
+    )
     assert all("answer_spec" not in item for item in enabled.json())
 
 
@@ -89,6 +97,46 @@ def test_child_submits_chinese_attempt_idempotently_and_parent_cannot_submit() -
     assert parent.status_code == 403
 
 
+def test_chinese_review_queue_and_parent_skill_report_are_role_scoped() -> None:
+    client = TestClient(create_app())
+    _enable_chinese(client)
+    root = f"/households/{DEFAULT_HOUSEHOLD_ID}/children/{CHILD_ID}/chinese"
+    child_headers = session_headers(client, role="child", child_id=CHILD_ID)
+    content = client.get(f"{root}/content", headers=child_headers).json()
+    vocabulary = next(item for item in content if item["skill"] == "vocabulary")
+
+    submitted = client.post(
+        f"{root}/attempts",
+        headers={**child_headers, "Idempotency-Key": "chinese-report-attempt-001"},
+        json={
+            "content_id": vocabulary["id"],
+            "content_revision": vocabulary["revision"],
+            "response": {"choice": "清新"},
+            "elapsed_ms": 900,
+        },
+    )
+    reviews = client.get(f"{root}/reviews?due_only=false", headers=child_headers)
+    parent_report = client.get(f"{root}/skill-report", headers=session_headers(client))
+    parent_reviews = client.get(f"{root}/reviews", headers=session_headers(client))
+    child_report = client.get(f"{root}/skill-report", headers=child_headers)
+
+    assert submitted.status_code == 201
+    assert reviews.status_code == 200
+    assert reviews.json()[0]["content_id"] == vocabulary["id"]
+    assert parent_report.status_code == 200
+    assert parent_report.json()["skills"] == [
+        {
+            "skill": "vocabulary",
+            "attempts": 1,
+            "correct_attempts": 1,
+            "due_reviews": 0,
+            "last_attempt_at": submitted.json()["created_at"],
+        }
+    ]
+    assert parent_reviews.status_code == 403
+    assert child_report.status_code == 403
+
+
 def test_deterministic_scorer_handles_order_and_evidence_without_provider() -> None:
     source = ChineseContentSource(type="original", source_id="test", license_status="cleared")
     ordered = ChineseContentItem(
@@ -120,6 +168,44 @@ def test_deterministic_scorer_handles_order_and_evidence_without_provider() -> N
     partial = score_chinese(reading, {"answer": "长出嫩叶", "evidence": "别的句子"})
     assert partial.score == 1
     assert partial.feedback_tags == ("evidence_missing",)
+
+
+def test_original_chinese_mvp_pack_covers_pinyin_character_vocabulary_and_recitation() -> None:
+    client = TestClient(create_app())
+    _enable_chinese(client)
+    root = f"/households/{DEFAULT_HOUSEHOLD_ID}/children/{CHILD_ID}/chinese"
+    headers = session_headers(client, role="child", child_id=CHILD_ID)
+
+    grade_three = client.get(f"{root}/content", headers=headers)
+    grade_one = client.patch(
+        f"/households/{DEFAULT_HOUSEHOLD_ID}/children/{CHILD_ID}",
+        headers={**session_headers(client), "Idempotency-Key": "set-grade-one-chinese"},
+        json={
+            "display_name": "Synthetic Child A",
+            "grade": 1,
+            "curriculum_version": "multi-demo-2026",
+            "subjects": ["math", "chinese"],
+        },
+    )
+    grade_one_content = client.get(f"{root}/content", headers=headers)
+
+    assert grade_three.status_code == 200
+    assert {item["skill"] for item in grade_three.json()} >= {
+        "sentence",
+        "reading",
+        "vocabulary",
+        "recitation",
+    }
+    assert grade_one.status_code == 200
+    assert {item["skill"] for item in grade_one_content.json()} >= {
+        "pinyin",
+        "character",
+        "recitation",
+    }
+    assert all(
+        item["source"]["license_status"] == "cleared" and "answer_spec" not in item
+        for item in grade_one_content.json()
+    )
 
 
 def test_chinese_attempt_rejects_unbounded_or_unknown_response_fields() -> None:

@@ -16,6 +16,7 @@ import {
 } from "@/app/components/learning-trend-chart";
 import {
   loadChildren,
+  loadChineseSkillReport,
   loadDevices,
   loadLearningDetails,
   loadMistakes,
@@ -87,13 +88,19 @@ export default async function HomePage({
     children[0];
   const selectedChildId = readString(selectedChild, "id");
   const trendRange = learningHistoryRange(null, new Date(), 7);
-  const [devices, mistakes, learningDetails] = await Promise.all([
-    loadDevices(),
-    selectedChildId ? loadMistakes(selectedChildId, true) : Promise.resolve([]),
-    selectedChildId
-      ? loadLearningDetails(selectedChildId, { ...trendRange, limit: 200 })
-      : Promise.resolve([]),
-  ]);
+  const [devices, mistakes, learningDetails, chineseSkillReport] =
+    await Promise.all([
+      loadDevices(),
+      selectedChildId
+        ? loadMistakes(selectedChildId, true)
+        : Promise.resolve([]),
+      selectedChildId
+        ? loadLearningDetails(selectedChildId, { ...trendRange, limit: 200 })
+        : Promise.resolve([]),
+      selectedChildId
+        ? loadChineseSkillReport(selectedChildId)
+        : Promise.resolve(null),
+    ]);
 
   const childName = readString(selectedChild, "display_name") ?? "家庭空间";
   const grade = readNumber(selectedChild, "grade");
@@ -103,6 +110,7 @@ export default async function HomePage({
     (total, detail) => total + readArray(detail, "tutor_turns").length,
     0,
   );
+  const chineseSkills = readArray(chineseSkillReport, "skills");
   const apiConnected = children.length > 0 || devices.length > 0;
   const childOptions = children.flatMap((child) => {
     const id = readString(child, "id");
@@ -238,6 +246,59 @@ export default async function HomePage({
         </article>
       </section>
 
+      <section className="dashboard-panel" id="chinese-skill-report">
+        <div className="section-heading">
+          <div>
+            <p className="section-kicker">语文技能报告</p>
+            <h2>按技能查看作答与复习</h2>
+          </div>
+          <span className="quiet-label">仅汇总已追加学习事实</span>
+        </div>
+        {chineseSkills.length === 0 ? (
+          <div className="empty-dashboard-state">
+            <div>
+              <strong>还没有语文技能记录</strong>
+              <p>
+                完成语文练习后，这里会显示按拼音、字词、阅读和古诗文汇总的作答与到期复习。
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="attention-list" role="list" aria-label="语文技能报告">
+            {chineseSkills.map((skill, index) => {
+              const attempts = readNumber(skill, "attempts") ?? 0;
+              const correctAttempts =
+                readNumber(skill, "correct_attempts") ?? 0;
+              const dueReviews = readNumber(skill, "due_reviews") ?? 0;
+              return (
+                <div
+                  className="attention-row"
+                  key={readString(skill, "skill") ?? index}
+                  role="listitem"
+                >
+                  <span className="attention-icon success">
+                    <BookOpenText size={24} weight="duotone" />
+                  </span>
+                  <div className="attention-copy">
+                    <strong>
+                      {chineseSkillLabel(readString(skill, "skill"))}
+                    </strong>
+                    <span>{`已作答 ${attempts} 次，正确 ${correctAttempts} 次`}</span>
+                  </div>
+                  <span
+                    className={
+                      dueReviews > 0 ? "status-pill amber" : "status-pill"
+                    }
+                  >
+                    {dueReviews > 0 ? `${dueReviews} 项待复习` : "暂无到期复习"}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
       <section className="dashboard-panel curriculum-callout">
         <span className="attention-icon success">
           <BookOpenText size={24} weight="duotone" />
@@ -254,4 +315,16 @@ export default async function HomePage({
       </section>
     </AdminShell>
   );
+}
+
+function chineseSkillLabel(skill: string | null) {
+  const labels: Record<string, string> = {
+    character: "生字",
+    pinyin: "拼音",
+    reading: "阅读",
+    recitation: "古诗文",
+    sentence: "句子",
+    vocabulary: "词语",
+  };
+  return skill ? (labels[skill] ?? "语文表达") : "语文表达";
 }

@@ -112,7 +112,7 @@
 | staging | 集成、设备、AI 评测和迁移/恢复验证 | `TBD（P0/P1 建立）` | sanitized/synthetic | CI 产物，禁止从个人工作区直接发布 |
 | production | 家庭正式使用 | `TBD（发布方案和 RUNBOOK 批准后建立）` | restricted | 仅允许已通过发布门槛的版本化产物 |
 
-当前事实：Git 位于 `master`；本地与 Ubuntu API/OpenAPI 为 `0.14.0`、迁移头 `0031_multisubject_chinese`。家长工作台可直接辨认到期题目，独立学习记录页默认近 30 个上海自然日并支持 180 天窗口内单日筛选；详细题目/讲解和已结束复习链路固定保留 180 天，开放错题受保护。PostgreSQL 已有私有页图元数据、页级 AI 分析、全书知识图谱、规范化知识点及语文 Content/Attempt/Review；同一孩子可并行发布多份教材，推荐遍历全部已发布且已批准的知识图谱，并继续为每条题目保留确切教材/页码来源。全实例只有一个超级管理员 `super_admin`，它可开通独立亲戚家庭及其普通家长；普通家长只能管理自己名下孩子。只有显式声明为国家公开教材、完整内容指纹匹配且来源图谱已批准的 PDF 可跨家庭复用私有 PDF/页图/解析草稿，目标家庭仍独立审核发布。2026-08-15 已完成 Ubuntu 备份恢复、`0031` 前滚、API/Web/四个常驻 worker、迁移服务、OpenAPI、语文数据结构和运行源码验收；孩子英语供应商中立框架保持关闭，语文并发/导出集成、跨家庭登录态浏览器与设备验收仍未执行。
+当前事实：Git 位于 `master`；本地与 Ubuntu API/OpenAPI 为 `0.14.0`、迁移头 `0031_multisubject_chinese`。家长工作台可直接辨认到期题目，独立学习记录页默认近 30 个上海自然日并支持 180 天窗口内单日筛选；详细题目/讲解和已结束复习链路固定保留 180 天，开放错题受保护。PostgreSQL 已有私有页图元数据、页级 AI 分析、全书知识图谱、规范化知识点及语文 Content/Attempt/Review；同一孩子可并行发布多份教材，推荐遍历全部已发布且已批准的知识图谱，并继续为每条题目保留确切教材/页码来源。全实例只有一个超级管理员 `super_admin`，它可开通独立亲戚家庭及其普通家长；普通家长只能管理自己名下孩子。只有显式声明为国家公开教材、完整内容指纹匹配且来源图谱已批准的 PDF 可跨家庭复用私有 PDF/页图/解析草稿，目标家庭仍独立审核发布。2026-08-15 已完成 Ubuntu `0031` 发布；2026-08-16 隔离 Chromium 已验证跨家庭登录态、Cookie/CSRF/撤销及双孩子学科/切换。孩子英语框架保持关闭，语文并发/导出、Ubuntu 真实账号/PostgreSQL 浏览器与设备验收仍未执行。
 
 上传架构修订（2026-07-17）：项目 Owner 接受 ADR-0018，以 Session 鉴权的 API 有界流式上传替代 ADR-0010/0014 的 App 预签名直传。目标合同合并申请/PUT/确认并只返回已确认 Capture，移除 `upload_url`、`OBJECT_STORAGE_PUBLIC_ENDPOINT_URL` 和 MinIO `9000` LAN 暴露。API/Flutter/OpenAPI/Compose 已迁移，Ubuntu 已成对部署；最终设备回归和 Provider 额度恢复后的真实识别由 TASK-0009 跟踪。
 
@@ -122,9 +122,9 @@
 
 现状修订（2026-07-17）：`0013`～`0015` 已新增可信 TutorTurn、学习会话完成/复习、周报和 24 小时孩子数据导出；Flutter SQLite 离线队列、完整 Compose、真实 NewAPI synthetic 和备份恢复已验证。真实视觉检测器、浏览器 E2E 和完整设备生命周期仍待执行。
 
-认证实现修订（2026-07-17）：项目 Owner 接受 ADR-0017，并在 TASK-0007 明确只保留用户名/密码+可撤销会话。API 已实现 Argon2id、首次改密阻断、失败锁定、审计、Web Cookie/CSRF、Flutter 安全存储/登录前服务端地址配置和孩子账号管理；HMAC/Demo/免登录路径已删除。迁移为 `0011_account_password_session`。备份恢复随后已完成；浏览器 E2E 和 iPad 完整生命周期仍未执行。
+认证实现修订（2026-08-16）：项目只保留用户名/密码+可撤销会话，HMAC/Demo/免登录路径已删除。API 的 Argon2id、首次改密阻断、失败锁定、审计和孩子账号管理既有回归继续通过；新增隔离 Chromium 覆盖 Web Cookie/CSRF、会话轮换/撤销、跨家庭角色和双孩子作用域。Ubuntu 真实账号/PostgreSQL 浏览器与 iPad 完整生命周期仍未执行。
 
-Web 多孩子体验修订（2026-07-18）：项目 Owner 要求创建孩子时把档案和登录账号作为一个流程，并在首页选择当前孩子。PLAN-0013/Proposed ADR-0019 已由 API/Web 首版实现：事务聚合创建、列表、删除和 `?child=` 作用域选择均保留 `Account`/`ChildProfile` 物理分表；浏览器 E2E 和双孩子实体验收仍待执行。
+Web 多孩子体验修订（2026-08-16）：PLAN-0013/Proposed ADR-0019 的事务聚合创建、列表、删除和 `?child=` 作用域选择继续保留 `Account`/`ChildProfile` 物理分表；隔离 Chromium 已验证两个 synthetic 孩子的聚合创建、`math/chinese` 差异和切换，真实 PostgreSQL/设备验收仍待执行。
 
 数学产品主线修订（2026-07-24～31）：项目 Owner 接受 ADR-0023/PLAN-0018，用“私有原页 → 分批视觉理解 → 全书知识图谱 → 家长批准 → 错题/知识点任务”替代残缺 PDF 文字抽题。原页通过 Session API 读取，发布和推荐只消费批准知识；三端代码及 Ubuntu `0.13.0`/`0030` 已部署，最新 iPad Release 包已安装但首次启动仍需设备信任，真实教材/Provider/设备原页仍待验收。
 
@@ -135,7 +135,7 @@ Web 多孩子体验修订（2026-07-18）：项目 Owner 要求创建孩子时�
 | 模块/服务 | 目标路径 | 责任 | Owner | 依赖 |
 | --- | --- | --- | --- | --- |
 | 孩子端 | `apps/child_flutter` | 学科/数学三入口、错题讲解、到期复习、今日任务、拍题、SQLite 与待同步 | `TBD` | OpenAPI SDK、`image_picker`、端侧存储；三入口、视觉四态和完整解答已有，错题 closeout、ReviewAttempt UI、L1/L2 递进和设备回归待完成 |
-| Web/PWA | `apps/web` | 家长端、统一孩子管理、多孩子工作台、PDF 教材审核发布、任务建议审批与 Windows 首版体验 | `TBD` | OpenAPI SDK、Web 认证；当前多格式上传和手工小节/建议审批已有，目标需收缩为 PDF-only，PDF 解析预览/页码校正与浏览器 E2E 待完成 |
+| Web/PWA | `apps/web` | 家长端、统一孩子管理、多孩子工作台、PDF 教材审核发布、任务建议审批与 Windows 首版体验 | `TBD` | 隔离登录态/跨家庭/双孩子 Chromium 已通过；OpenAPI SDK、真实 PDF 流程和 Ubuntu 真实账号浏览器待完成 |
 | 模块化 API | `services/api` | 身份、档案、课程/材料、任务/推荐、捕获/视觉、分模式辅导、错题/复习、报告和通知 | `TBD` | PostgreSQL、Redis、对象存储、AI Provider；Mistake/Review/Curriculum/Recommendation 基础合同已有，原子 closeout、解析 worker、grounding、ReviewPolicy v2 和 Tutor Hint 新版本待完成 |
 | 跨端契约 | `packages/contracts` | OpenAPI、JSON Schema 和生成 SDK 的唯一契约来源 | `TBD` | API 与所有客户端 |
 | AI 评测 | `evals` | 固定评测集，比较质量、安全、成本和延迟 | `TBD` | 模型/Prompt/Policy 版本 |

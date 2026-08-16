@@ -1,3 +1,61 @@
+# PLANS.md — PLAN-0032 语文完整 MVP 与证据化验收
+
+## 计划元数据
+
+- 计划 ID：`PLAN-0032`
+- 关联：`TASK-0012`、`PLAN-0030`、`ADR-0027`、`docs/deep-research-report.md`
+- 状态：`IN_PROGRESS`
+- 优先级：`P0 / CHINESE CONTENT / REVIEW / CURRICULUM`
+- Owner：Codex（实现）；项目 Owner（教研、版权与设备现场验收）
+- 创建：`2026-08-16`
+
+## 边界与里程碑
+
+本计划扩展语文确定性内容、复习和家长可解释报告，并为私有语文教材建立独立的分析版本。所有新增公共内容必须是项目原创或具备明确授权；代码可保存审核人、审核时间和权利凭证摘要，但不得编造真实教研/版权通过记录。上传教材继续只在家庭私有边界内处理，页图只给单一获批 Provider。
+
+- [ ] M1 — 内容台账与审核门禁；补齐拼音、字词和古诗文的确定性题型及 golden scorer 覆盖。
+- [x] M2 — 按到期日读取语文复习项，孩子端以同一内容版本重做；家长获得按技能聚合、可追溯的报告。
+- [x] M3 — 语文教材分析 `v2`：独立 schema/prompt、页级证据/篇章边界和家长审核；禁止复用数学提示。
+- [ ] M4 — PostgreSQL、Web Chromium 和 Flutter 自动验收；iPad mini 6、Windows、iPhone 11、Nova 9 的登录、横竖屏、弱网和权限结果必须由实际设备记录。
+
+## 回滚与风险
+
+应用回滚隐藏新语文入口和候选内容，保留 Attempt、Review、审核事实和新迁移结构；不做数据库 downgrade。没有具名审核和权利凭证的内容保持不可发布，设备 E2E 不能由模拟器、截图或浏览器自动测试替代。
+
+---
+
+# PLANS.md — PLAN-0031 登录态浏览器 E2E
+
+## 计划元数据
+
+- 计划 ID：`PLAN-0031`
+- 关联：`TASK-0012`、`PLAN-0007`、`ADR-0017`、`ADR-0019`
+- 状态：`COMPLETE（本地 Chromium E2E 及 CI 门槛已实现并通过）`
+- 优先级：`P0 / AUTH / BROWSER E2E`
+- Owner：Codex（执行）；项目 Owner（2026-08-16 明确要求继续实现）
+- 创建/更新：`2026-08-16`
+
+## 目标与边界
+
+建立可在本机和 GitHub Actions 重复运行的 Chromium E2E，以隔离的内存 API 和 synthetic 账号验证真实 Next.js 浏览器链路。覆盖未登录重定向、一次性管理员首次改密、HttpOnly Session/SameSite Cookie、CSRF 拒绝、会话轮换与退出撤销、超级管理员开通独立家庭、普通家长角色可见性、双孩子聚合创建、`math/chinese` 学科差异和当前孩子切换。
+
+本计划不读取或写入 Ubuntu 家庭数据库，不记录浏览器 Cookie、原始 Session 或明文运行时密码，不验证真实 Provider/PDF/设备，也不增加免登录、测试 Header 或固定生产凭据。PostgreSQL 会话持久化继续由现有 API 集成测试覆盖；浏览器层使用进程隔离的内存仓储确保每次运行可重复且无儿童数据残留。
+
+## 依赖与实施
+
+- `@playwright/test` 固定为 `1.61.1`，Apache-2.0、Microsoft 维护，仅用于开发/CI；不进入客户端运行 bundle。相较人工浏览器验收可稳定覆盖 Cookie、CSRF、重定向和多账号流程；相较再引入 Cypress，Playwright 原生支持多 Web Server、浏览器上下文隔离和失败 Trace，依赖面更小。
+- [x] M1 — 增加 Playwright 配置、忽略失败产物和标准 `test:e2e`/浏览器安装命令。
+- [x] M2 — 启动隔离 API/Next，验证首次登录、改密前数据阻断、Cookie/CSRF、会话轮换、退出和撤销。
+- [x] M3 — 验证超级管理员创建新家庭、普通家长首次改密、角色导航、双孩子创建及学科/切换作用域。
+- [x] M4 — GitHub Actions 安装锁定 Python/Node 依赖与 Chromium并运行 E2E；为避免密码或 Session 进入持久产物，不上传 HTML/Trace/视频/截图。
+- [x] M5 — Web 格式/Lint/类型/32 项单测/build、API 认证/档案 25 项和 Chromium E2E `1 passed` 通过；CI YAML、差异和生成物完成审查。
+
+## 回滚与风险
+
+删除 Playwright 配置、E2E 用例、CI Job 和仅开发依赖即可回滚，业务代码、契约和数据库不变。浏览器二进制会增加 CI 下载时间与缓存外存储；失败输出不得包含表单输入值、Cookie 或请求 Authorization，因此使用终端 reporter，禁用 Trace、视频和截图且不上传报告。
+
+---
+
 # PLANS.md — PLAN-0030 多学科基础与语文 MVP
 
 ## 计划元数据
@@ -22,6 +80,7 @@
 - [x] M3 — 语文内容领域模型、discriminated `AnswerSpec`、版本化 deterministic scorer、Household/Child 授权和幂等提交 API。
 - [x] M4 — 家长 Web 可选择数学/语文并按学科上传教材；Flutter 首页按孩子已启用学科显示语文入口，提供原创 synthetic starter content 的最小练习体验。
 - [x] M5 — API/迁移/OpenAPI/Web/Flutter 定向与全量相关门槛，文档同步和差异/敏感信息审查。
+- [x] M6 — 本机 PostgreSQL 从 `0025` 前滚到 `0031`；随机 Household/Parent/Child 的两个并发语文提交均追加 Attempt，Review 通过原子 upsert 合并，导出字段和级联清理 `1 passed`。
 
 ## 验收标准
 

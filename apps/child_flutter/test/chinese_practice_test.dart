@@ -7,6 +7,7 @@ import 'package:study_child/features/chinese/domain/chinese_models.dart';
 
 class _FakeChineseGateway implements ChinesePracticeGateway {
   int submissions = 0;
+  List<ChineseReviewItem> dueReviews = const [];
 
   @override
   Future<List<ChineseContentItem>> loadContent() async => const [
@@ -20,6 +21,9 @@ class _FakeChineseGateway implements ChinesePracticeGateway {
       sourceLabel: '原创练习',
     ),
   ];
+
+  @override
+  Future<List<ChineseReviewItem>> loadDueReviews() async => dueReviews;
 
   @override
   Future<ChineseAttemptResult> submitAttempt(
@@ -82,5 +86,30 @@ void main() {
 
     expect(gateway.submissions, 1);
     expect(find.text('回答正确，已加入后续复习。'), findsOneWidget);
+  });
+
+  testWidgets('due Chinese review opens the same content before submitting', (
+    tester,
+  ) async {
+    final gateway = _FakeChineseGateway()
+      ..dueReviews = [
+        ChineseReviewItem(
+          contentId: '10000000-0000-0000-0000-000000000002',
+          contentRevision: 1,
+          dueAt: DateTime.utc(2026, 8, 16),
+          skill: 'sentence',
+        ),
+      ];
+    await tester.pumpWidget(
+      MaterialApp(home: ChineseHomePage(gateway: gateway)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('到期复习'), findsOneWidget);
+    await tester.tap(find.text('句子排排队').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('提交回答'), findsOneWidget);
+    expect(gateway.submissions, 0);
   });
 }

@@ -41,6 +41,9 @@ apps/child_flutter/.packages
 coverage/
 dist/
 tmp/
+apps/web/blob-report/
+apps/web/playwright-report/
+apps/web/test-results/
 *.log
 *.tar
 *.tar.gz

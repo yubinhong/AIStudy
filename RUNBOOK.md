@@ -53,7 +53,7 @@ GitHub Actions Android APK 构建、稳定签名 Secret、Artifact 校验/安装
 
 实施前先对 `accounts` 与 `child_profiles` 做只读基数审计，分别统计无账号档案、一对一绑定和同档案多账号；报告只使用 UUID/计数，不打印用户名或儿童姓名。发现重复绑定时停止自动迁移，由项目 Owner 选择保留的账号并显式处理其余账号/会话，不得静默删除。
 
-发布顺序为：备份 → 数据审计/处置 → 部署扩展后的数据库约束与 API 聚合合同 → 运行原子创建/授权 smoke → 部署匹配 Web → 用两个 synthetic 孩子验证切换、刷新和删除回退 → 收缩旧 Web 分离创建入口。数据库继续保留 `accounts`/`child_profiles` 两表，应用回滚不得重新允许同档案多账号。该流程只在 ADR-0019 Accepted 且实现/测试完成后执行；该首版流程已在 Ubuntu 完成前滚，双孩子浏览器 E2E 仍待执行。
+发布顺序为：备份 → 数据审计/处置 → 部署扩展后的数据库约束与 API 聚合合同 → 运行原子创建/授权 smoke → 部署匹配 Web → 用两个 synthetic 孩子验证切换、刷新和删除回退 → 收缩旧 Web 分离创建入口。数据库继续保留 `accounts`/`child_profiles` 两表，应用回滚不得重新允许同档案多账号。该首版流程已在 Ubuntu 完成前滚，隔离 Chromium 双孩子创建/切换已通过；Ubuntu 真实账号/PostgreSQL 浏览器仍待执行。
 
 ### 教材驱动错题闭环与智能推荐发布（ADR-0020/0022；PLAN-0016/0017）
 
@@ -95,10 +95,10 @@ uv run python scripts/run_curriculum_analysis_worker.py --watch
 - [ ] 版本化产物、配置清单、迁移、容量、功能开关、模型/Prompt/Policy 版本已审查。
 - [x] 备份、隔离恢复演练和数据导出/删除已验证；成本和安全告警仍未接入。
 - [ ] 适用法域、儿童隐私、保留期限、Owner/值班和安全联系渠道已批准。
-- [ ] ADR-0017 环境验收：代码已实现默认管理员仅本机首次登录、首次改密、会话撤销、Web Cookie/CSRF 和孩子账号反向授权；完整 Compose、浏览器 E2E 和真实设备验证后才能勾选。
+- [ ] ADR-0017 环境验收：代码及隔离 Chromium 已验证首次改密阻断、会话轮换/撤销、Web Cookie/CSRF、跨家庭角色和双孩子；Ubuntu 真实账号/PostgreSQL 浏览器及真实设备验证后才能勾选。
 - [x] 自用 NewAPI 的 URL、API key、视觉模型、响应 Schema、停用开关和 synthetic 大图联调已验证；PrivacySanitizer/用户确认/临时副本删除 eval 已通过。
 - [ ] ADR-0018 上传收敛：本地与 Ubuntu OpenAPI/Flutter/API/Compose 已切换为单一有界流式上传；公开 MinIO 配置和 `9000` 映射已删除，相关本地回归及远端端口复核通过；断连/超限/超时/并发现场压测和真机验证待执行。
-- [ ] ADR-0019/PLAN-0013：孩子聚合原子创建/幂等/唯一约束、孩子选择/服务端过滤、反向授权和 API/Web 成对部署已通过；双孩子浏览器 E2E、旧数据审计和真实回归仍待执行。
+- [ ] ADR-0019/PLAN-0013：孩子聚合原子创建/幂等/唯一约束、孩子选择/服务端过滤、反向授权和 API/Web 成对部署已通过；隔离 Chromium 双孩子已通过，旧数据审计、真实 PostgreSQL 浏览器和设备回归仍待执行。
 - [ ] PLAN-0016/0017/0018、ADR-0021/0022/0023：Ubuntu 已实施 `0.11.0`/`0025` 的 PDF-only、错题 closeout/ReviewAttempt、私有原页、多模态知识图谱、家长批准、批准知识点推荐和孩子端原页入口，并完成备份恢复、迁移头、健康和私有端口烟雾。仍须完成真实 Provider/PDF/iPad/浏览器验收、个人信息门禁及 AI 成本观测后才可勾选。
 - [ ] 发布、停止、回滚和前滚负责人明确，真实数据不来自开发环境。
 

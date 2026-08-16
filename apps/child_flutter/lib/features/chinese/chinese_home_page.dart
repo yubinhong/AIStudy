@@ -13,22 +13,33 @@ class ChineseHomePage extends StatefulWidget {
 }
 
 class _ChineseHomePageState extends State<ChineseHomePage> {
-  late Future<List<ChineseContentItem>> _content;
+  late Future<_ChineseDashboard> _dashboard;
 
   @override
   void initState() {
     super.initState();
-    _content = widget.gateway.loadContent();
+    _dashboard = _loadDashboard();
   }
 
-  void _retry() => setState(() => _content = widget.gateway.loadContent());
+  Future<_ChineseDashboard> _loadDashboard() async {
+    final results = await Future.wait<Object>([
+      widget.gateway.loadContent(),
+      widget.gateway.loadDueReviews(),
+    ]);
+    return _ChineseDashboard(
+      content: results[0] as List<ChineseContentItem>,
+      dueReviews: results[1] as List<ChineseReviewItem>,
+    );
+  }
+
+  void _retry() => setState(() => _dashboard = _loadDashboard());
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('语文学习')),
-      body: FutureBuilder<List<ChineseContentItem>>(
-        future: _content,
+      body: FutureBuilder<_ChineseDashboard>(
+        future: _dashboard,
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
             return const Center(child: CircularProgressIndicator());
@@ -42,16 +53,67 @@ class _ChineseHomePageState extends State<ChineseHomePage> {
               ),
             );
           }
-          final items = snapshot.data ?? const <ChineseContentItem>[];
+          final dashboard = snapshot.data;
+          final items = dashboard?.content ?? const <ChineseContentItem>[];
           if (items.isEmpty) {
             return const Center(child: Text('当前年级还没有已审核的语文练习。'));
           }
+          final contentByRevision = {
+            for (final item in items) '${item.id}:${item.revision}': item,
+          };
+          final dueItems = (dashboard?.dueReviews ?? const <ChineseReviewItem>[])
+              .map(
+                (review) =>
+                    contentByRevision['${review.contentId}:${review.contentRevision}'],
+              )
+              .whereType<ChineseContentItem>()
+              .toList(growable: false);
           return ListView.separated(
             padding: const EdgeInsets.all(20),
-            itemCount: items.length,
+            itemCount: items.length + (dueItems.isEmpty ? 0 : 1),
             separatorBuilder: (_, _) => const SizedBox(height: 12),
             itemBuilder: (context, index) {
-              final item = items[index];
+              if (index == 0 && dueItems.isNotEmpty) {
+                return Card(
+                  color: Theme.of(context).colorScheme.secondaryContainer,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '到期复习',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        Text('今天有 ${dueItems.length} 项语文内容需要重新作答。'),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: dueItems
+                              .map(
+                                (item) => OutlinedButton(
+                                  onPressed: () => Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => _ChinesePracticePage(
+                                        gateway: widget.gateway,
+                                        item: item,
+                                        isReview: true,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Text(item.title),
+                                ),
+                              )
+                              .toList(growable: false),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+              final item = items[index - (dueItems.isEmpty ? 0 : 1)];
               return Card(
                 child: ListTile(
                   leading: Icon(_skillIcon(item.skill)),
@@ -79,10 +141,15 @@ class _ChineseHomePageState extends State<ChineseHomePage> {
 }
 
 class _ChinesePracticePage extends StatefulWidget {
-  const _ChinesePracticePage({required this.gateway, required this.item});
+  const _ChinesePracticePage({
+    required this.gateway,
+    required this.item,
+    this.isReview = false,
+  });
 
   final ChinesePracticeGateway gateway;
   final ChineseContentItem item;
+  final bool isReview;
 
   @override
   State<_ChinesePracticePage> createState() => _ChinesePracticePageState();
@@ -224,7 +291,9 @@ class _ChinesePracticePageState extends State<_ChinesePracticePage> {
                 padding: const EdgeInsets.all(16),
                 child: Text(
                   result.correct
-                      ? '回答正确，已加入后续复习。'
+                      ? widget.isReview
+                            ? '复习完成，已更新下一次复习时间。'
+                            : '回答正确，已加入后续复习。'
                       : _feedback(result.feedbackTags),
                 ),
               ),
@@ -243,6 +312,13 @@ class _ChinesePracticePageState extends State<_ChinesePracticePage> {
       ),
     );
   }
+}
+
+class _ChineseDashboard {
+  const _ChineseDashboard({required this.content, required this.dueReviews});
+
+  final List<ChineseContentItem> content;
+  final List<ChineseReviewItem> dueReviews;
 }
 
 class _SentenceOrder extends StatelessWidget {

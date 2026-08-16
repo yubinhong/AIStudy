@@ -434,7 +434,7 @@ def enqueue_curriculum_analysis(
     material = repository.get_material_for_snapshot(household_id, child_id, snapshot_id)
     if material is None or material.object_key is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="resource not found")
-    if material.subject is not Subject.MATH:
+    if material.subject not in {Subject.MATH, Subject.CHINESE}:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="subject-aware curriculum analysis is not available for this subject",

@@ -13,6 +13,10 @@ CURRICULUM_PAGE_ANALYSIS_SCHEMA = "curriculum-page-analysis.v1"
 CURRICULUM_BOOK_ANALYSIS_SCHEMA = "curriculum-book-analysis.v1"
 CURRICULUM_PAGE_PROMPT = "curriculum-page-visual.v5"
 CURRICULUM_BOOK_PROMPT = "curriculum-book-consolidation.v5"
+CHINESE_CURRICULUM_PAGE_ANALYSIS_SCHEMA = "chinese-curriculum-page-analysis.v2"
+CHINESE_CURRICULUM_BOOK_ANALYSIS_SCHEMA = "chinese-curriculum-book-analysis.v2"
+CHINESE_CURRICULUM_PAGE_PROMPT = "chinese-curriculum-page-visual.v2"
+CHINESE_CURRICULUM_BOOK_PROMPT = "chinese-curriculum-book-consolidation.v2"
 
 
 class KnowledgeMapStatus(StrEnum):
@@ -83,6 +87,29 @@ class ProviderPageAnalysisBatch(BaseModel):
     pages: tuple[ProviderPageAnalysis, ...] = Field(min_length=1, max_length=4)
 
 
+class ChinesePassageEvidence(BaseModel):
+    """A page-local, reviewable boundary for Chinese text or recitation material."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    title: str | None = Field(default=None, max_length=160)
+    start_marker: str = Field(min_length=1, max_length=160)
+    end_marker: str = Field(min_length=1, max_length=160)
+    kind: Literal["pinyin", "character", "vocabulary", "passage", "poem", "exercise"]
+    confidence: float = Field(ge=0, le=1)
+
+
+class ChineseProviderPageAnalysis(ProviderPageAnalysis):
+    passages: tuple[ChinesePassageEvidence, ...] = Field(default=(), max_length=16)
+
+
+class ChineseProviderPageAnalysisBatch(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["chinese-curriculum-page-analysis.v2"]
+    pages: tuple[ChineseProviderPageAnalysis, ...] = Field(min_length=1, max_length=4)
+
+
 class ProviderBookKnowledgePoint(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -120,6 +147,14 @@ class ProviderBookAnalysis(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal["curriculum-book-analysis.v1"]
+    book_summary: str = Field(min_length=1, max_length=4_000)
+    chapters: tuple[ProviderBookChapter, ...] = Field(min_length=1, max_length=40)
+
+
+class ChineseProviderBookAnalysis(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["chinese-curriculum-book-analysis.v2"]
     book_summary: str = Field(min_length=1, max_length=4_000)
     chapters: tuple[ProviderBookChapter, ...] = Field(min_length=1, max_length=40)
 

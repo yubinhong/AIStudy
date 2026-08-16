@@ -9,31 +9,31 @@
 - 当前阶段：`P1 MULTISUBJECT FOUNDATION / CHINESE MVP / GATED ENGLISH LAST`
 - 主要用户：小学阶段孩子与家长/监护人；辅助角色为家庭内容维护者和项目维护者。
 - 生产状态：`SELF_HOSTED_DEPLOYED`（Ubuntu 自用 Compose 正在运行 API `0.14.0`/`0031_multisubject_chinese`；API/Web/四个常驻 worker 健康，迁移服务成功退出；不等同于公网/商业生产批准）
-- 当前版本：本地与 Ubuntu API/OpenAPI `0.14.0`、迁移头 `0031_multisubject_chinese`；发布标签 `v0.14.0`。
-- 最近更新：`2026-08-15`
+- 当前版本：本地 API/OpenAPI `0.14.0`、迁移头 `0032_chinese_original_content_pack`；Ubuntu 仍为 `0.14.0`/`0031_multisubject_chinese`，发布标签 `v0.14.0`。
+- 最近更新：`2026-08-16`
 
 ## 2. 当前工作状态
 
-- 活动计划：`TASK-0012` / `PLAN-0030` 的多学科基础、语文首个纵向切片及 Ubuntu `0.14.0/0031` 发布已完成；`math/chinese` 学科开关、subject-aware 教材、版本化语文 Content/Attempt/Review、确定性评分及 Flutter/Web 首个纵向切片已经过本地门槛和 Ubuntu 运行核验。英语保持 `TASK-0011` / `PLAN-0022` 的供应商中立锁定框架并排最后，Ubuntu Provider 仍为 `disabled`。正式语文内容、并发/导出集成、语文教材分析、浏览器/设备 E2E 待完成。
+- 活动计划：`TASK-0012` / `PLAN-0031` 的隔离 Chromium 登录态 E2E 已完成，覆盖首次改密、Cookie/CSRF/撤销、跨家庭角色和双孩子学科/切换，并加入 CI；`PLAN-0030` 多学科/语文切片和 Ubuntu `0.14.0/0031` 已发布，本机 PostgreSQL 语文并发 Attempt/Review 合并、导出和级联清理已通过。`PLAN-0032` 已开始，新增生字、词语和原创短句演示内容至本地 `0032`，但未获得正式教研/版权签核。英语保持供应商中立锁定框架并排最后。语文教材分析、Ubuntu 真实账号浏览器和设备 E2E 待完成。
 - 任务状态：ADR-0018/PLAN-0012 已完成本地与 Ubuntu API/Flutter/Compose/契约迁移；Ubuntu 不再依赖预签名直传，MinIO `9000` 未向宿主/LAN 暴露。最终真机仍未回归。
-- 当前分支：`master`；工作区包含本轮未提交的 P1 闭环代码、迁移、测试和文档。
+- 当前分支：`master`；工作区包含本轮未提交的 PLAN-0031 Playwright/CI/文档变更。
 - 当前重点：继续扩展正式语文内容、复习 UI、技能报告与语文教材分析，英语最后。Ubuntu 已前滚到 `0.14.0`/`0031_multisubject_chinese`；既有数学教材原页/知识审核、推荐详情和学习记录继续按已部署合同运行。
 - 已完成：本地与 Ubuntu OpenAPI `0.14.0`、迁移 `0013`～`0031`、视觉四态候选与确认、可信 VerifiedQuestion → 云端递进 L1/L2 → 完整步骤/答案/验算、Mistake/Review closeout、语文确定性 Content/Attempt/Review，以及 PDF 私有原页、分批多模态教材理解、全书知识图谱、家长批准、“批准知识点 + 全部开放错题”的来源受限推荐和 180 天详细学习历史策略。
-- 当前未完成：真实 118 页 PDF 多模态知识质量/费用/重试验收、浏览器 E2E、实际相机四态闭环、教材个人信息自动门禁、自动视觉检测器、四设备回归、正式依赖/镜像安全扫描、监控告警和已批准的 RPO/RTO。NewAPI 合成完整解答已现场通过；云端教材分析、L1/L2 和推荐 planner 尚未进行真实 Provider 质量/成本验收。
+- 当前未完成：真实 118 页 PDF 多模态知识质量/费用/重试验收、Ubuntu 真实账号/PostgreSQL 浏览器链路、实际相机四态闭环、教材个人信息自动门禁、自动视觉检测器、四设备回归、正式依赖/镜像安全扫描、监控告警和已批准的 RPO/RTO。NewAPI 合成完整解答和隔离登录态浏览器 E2E 已通过；云端教材分析、L1/L2 和推荐 planner 尚未进行真实 Provider 质量/成本验收。PLAN-0032 本地实现已补齐语文到期复习、家长技能汇总及 `chinese-curriculum-*.v2` 独立 Schema/Prompt/短边界证据；内容仍为待具名教研和版权签核的原创演示包，不能作为正式课程或部署验收。
 - 新产品主线已完成代码收口：ADR-0020/PLAN-0014 的错题、复习、教材和 Tutor 关键事实链已接通；PLAN-0016 进入设备/E2E/发布验收阶段，ADR-0021 已接受。
 - Web 多孩子/多家庭现状：账号与档案已由孩子管理聚合 API/Web 统一创建、列表和删除；全局顶栏通过 `?child=` 切换并保持当前孩子作用域。`0028` 已将最早 `parent_admin` 收敛为唯一 `super_admin`，其可创建新家庭的普通家长；普通家长只管理自己创建的孩子，当前不支持匿名注册、邀请或账号跨家庭切换。家长显式声明的国家公开 PDF 可按完整内容指纹复用已审核的私有 PDF/页图/知识图谱草稿，目标家庭仍须审核发布；儿童数据和学习事实不共享。2026-07-28 已在 Ubuntu PostgreSQL 前滚并完成 API/Web 健康、角色/孩子归属和备份恢复验证；跨家庭浏览器流程与真机验收仍待执行。
 - 2026-07-28 Web 收口（已部署 Ubuntu）：家长首页不再展示今日学习任务或本周任务目标；教材页不再提供手工小节和任务推荐；孩子管理只管理孩子。超级管理员左侧导航新增“家庭权限”，可开通新家庭及首个普通家长、列出家长，并只删除没有所属孩子的普通家长，删除需重新验证超级管理员密码。任务/推荐后端记录与孩子端错题、复习闭环均未删除。API/Web/四个 worker 健康，未认证访问家长权限 API 返回 `401`；浏览器角色流程仍待人工验收。
 - 2026-07-31 Web 学习记录（已部署 Ubuntu）：工作台的待复习区域直接列出题干和到期日；完整逐题记录迁移到独立“学习记录”页，默认近 30 个上海自然日并支持 180 天窗口内单日筛选。OpenAPI `0.13.0` 增加有界时间参数，`0030` 增加生命周期索引；DataLifecycle worker 固定清理超过 180 天且不被开放错题引用的详细题目/讲解与已结束复习链路。备份 `/home/syin/study-backups/20260731T020739Z` 已通过隔离恢复，API/Web/四个常驻 worker、迁移服务、OpenAPI、数据库表/索引和容器内源码均已核验；登录态浏览器 E2E 仍待执行。
 - 教材实际消费状态：新上传只接受不含个人信息的 PDF；`material-parse-worker` 抽取辅助文字且不丢弃无文字页，`curriculum-analysis-worker` 私有渲染原页并按最多 4 页一批交给单一 NewAPI，再归纳整本章节/知识点/目标/先修关系/练习。家长对照原页批准后才能发布；Tutor 只读最小已批准片段，任务推荐遍历全部开放错题和已批准知识点/具体练习，不再从 `CurriculumChunk.text` 抽题。批准任务写入视觉说明、页码和孩子 Session 原页入口。
 - 2026-07-31 部署状态：已保留远端 `infra/compose/.env`、卷与经过隔离恢复验证的 PostgreSQL/MinIO 备份，成对重建 API/Web/迁移与四个常驻 worker。API `0.13.0`、Alembic `0030_learning_history_retention`、API/Web `/healthz`、OpenAPI 学习范围参数、英语表、生命周期索引和容器内源码均通过，MinIO `9000` 未向宿主暴露；英语 Provider 保持关闭，真实家庭 PDF、跨家庭登录态浏览器和设备质量验收仍待完成。
-- 当前认证：只有家长/孩子用户名密码、Argon2id 和可撤销不透明会话；Web 使用 HttpOnly Cookie/CSRF，Flutter 使用平台安全存储。Ubuntu LAN 登录、首次改密和 Nova 9 绑定档案读取已有实机记录；浏览器自动 E2E 和多设备重启生命周期仍待验收。
+- 当前认证：只有家长/孩子用户名密码、Argon2id 和可撤销不透明会话；Web 使用 HttpOnly Cookie/CSRF，Flutter 使用平台安全存储。隔离 Chromium 自动 E2E 已覆盖首次改密、Cookie/CSRF、Session 轮换/撤销、跨家庭角色和双孩子；Ubuntu 真实账号/PostgreSQL 浏览器与多设备重启生命周期仍待验收。
 - Android 设备验收：Nova 9 登录/首次改密/绑定档案历史记录有效；流式上传新链路已部署但最终拍题、上传进度、Extraction/VerifiedQuestion、权限拒绝恢复、账号切换、弱网和重启仍需设备在场时验收。
 - 2026-07-27～28 客户端连接、账号切换、完成返回与任务入口收口：定位 Android release 仅在 debug/profile 清单声明 `INTERNET`，导致生产 APK 无法访问 API；发布清单现包含网络权限并允许用户配置的家庭 LAN HTTP 地址。会话恢复会从 `/auth/me` 回填孩子用户名并在账号页显示。切换账号时档案页现会识别服务端、Session 或用户名变化并重新加载目标账号档案，防止 A→B→A 后沿用 B 的显示状态。题目完成/完整解答后的返回现会 `popUntil` 学习桌根路由，并在完成状态显示明确按钮。真实体验确认推荐任务还没有直接执行指定题目的流程，孩子端会堆叠任务并退化进入通用拍题；学习桌因此临时不再请求或展示今日任务，只保留错题讲解和复习错题。Flutter 48 项/Analyze 与 Release 构建通过；Ubuntu 已部署 `0.11.0`/`0026_parallel_curriculum`。最新 iPad 包已安装，首次启动仍需在设备上信任开发者签名；任务执行重构由 TODO-215 跟踪，账号切换与完成返回仍待设备界面人工复核。
 
 ## 3. 已验证的仓库事实
 
 - 仓库根目录：`/Users/ybh/PycharmProjects/study`。
-- Git：分支 `master`，最近提交 `c86490f`；工作区有本轮未提交的 P1 闭环、迁移、客户端和文档改动。
+- Git：分支 `master`，最近提交 `14cc99a`；工作区有本轮未提交的登录态浏览器 E2E、CI 和文档改动。
 - 现有内容：根目录上下文文档、`prompts/` 工作流模板、`docs/adr/0000-template.md`、`家庭AI学习助手_架构设计_v1.0.docx`。
 - 已创建并验证：`apps/`、`services/`、`packages/`、`evals/`、`infra/` 的 P0/P1 核心路径、配置、锁文件、测试和 Compose；Flutter Android release APK 与 iOS release 无签名 Runner.app 已构建。Ubuntu VM 上的 amd64 完整栈运行 API `0.14.0`/迁移 `0031`，新流式上传、孩子管理、PDF 解析、错题闭环、私有原页、知识图谱、来源受限推荐、学习记录保留和语文确定性纵向切片已部署；NewAPI synthetic 完整解答已成功，真实 L1/L2/智能规划质量仍待实测；ARM 调试镜像因 PaddlePaddle 3.3.1 无 Linux aarch64 wheel 而不含旧本地 OCR。
 - 设计稿：31 个段落、6 个表格、3 页，定义 P0/P1/P2、设备职责、核心实体/API 和发布门槛；本地渲染缺少部分中文字体，但 OOXML 文本可完整提取。
@@ -71,8 +71,8 @@
 | 路径 | 责任 | 当前状态 |
 | --- | --- | --- |
 | `apps/child_flutter` | 孩子学习、拍题、提示交互、离线队列 | 本地数学/语文/英语顺序与语文句子、阅读纵向切片已实现；英语锁定，真实设备待回归 |
-| `apps/web` | 家长后台、内容维护、Windows Web/PWA | 本地增加逐孩子语文开关和教材学科选择；语文分析明确阻断，浏览器 E2E 待完成 |
-| `services/api` | FastAPI 模块化单体和 Worker | 本地与 Ubuntu `0031` 已部署 subject-aware 教材及语文 Content/Attempt/Review；正式内容和语文集成验收待完成 |
+| `apps/web` | 家长后台、内容维护、Windows Web/PWA | 逐孩子语文开关、教材学科选择和隔离 Chromium 登录态 E2E 已实现；语文分析明确阻断，Ubuntu 真实账号浏览器待验收 |
+| `services/api` | FastAPI 模块化单体和 Worker | 本地与 Ubuntu `0031` 已部署 subject-aware 教材及语文 Content/Attempt/Review；本机 PostgreSQL 并发/导出集成通过，正式内容与 Ubuntu 真实账号浏览器验收待完成 |
 | `packages/contracts` | OpenAPI、JSON Schema、生成 SDK | 本地与 Ubuntu `0.14.0`，SDK 生成器尚未固定 |
 | `evals` | 固定 AI 质量/安全/成本评测 | 既有数学/隐私 eval 增加 7-case 英语安全 Policy；真实英语 Provider 质量、延迟、成本和儿童安全 eval 待批准后执行 |
 | `infra/compose` | PostgreSQL/Redis/MinIO/API/Web/迁移/worker 编排 | Ubuntu 当前 `0.14.0`/`0031`，英语运行态为 `disabled`，发布前恢复验证备份已保留 |
@@ -108,7 +108,7 @@
 - ADR-0001～0012 已由项目 Owner（用户）于 2026-07-13 接受，ADR-0013～0014 于 2026-07-14 接受，ADR-0015～0017 于 2026-07-15 接受，ADR-0018 于 2026-07-17 接受，ADR-0020 于 2026-07-18 接受，ADR-0021～0023 于 2026-07-23 接受；ADR-0019 仍为 Proposed。替代关系见 DECISIONS.md，设计稿不替代 ADR。
 - 已接受决策覆盖模块边界、契约、离线、AI、身份、数据生命周期、工具链和部署恢复；本产品按自用部署推进，地区/商业化/第三方 IdP 暂不纳入当前实现；人工确认、备份恢复和实际 NewAPI synthetic 运行验证已完成。
 - 最高风险：AI 错误/代答、儿童数据泄露、离线记录覆盖、四端范围失控、P0 骨架与目标架构漂移。
-- 正式发布阻塞：自动视觉检测器、法域/正式告知、密钥/静态加密、SLO/RPO/RTO、监控告警、浏览器 E2E 和四设备回归；单家庭自用 LAN 部署已可运行。
+- 正式发布阻塞：自动视觉检测器、法域/正式告知、密钥/静态加密、SLO/RPO/RTO、监控告警、Ubuntu 真实账号/PostgreSQL 浏览器与四设备回归；隔离认证 Chromium E2E 已通过，单家庭自用 LAN 部署已可运行。
 - 最近完成：`PLAN-0011` 的可信 Tutor、SQLite 离线、会话/复习/周报、数据导出/删除、生命周期 worker、恢复演练和 Ubuntu 自用栈基础部署。
 - 最近规划：`PLAN-0013` 已把“创建孩子合并账号/档案”和“首页切换当前孩子”拆成契约/迁移、API 事务、Web 管理页、工作台选择及双孩子 E2E 五阶段；前四阶段已实现并部署，双孩子 E2E 待执行。
 - 最近实现：`PLAN-0018` 用 `0025` 起的教材知识图谱链路替代残缺 PDF 文字抽题：私有原页 → 每批最多 4 页多模态理解 → 全书知识图谱 → 家长批准 → 错题/知识点来源受限任务。Web 原页/知识审核和孩子端 Session 原页入口已部署 Ubuntu；118 页真实 Provider 质量/成本和最终发布门槛仍待完成。

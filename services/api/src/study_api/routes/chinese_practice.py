@@ -6,13 +6,15 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 
-from study_api.auth import AuthenticatedPrincipal, get_principal, require_household
+from study_api.auth import AuthenticatedPrincipal, get_principal, require_household, require_parent
 from study_api.chinese_practice import (
     ChineseAttempt,
     ChineseAttemptRequest,
     ChineseContentItemView,
     ChinesePracticeRepository,
+    ChineseReviewItem,
     ChineseSkill,
+    ChineseSkillReport,
 )
 from study_api.domain.models import AccountRole, Subject
 from study_api.domain.repository import IdempotencyConflictError, ProfileRepository
@@ -102,3 +104,31 @@ def submit_attempt(
         content=attempt.model_dump(mode="json"),
         headers={"Idempotency-Replayed": "true"} if replayed else {},
     )
+
+
+@router.get("/reviews", response_model=list[ChineseReviewItem])
+def list_reviews(
+    household_id: UUID,
+    child_id: UUID,
+    principal: Principal,
+    repository: Repository,
+    profiles: Profiles,
+    due_only: Annotated[bool, Query()] = True,
+) -> list[ChineseReviewItem]:
+    grade = _authorize(household_id, child_id, principal, profiles)
+    if principal.role is not AccountRole.CHILD:
+        raise HTTPException(status_code=403, detail="bound child principal required")
+    return repository.list_reviews(household_id, child_id, grade, due_only)
+
+
+@router.get("/skill-report", response_model=ChineseSkillReport)
+def get_skill_report(
+    household_id: UUID,
+    child_id: UUID,
+    principal: Principal,
+    repository: Repository,
+    profiles: Profiles,
+) -> ChineseSkillReport:
+    _authorize(household_id, child_id, principal, profiles)
+    require_parent(principal.role)
+    return repository.skill_report(household_id, child_id)

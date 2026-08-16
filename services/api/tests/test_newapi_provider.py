@@ -9,6 +9,7 @@ from uuid import UUID
 import pytest
 from PIL import Image
 
+from study_api.domain.models import Subject
 from study_api.newapi_provider import (
     CurriculumProviderPage,
     NewApiConfig,
@@ -508,6 +509,78 @@ def test_newapi_provider_understands_page_image_then_consolidates_book() -> None
     assert book_format["type"] == "json_schema"
     assert book_format["json_schema"]["name"] == "curriculum_book_analysis"
     assert book_format["json_schema"]["schema"]["title"] == "ProviderBookAnalysis"
+
+
+def test_newapi_provider_uses_chinese_v2_schema_and_short_passage_boundaries() -> None:
+    provider = NewApiVisionProvider(_config())
+    calls: list[dict[str, Any]] = []
+    image = Image.new("RGB", (20, 20), "white")
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG")
+    image.close()
+
+    def fake_post(payload: dict[str, Any]) -> dict[str, Any]:
+        calls.append(payload)
+        content: dict[str, Any]
+        if len(calls) == 1:
+            content = {
+                "schema_version": "chinese-curriculum-page-analysis.v2",
+                "pages": [
+                    {
+                        "page_number": 1,
+                        "chapter_title": "第一单元",
+                        "section_title": "识字",
+                        "summary": "观察拼音和生字。",
+                        "knowledge_observations": [],
+                        "passages": [
+                            {
+                                "title": "春晓",
+                                "start_marker": "春眠",
+                                "end_marker": "花落",
+                                "kind": "poem",
+                                "confidence": 0.9,
+                            }
+                        ],
+                        "confidence": 0.9,
+                    }
+                ],
+            }
+        else:
+            content = {
+                "schema_version": "chinese-curriculum-book-analysis.v2",
+                "book_summary": "识字与古诗文积累。",
+                "chapters": [
+                    {
+                        "title": "第一单元",
+                        "start_page": 1,
+                        "end_page": 1,
+                        "summary": "识字。",
+                        "knowledge_points": [],
+                    }
+                ],
+            }
+        return {"choices": [{"message": {"content": json.dumps(content)}}]}
+
+    provider._post_json = fake_post  # type: ignore[method-assign]
+    pages = provider.analyze_curriculum_pages(
+        (
+            CurriculumProviderPage(
+                page_number=1, extracted_text="synthetic-only", image_bytes=buffer.getvalue()
+            ),
+        ),
+        subject=Subject.CHINESE,
+    )
+    book = provider.consolidate_curriculum_book(
+        page_observations=tuple(page.model_dump(mode="json") for page in pages),
+        subject=Subject.CHINESE,
+    )
+
+    assert pages[0].passages[0].kind == "poem"
+    assert book.schema_version == "chinese-curriculum-book-analysis.v2"
+    assert calls[0]["response_format"]["json_schema"]["schema"]["title"] == (
+        "ChineseProviderPageAnalysisBatch"
+    )
+    assert "short visible boundary markers" in calls[0]["messages"][0]["content"]
 
 
 def test_curriculum_schema_failure_logs_only_safe_validation_metadata(

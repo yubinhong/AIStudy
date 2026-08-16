@@ -6,6 +6,8 @@ import '../domain/chinese_models.dart';
 abstract interface class ChinesePracticeGateway {
   Future<List<ChineseContentItem>> loadContent();
 
+  Future<List<ChineseReviewItem>> loadDueReviews();
+
   Future<ChineseAttemptResult> submitAttempt(
     ChineseContentItem item,
     Map<String, dynamic> response,
@@ -48,6 +50,25 @@ class HttpChinesePracticeGateway implements ChinesePracticeGateway {
               ChineseContentItem.fromJson(Map<String, dynamic>.from(item)),
         )
         .toList(growable: false);
+  }
+
+  @override
+  Future<List<ChineseReviewItem>> loadDueReviews() async {
+    try {
+      final payload = await _request('GET', '$_root/reviews?due_only=true');
+      if (payload is! List) return const <ChineseReviewItem>[];
+      return payload
+          .whereType<Map>()
+          .map(
+            (item) =>
+                ChineseReviewItem.fromJson(Map<String, dynamic>.from(item)),
+          )
+          .toList(growable: false);
+    } on ChinesePracticeException {
+      // Older servers do not expose the additive review route. Practice stays
+      // available until API and app are released as a pair.
+      return const <ChineseReviewItem>[];
+    }
   }
 
   @override

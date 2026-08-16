@@ -54,3 +54,31 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+
+  browser-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.11"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: apps/web/.nvmrc
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - name: Install API dependencies
+        run: uv sync --locked --directory services/api
+      - name: Install Web dependencies
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        working-directory: apps/web
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run authenticated browser E2E
+        working-directory: apps/web
+        run: pnpm test:e2e
