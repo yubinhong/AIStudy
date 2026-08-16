@@ -1,6 +1,6 @@
 # Changelog
 
-- 2026-08-16：发布 `v0.16.0`（`dbaa9b0`）到 Ubuntu 自用 Compose。升级前备份 `/home/syin/study-backups/20260816T091344Z` 已隔离恢复为 38 张 PostgreSQL public 表和 353 个 MinIO 文件；API/OpenAPI `0.16.0`、Web、迁移 `0035_chinese_poem_skill`、四个 worker、picture-writing OpenAPI 路径和容器源码哈希均通过。MinIO 未发布宿主机端口。使用无人物、无文字的合成图完成一次真实 Provider 的 `picture-writing-guide.v1` Schema 冒烟，不包含儿童图片或 Provider 原始响应；Nova 9 已安装 `0.16.0 (2)` 并配置家庭 LAN 地址，因飞行模式和重装后的未登录状态，登录后相机/相册/权限 E2E 仍待执行。
+- 2026-08-16：发布 `v0.16.0`（`dbaa9b0`）到 Ubuntu 自用 Compose。升级前备份 `/home/syin/study-backups/20260816T091344Z` 已隔离恢复为 38 张 PostgreSQL public 表和 353 个 MinIO 文件；API/OpenAPI `0.16.0`、Web、迁移 `0035_chinese_poem_skill`、四个 worker、picture-writing OpenAPI 路径和容器源码哈希均通过。MinIO 未发布宿主机端口。使用无人物、无文字的合成图完成一次真实 Provider 的 `picture-writing-guide.v1` Schema 冒烟，不包含儿童图片或 Provider 原始响应；Nova 9 已安装 `0.16.0 (2)` 并配置家庭 LAN 地址，WLAN 可达 Ubuntu 且健康检测无连接失败。重装后无登录会话，登录后相机/相册/权限 E2E 仍待执行。
 
 - 2026-08-16：发布修复版 `v0.15.1` 到 Ubuntu 自用 Compose。前置备份 `/home/syin/study-backups/20260816T072837Z` 已隔离恢复验证（38 张 PostgreSQL public 表、353 个 MinIO 文件）；API `0.15.0`、Web、四个 worker、`0032_chinese_original_content_pack` 迁移和私有 MinIO 端口均已运行验证。首次 `v0.15.0` 发布暴露历史 Alembic version 列为 `varchar(32)`，长 revision 写入失败且事务回滚；`v0.15.1` 先前向扩展为 `varchar(64)` 后成功迁移。Nova 9 保留登录态升级后加载数学、语文、锁定英语及新增语文内容；未提交答案、未读取或导出学习记录。
 
