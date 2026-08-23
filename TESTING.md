@@ -2,13 +2,24 @@
 
 ## 1. 当前状态与质量目标
 
-当前仓库已有 P0/P1 依赖清单、三类锁文件、核心测试和 CI 草案。API 的 Household/认证/学习/Capture/可信 Tutor/周报/导出、Mistake/Review closeout、教材 PDF-only 私有原页/多模态知识图谱、作答四态/推荐审批、Web/Flutter 入口、SQLite 离线队列和 Compose 已验证；Android/iOS 构建及 PostgreSQL/MinIO 恢复已有记录。本地与 Ubuntu API/OpenAPI 为 `0.16.0`、迁移头 `0035_chinese_poem_skill`。剩余是正式语文内容签核、真实 PDF/Provider 质量成本和完整设备 E2E 发布门槛。
+当前仓库已有 P0/P1 依赖清单、三类锁文件、核心测试和 CI 草案。API 的 Household/认证/学习/Capture/可信 Tutor/周报/导出、Mistake/Review closeout、教材 PDF-only 私有原页/多模态知识图谱、作答四态/推荐审批、Web/Flutter 入口、SQLite 任务位置与离线 Attempt/任务终态队列、服务端任务位置/容量/未来日期/撤销保护和 Compose 已验证；Android/iOS 构建及 PostgreSQL/MinIO 恢复已有记录。本地和 Ubuntu API/OpenAPI 均为 `0.17.0`、迁移头 `0036_task_session_progress`。剩余是正式语文内容签核、真实 PDF/Provider 质量成本和完整设备 E2E 发布门槛。
+
+2026-08-23 本地闭环收口验证：API 非集成 `244 passed, 32 deselected`，PostgreSQL 集成 `32 passed`；Flutter `analyze`、Dart 格式和全量 `70 passed`；Web Prettier、ESLint、TypeScript（在 Next 构建生成 `.next/types` 后单独执行）、Vitest `35 passed` 和 production build 通过。Ruff 目标范围与 Mypy `62 source files` 通过，OpenAPI `0.17.0` 为 67 paths，Alembic 单 head 为 `0036_task_session_progress`，`git diff --check` 通过。本机 Node `20.17.0` 低于 Web 锁定的 `>=24.18.0 <25`，仅产生 engine warning；测试有既存 Starlette/httpx deprecation warning。新增验证覆盖语文教材批准后自动生成古诗选择题、Web 语文审核动作、看图写话空句阻断和 Provider 失败时的通用观察问题降级。
+
+2026-08-23 Ubuntu 发布验证：备份 `/home/syin/study-backups/20260823T030248Z` 已通过隔离恢复校验（39 张 PostgreSQL public 表、359 个 MinIO 文件）；保留远端 `.env`/数据卷并按 allowlist 同步未提交工作区，Compose amd64 重建、Alembic `0035 -> 0036`、API/Web/worker 健康、OpenAPI `0.17.0`（68 paths）、容器内源码哈希、MinIO 无宿主端口和局域网 `8000/3000` smoke 均通过。部署后已提交、推送并创建 `v0.17.0`；真实 Provider/PDF、Ubuntu 真实账号浏览器和真机 E2E 仍未执行。
 
 2026-08-17 GitHub Actions `quality` run [31955766501](https://github.com/yubinhong/AIStudy/actions/runs/31955766501) 在提交 `5bf6e14` 上全部通过。此前 `test_health_endpoint_matches_contract` 使用旧的 `0.15.0` 固定值；现改为读取 API 包版本，非集成测试结果为 `234 passed, 29 deselected`。
 
+2026-08-22 本轮继续实现验证：API 非集成 `238 passed, 29 deselected`；完整 PostgreSQL 集成 `29 passed, 238 deselected`。新增 PostgreSQL 测试使用随机 Household 和真实 Parent Owner，避免固定 Owner UUID 外键失败；语文 golden scorer 覆盖拼音、生字、词语、句子、阅读、背诵、表达、古诗八类技能，并验证待审核原创内容不会展示给孩子。Flutter `analyze` 通过，完整 Flutter `58 passed`，其中 widget 任务入口回归覆盖指定题目上下文、多题任务首题、同一会话追加作答和服务端跳过；古诗抽查回归覆盖先选诗再选相邻句题；数学“今日任务”现按题目顺序携带题干与来源进入拍题/确认页。Web 19 个测试文件/32 项、TypeScript、ESLint、Prettier 和生产构建也通过（本机 Node 20.17 低于锁定 Node 24.18，仅有 engine warning）。
+2026-08-22 本轮继续实现验证：API 非集成 `238 passed, 29 deselected`；完整 PostgreSQL 集成 `29 passed, 238 deselected`。新增 PostgreSQL 测试使用随机 Household 和真实 Parent Owner，避免固定 Owner UUID 外键失败；语文 golden scorer 覆盖拼音、生字、词语、句子、阅读、背诵、表达、古诗八类技能，并验证待审核原创内容不会展示给孩子。Flutter `analyze` 通过，完整 Flutter `58 passed`，其中 widget 任务入口回归覆盖指定题目上下文、多题任务首题、同一会话追加作答和服务端跳过；古诗抽查回归覆盖先选诗再选相邻句题；数学“今日任务”现按题目顺序携带题干与来源进入拍题/确认页。Web 19 个测试文件/32 项、TypeScript、ESLint、Prettier 和生产构建也通过（本机 Node 20.17 低于锁定 Node 24.18，仅有 engine warning）。
+
+2026-08-23 本轮继续实现验证：Flutter `analyze` 通过，完整 Flutter `68 passed`。新增覆盖端侧 SQLite 任务题号重开与账号范围隔离、断网时确认作答/任务完成/跳过入队、联网后先重放 `/sync-batches` 再按顺序重放终态事件；任务恢复回归从第 2 题继续。API 非集成 `243 passed, 32 deselected`，PostgreSQL 集成 `32 passed`，Ruff/Mypy 通过；服务端拒绝重复启动活动任务。语文首页回归确认始终只有“古诗抽查”和“看图写话”两项入口，教材尚未审核时古诗卡片明确显示开放条件。未连接手机或平板。
+
+2026-08-23 后续本地验证：新增 `0036_task_session_progress` 并在本机 PostgreSQL 从 `0035` 前滚成功；API 学习回归覆盖每天 3 项容量、未来日期保护、服务端下一题号单步推进、家长撤销和撤销后的写入封锁；PostgreSQL 学习集成覆盖会话位置重连、撤销释放容量，完整 Flutter 回归 `68 passed`，其中 Widget 验证服务端位置优先于本机位置。API/OpenAPI 版本前移到 `0.17.0`；本轮未连接手机或平板，未执行真实 Provider/PDF 或真实账号浏览器。
+
 2026-08-17 Nova 9 看图写话相册联调：设备 `NAM-AL00` 登录态有效并进入语文页面；相册选择器正常打开，未读取原有个人照片，仅选择无人物、无文字的合成 `study-picture-writing-test.png`。应用展示“确认脱敏范围”，明确原图不会上传；确认后 Ubuntu API 日志记录 capture upload `201` 和 picture-writing guide `201`，API `/healthz` 为 `0.16.0`。设备最终显示“第 1 步，共 3 步”，包含 3 条画面观察、2 个引导问题和“下一步”，证明 Provider → API → Flutter 第一步链路可用。点击进入第 2 步时 USB 调试再次断开；相机入口、句子输入第 2 步、细节第 3 步和完成返回尚未验收。未读取、上传或保存设备原有照片。
 
-2026-08-16 古诗抽查/看图写话本地验证：API `tests/test_picture_writing.py tests/test_newapi_provider.py tests/test_chinese_practice.py` 为 `27 passed`；相关 Ruff 与 Mypy 通过。`alembic heads` 为唯一 `0035_chinese_poem_skill`，OpenAPI YAML 可解析。本机 PostgreSQL 已从 `0031` 前滚到 `0035`，表结构检查通过，语文古诗并发 Attempt/Review/导出集成 `1 passed`。Flutter Dart format、Analyze 与全量 `53 passed` 通过，其中语文夹具从已退役句子演示改为古诗选择，并断言看图写话入口存在。全量 PostgreSQL 集成仍有 7 项历史固定 Owner UUID 夹具失败（当前本机库缺少对应 `accounts` 行），与本轮语文或看图写话代码无关。
+2026-08-16 古诗抽查/看图写话本地验证（历史记录）：API `tests/test_picture_writing.py tests/test_newapi_provider.py tests/test_chinese_practice.py` 为 `27 passed`；相关 Ruff 与 Mypy 通过。`alembic heads` 为唯一 `0035_chinese_poem_skill`，OpenAPI YAML 可解析。本机 PostgreSQL 已从 `0031` 前滚到 `0035`，表结构检查通过，语文古诗并发 Attempt/Review/导出集成 `1 passed`。Flutter Dart format、Analyze 与全量 `53 passed` 通过。该日期的全量 PostgreSQL 集成曾有 7 项固定 Owner UUID 夹具失败，已在 2026-08-22 改为随机真实 Owner 夹具并由完整矩阵 `29 passed` 收口。
 
 2026-08-16 `v0.16.0` Ubuntu 发布与 Provider/设备记录：发布前备份 `/home/syin/study-backups/20260816T091344Z` 已隔离恢复为 38 张 PostgreSQL public 表和 353 个 MinIO 文件；Git 跟踪且实际存在的文件 allowlist 未同步远端 `.env`、卷、缓存或备份。以 `DOCKER_BUILDKIT=0` 前向重建后，API/Web 健康，Alembic current/head 为 `0035_chinese_poem_skill`，OpenAPI `0.16.0` 包含 picture-writing path，容器内两份看图写话源码 SHA-256 与本地一致。MinIO 实际 `PortBindings={}`，仅 Docker 网络 `9000/tcp`，API 容器内 health 为 `200`。使用无人物、无文字、无儿童数据的合成花园图直接经运行时 NewAPI Adapter 得到 `picture-writing-guide.v1`（3 条观察、2 个问题、3 个句式、2 条细节提示，`needs_confirmation=true`）；未记录或保留 Provider 原始响应，不代表真实儿童图片质量/成本验收。Nova 9（Android 12）已重新安装 `0.16.0 (2)` release，并在登录页写入 `http://192.168.1.4:8000`；即使飞行模式开启，WLAN 路由仍可达 Ubuntu（ping 25 ms），重复健康检测未出现连接失败日志。重装清除了旧会话，故未输入凭据、未做登录、相机/相册、权限、上传或学习事实写入。
 
@@ -60,7 +71,7 @@
 
 同日部署复核发现首次同步的 `tutor.py` 路径错误，运行容器仍使用旧路由，导致设备日志中 L1/L2 为 `200` 而 L3 为旧 `409`。已同步到 `services/api/src/study_api/routes/tutor.py`、清除误放的未引用副本并重建 API；远端健康端点、文件检查和容器内 `inspect` 均确认新 `general-solution-policy.v1` 路由已经运行。
 
-- 核心用户路径：家长上传清洁 PDF → 服务端私有渲染原页、分批多模态理解并归纳全书知识图谱 → 家长对照原页批准并发布 → 孩子选择数学/学习模式 → 错题安全拍摄题目+答题区 → 确认题目和作答状态 → L1 看懂题意/L2 找到方法/L3 允许时完整讲解 → 原子 MistakeRecord/ReviewSchedule → 到期或提前加载真实题目、重新作答并追加 ReviewAttempt → 家长审核由错题和已批准知识点生成、包含具体题目/视觉说明/页码/日期/时长的任务 → 孩子执行并可打开教材原页 → 周报。本地与 Ubuntu `0.14.0` 已接通代码和自动化，真实 Provider/PDF/登录态浏览器/设备 E2E 未通过前仍不能判定整条路径完成。
+- 核心用户路径：家长上传清洁 PDF → 服务端私有渲染原页、分批多模态理解并归纳全书知识图谱 → 家长对照原页批准并发布 → 孩子选择数学/学习模式 → 错题安全拍摄题目+答题区 → 确认题目和作答状态 → L1 看懂题意/L2 找到方法/L3 允许时完整讲解 → 原子 MistakeRecord/ReviewSchedule → 到期或提前加载真实题目、重新作答并追加 ReviewAttempt → 家长审核由错题和已批准知识点生成、包含具体题目/视觉说明/页码/日期/时长的任务 → 孩子执行并可打开教材原页 → 周报。本地和 Ubuntu `0.17.0/0036` 已接通代码和自动化，真实 Provider/PDF/登录态浏览器/设备 E2E 未通过前仍不能判定整条路径完成。
 - 不可接受的失败：跨家庭越权；原图/未确认脱敏图/儿童数据/密钥泄漏；同一图片被静默发送给多个 Provider；学习记录丢失或被最后写入覆盖；AI 在练习/复习或缺少错题门禁时直接代答、错误结论静默入库；删除请求未执行却报告成功；未记录的成本失控。
 - 覆盖策略：风险驱动，不设脱离代码基线的统一行覆盖率。家庭权限、幂等/离线合并、Tutor Policy/Schema、数据删除和核心 E2E 必须覆盖成功与失败路径；普通模块在 P0 代码基线后批准覆盖阈值。
 
@@ -93,7 +104,7 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | Flutter 安装 | `cd apps/child_flutter && flutter pub get` | 锁文件变化/干净环境 | 通过（2026-07-14；Flutter 3.44.6；`image_picker 1.2.3` 已解析并写入 `pubspec.lock`；2026-07-13 交互式 PATH 与 `flutter doctor -v` 全绿） |
 | Flutter 格式 | `cd apps/child_flutter && dart format .` | 每次 Flutter 变更 | 通过（2026-07-23；任务来源题卡与受鉴权教材原页入口已格式化） |
 | Flutter 静态/类型 | `cd apps/child_flutter && flutter analyze` | 每次 Flutter 变更 | 通过（无 issues，2026-07-27） |
-| Flutter 单元/Widget | `cd apps/child_flutter && flutter test` | 每次 Flutter 变更 | 通过（45 tests，2026-07-27；今日任务入口隐藏且不请求任务列表，A→B→A 切换会重新加载目标账号档案，完成题目或完整解答会回学习桌，既有认证/拍题/脱敏/提示/离线队列回归保持通过） |
+| Flutter 单元/Widget | `cd apps/child_flutter && flutter test` | 每次 Flutter 变更 | 通过（70 tests，2026-08-23；今日任务按序执行多题并保留同一会话，SQLite 记录重开题号，确认作答/完成/复习收口/跳过断网入队后按批次及顺序同步，空题阻断；语文只显示古诗抽查/看图写话，新增空句阻断与安全通用降级回归） |
 | Flutter UI 视觉 QA | 原型目标 viewport `1194 × 834` 的真实设备/截图比较 | 每次客户端 UI 原型变更 | 阻塞（2026-07-14）：实体 iPad 已成功横屏启动 Debug 应用，但 Flutter screenshot 不支持实体设备；iPad mini 模拟器仅完成 portrait smoke screenshot，详见 `design-qa.md` |
 | Flutter 构建 | `cd apps/child_flutter && flutter build apk --release`；`flutter build ios --release --no-codesign` | 合并前/平台变更 | 通过（2026-07-17）：Android release APK 53.8 MB，iOS release 无签名 `Runner.app` 20.9 MB；不再要求 `STUDY_CAPTURE_SESSION_ID`。Android 仍为自用 debug key 签名，正式 App ID/签名由 `TODO-013` 跟踪；iOS 提示 `flutter_secure_storage` 尚不支持 Swift Package Manager，当前 CocoaPods 构建不受影响 |
 | Flutter Android 实体设备 | 在华为 Nova 9 验证 ADB 识别、登录、相机/相册权限、脱敏预览、弱网与会话重启 | Android/认证/图片输入变更 | 进行中（2026-07-17）：Nova 9 已完成登录、相机/相册选择、脱敏预览、即时拍题会话、3.09 MB MinIO 上传/确认和 ImageAnalysis 入队；首次 Provider 请求返回 `provider_http_413`，现已部署 600 KB 有界压缩并覆盖安装最终 APK，等待第二次拍题确认 Extraction/VerifiedQuestion。弱网和重启仍待验收 |
@@ -101,7 +112,7 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | Web 孩子账号与档案管理（当前分离流程） | 中文用户名请求头、档案选择绑定、档案 CRUD 代理和生产 Web 构建 | Web/认证或档案变更 | 通过（2026-07-17）：现有账户页可先创建/选择档案再创建账号，请求幂等键为 ASCII 随机值，代理 Content-Type 与 409 错误已覆盖；这只验证旧分离流程，不满足 PLAN-0013 的聚合创建体验 |
 | Web 统一孩子管理与多孩子工作台 | 单事务创建 Profile+Account、旧数据审计/唯一约束、聚合卡、当前孩子选择、任务/周报服务端过滤、刷新/删除回退/空状态 | PLAN-0013 的 OpenAPI/API/迁移/Web 变更 | 通过（2026-07-23）：后台方案 1、顶层孩子切换、三项顶层侧栏、双孩子作用域、逐题详情及 1214×805 同尺寸截图对照；真实 PostgreSQL 浏览器 E2E/设备回归仍待执行 |
 | 教材范围与多模态知识发布 | Web/OpenAPI/API PDF-only、非 PDF 稳定拒绝；授权/无个人信息声明、SHA-256、隔离 worker、逐页私有 JPEG、每批最多 4 页视觉理解、全书知识图谱、缺页/伪造来源拒绝、家长原页审核批准、并行多教材发布、删除及 Prompt 注入 | PLAN-0018、ADR-0021/0023、OpenAPI/API/Web/Flutter/迁移变更 | 通过（2026-07-27）：Provider/解析/上传定向、完整 API 非集成、Ruff、Mypy 56 source files、契约结构、Web `tsc`/20 项 Vitest/格式/Lint、迁移离线 SQL 通过（本机 Node 20 仅产生 engines warning）。覆盖 PDF 标题待识别/本地封面回填/家长覆盖、页级稀疏目标、临时 `5xx` 三次有界重试、空知识点章节、非数组可选引用、超长引用截断、过滤缺少学习目标的点和虚构页拒绝；两份已发布教材保持独立及推荐聚合两份批准图谱回归。Ubuntu `0026` 已在 quiesced 备份后前滚，API/Web healthcheck 通过、汇总为两份 published；真实教材/费用/重试和浏览器/设备 E2E 待执行 |
-| Flutter 数学三入口与错题详细讲解 | 数学 → 错题讲解/复习错题/今日任务；视觉四态候选与人工校正；按 `worked/blank` 分支，`unclear/answer_area_missing` 阻断；完整步骤/答案/验算 | TODO-017 的 Flutter/API/Tutor/Schema 变更 | 代码与自动化通过（2026-07-23：未到期错题自动回退到全部列表，今日任务显示所有当天来源题/页码；客户端+Widget 定向 29 tests、analyze 通过）；真实设备相机/复习/多任务仍待人工复验 |
+| Flutter 数学三入口与错题详细讲解 | 数学 → 错题讲解/复习错题/今日任务；视觉四态候选与人工校正；按 `worked/blank` 分支，`unclear/answer_area_missing` 阻断；完整步骤/答案/验算 | TODO-017 的 Flutter/API/Tutor/Schema 变更 | 代码与自动化通过（2026-08-22：今日任务逐题显示来源/页码，多题共享会话并在最后一题关闭，空题阻断，跳过幂等；真实设备相机/复习/多任务权限和弱网仍待人工复验） |
 | 正式错题本与到期复习 | closeout 原子/唯一/失败文案、历史候选；实际 VerifiedQuestion、ReviewAttempt、服务端判定、ReviewPolicy v2、到期/全部队列、晋级/重置/重激活、时区/断网重试 | PLAN-0016 M1/M2 每次错题/复习变更 | `0021` closeout、题目回读、ReviewAttempt、服务端答案判定和 1/3/7/14/30 策略已通过 API 全量测试；真实设备/并发及时区 E2E 待执行 |
 | Tutor L1/L2 渐进提示 | L1 看懂题意/定位疑点；L2 builds-on L1 并增加方法脚手架；worked/blank/review 分支、答案泄露、重复、题意相关、降级和交互状态 | PLAN-0017 的 Policy/API/Flutter/eval 变更 | 通过（2026-07-23：NewAPI L1/L2 路由、builds-on、答案/重复/题意门禁、同时经过时间回退和 5-case synthetic eval；Tutor/推荐定向 30 tests）；真实 Provider 质量验收待执行 |
 | PDF 智能任务推荐 | 遍历全部开放错题和已批准教材知识点/练习；错题频次/到期/知识点关联；具体教材题/视觉说明/页码/原页；来源键校验；每日上限；家长批准后 Web/Flutter 同源展示 | PLAN-0017/0018、ADR-0022/0023、OpenAPI/迁移/三端变更 | Ubuntu `0.11.0` 代码通过：推荐路径不再读取 `CurriculumChunk.text` 抽题，未知知识点/练习来源整体拒绝，孩子 Session 原页读取和 2 MiB/JPEG 客户端门禁已覆盖；真实 PDF/NewAPI、浏览器 E2E、AI 成本审计和设备待执行 |
@@ -114,14 +125,14 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | Web 格式 | `cd apps/web && pnpm format:check` | 每次 Web 变更 | 通过（2026-07-30；学习记录页、表格和日期工具经 Prettier 复核） |
 | Web Lint | `cd apps/web && pnpm lint` | 每次 Web 变更 | 通过（2026-07-30） |
 | Web 类型 | `cd apps/web && pnpm typecheck` | 每次 Web 变更 | 通过（2026-07-30） |
-| Web 单元 | `cd apps/web && pnpm test` | 每次 Web 变更 | 通过（2026-07-30：32 项；新增上海自然日/180 天边界和学习导航覆盖） |
+| Web 单元 | `cd apps/web && pnpm test` | 每次 Web 变更 | 通过（2026-08-23：35 项；新增语文审核动作覆盖） |
 | Web E2E | `cd apps/web && pnpm e2e` | 用户流程变更/P1 门槛 | 不可运行 |
 | Web 构建 | `cd apps/web && pnpm build` | 合并前 | 通过（2026-07-30；Next 16.2.10 production build包含动态 `/learning`；本机 Node 20.17/pnpm 9.10 产生 engine warning，锁定容器仍使用 Node 24.18/pnpm 11.7） |
 | API 安装 | `cd services/api && uv sync --locked` | 锁文件变化/干净环境 | 通过（2026-07-15；ARM 镜像内 `uv sync --locked --no-dev` 解析 124 个锁定包并安装 35 个适用包；macOS ARM64/Linux x86_64 保留 PaddleOCR 3.7.0、PaddlePaddle 3.3.1，Linux ARM64 按 marker 排除 Paddle；模型只在 amd64 镜像构建阶段下载） |
 | API 格式 | `cd services/api && uv run ruff format --check .` | 每次 API 变更 | 本轮 13 个教材知识图谱相关文件通过；全仓仍有此前 4 个迁移文件需统一格式化，不在本轮顺手修改 |
 | API Lint | `cd services/api && uv run ruff check .` | 每次 API 变更 | `src tests scripts` 与 `0025` 迁移通过（2026-07-23）；全仓命令仍报告 `0018/0020/0021/0023` 历史行宽/导入格式问题 |
 | API 类型 | `cd services/api && uv run mypy src` | 每次 API 变更 | 通过（2026-07-30；58 source files） |
-| API 单元 | `cd services/api && uv run pytest -m "not integration"` | 每次 API 变更 | 部分通过（2026-07-30：`218 passed, 2 failed, 28 deselected`；失败仍是本轮前已记录的拍题 Owner 作用域和孩子删除幂等重放，学习记录定向 9 项通过）。 |
+| API 单元 | `cd services/api && uv run pytest -m "not integration"` | 每次 API 变更 | 通过（2026-08-23：`244 passed, 32 deselected`；保留 Starlette/httpx deprecation warning） |
 | Compose 配置 | `docker compose -f infra/compose/compose.yml config` | Compose 变更 | 通过（2026-07-31，Ubuntu 实际 `infra/compose/.env` 展开无错误；权限保持 600） |
 | Compose 完整启动 | `docker compose -f infra/compose/compose.yml up -d --build` | API/数据/跨模块变更 | 通过（2026-08-15，Ubuntu 24.04 x86_64；API `0.14.0`、Web、ImageAnalysis/DataLifecycle/MaterialParse/CurriculumAnalysis worker 重建运行，迁移 `0031`，API/Web healthcheck 通过；PostgreSQL/MinIO/Redis 数据卷保留） |
 | Web 镜像 | `cd apps/web && docker buildx build --platform=linux/arm64 --load -t study-web:arm64-debug .` | Web/Compose 变更 | 通过（2026-07-15；Next.js standalone 镜像使用 Node 24.18.0、pnpm 11.7.0，包含 `/healthz`；2026-07-20 Ubuntu 重建验证教材上传幂等键兼容修复） |

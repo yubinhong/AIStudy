@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 家庭 AI 学习助手 API
-  version: 0.16.0
+  version: 0.17.0
   description: Self-hosted Household account/session, multi-subject learning, Chinese practice, and gated English speaking contracts.
 servers:
   - url: http://localhost:8000
@@ -713,6 +713,39 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /households/{household_id}/tasks/{task_id}/revoke:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - $ref: '#/components/parameters/TaskId'
+    post:
+      operationId: revokeStudyTask
+      summary: Revoke a parent-assigned task
+      description: Parent-only, idempotent task revocation. Any active child session is closed with a revoked outcome, and no further attempts or completion are accepted.
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Revoked task or idempotently replayed revocation.
+          headers:
+            Idempotency-Replayed:
+              schema:
+                type: string
+                const: 'true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StudyTask'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
   /households/{household_id}/capture-sessions:
     parameters:
       - $ref: '#/components/parameters/HouseholdId'
@@ -2770,7 +2803,7 @@ components:
           const: study-api
         version:
           type: string
-          const: 0.16.0
+          const: 0.17.0
     CreateChildRequest:
       type: object
       additionalProperties: false
@@ -2940,7 +2973,7 @@ components:
           format: date
         status:
           type: string
-          enum: [assigned, in_progress, completed, skipped]
+          enum: [assigned, in_progress, completed, skipped, revoked]
         version:
           type: integer
           minimum: 1
@@ -2977,7 +3010,7 @@ components:
     StudySession:
       type: object
       additionalProperties: false
-      required: [id, household_id, child_id, task_id, task_version, status, started_at]
+      required: [id, household_id, child_id, task_id, task_version, next_exercise_index, status, started_at]
       properties:
         id:
           type: string
@@ -2994,9 +3027,12 @@ components:
         task_version:
           type: integer
           minimum: 1
+        next_exercise_index:
+          type: integer
+          minimum: 0
         status:
           type: string
-          enum: [active, completed]
+          enum: [active, completed, revoked]
         started_at:
           type: string
           format: date-time
@@ -3006,7 +3042,7 @@ components:
           nullable: true
         outcome:
           type: string
-          enum: [learned, needs_review, skipped]
+          enum: [learned, needs_review, skipped, revoked]
           nullable: true
     EnglishScenario:
       type: object
@@ -4369,6 +4405,9 @@ components:
         evidence_confirmed:
           type: boolean
           default: false
+        next_exercise_index:
+          type: integer
+          minimum: 0
     Attempt:
       type: object
       additionalProperties: false
@@ -4431,6 +4470,9 @@ components:
         evidence_confirmed:
           type: boolean
           default: false
+        next_exercise_index:
+          type: integer
+          minimum: 0
     SyncBatchRequest:
       type: object
       additionalProperties: false

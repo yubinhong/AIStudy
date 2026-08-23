@@ -1,6 +1,7 @@
 from uuid import UUID, uuid4
 
 import pytest
+from postgres_helpers import create_test_parent, delete_test_parent
 from sqlalchemy import delete
 
 from study_api.auth_domain import (
@@ -13,14 +14,14 @@ from study_api.domain.sql_profile_repository import PostgresProfileRepository
 
 pytestmark = pytest.mark.integration
 
-HOUSEHOLD_A = UUID("00000000-0000-0000-0000-000000000001")
-
 
 def test_duplicate_username_is_a_domain_conflict_not_a_database_error() -> None:
     profiles = PostgresProfileRepository()
     accounts = PostgresAccountRepository()
+    household_id = uuid4()
+    owner = create_test_parent(accounts, household_id)
     child, _ = profiles.create_child(
-        HOUSEHOLD_A,
+        household_id,
         CreateChildRequest(
             display_name="Synthetic account child",
             grade=2,
@@ -28,12 +29,24 @@ def test_duplicate_username_is_a_domain_conflict_not_a_database_error() -> None:
             subjects=[Subject.MATH],
         ),
         f"pg-account-profile-{uuid4()}",
+        owner_account_id=owner.id,
+    )
+    duplicate_child, _ = profiles.create_child(
+        household_id,
+        CreateChildRequest(
+            display_name="Synthetic duplicate username child",
+            grade=2,
+            curriculum_version="math-demo-2026",
+            subjects=[Subject.MATH],
+        ),
+        f"pg-account-duplicate-profile-{uuid4()}",
+        owner_account_id=owner.id,
     )
     username = f"synthetic-account-{uuid4()}"
     account_id: UUID | None = None
     try:
         account, replayed = accounts.create_child(
-            HOUSEHOLD_A,
+            household_id,
             username,
             hash_password("synthetic-child-pass", role=AccountRole.CHILD),
             child.id,
@@ -45,15 +58,15 @@ def test_duplicate_username_is_a_domain_conflict_not_a_database_error() -> None:
 
         with pytest.raises(DuplicateUsernameError):
             accounts.create_child(
-                HOUSEHOLD_A,
+                household_id,
                 username,
                 hash_password("synthetic-child-pass", role=AccountRole.CHILD),
-                child.id,
+                duplicate_child.id,
                 f"pg-account-duplicate-{uuid4()}",
                 "synthetic-duplicate-request",
             )
     finally:
-        resource_ids = {child.id}
+        resource_ids = {child.id, duplicate_child.id}
         if account_id is not None:
             resource_ids.add(account_id)
         with accounts.engine.begin() as connection:
@@ -70,7 +83,8 @@ def test_duplicate_username_is_a_domain_conflict_not_a_database_error() -> None:
                     delete(accounts._accounts).where(accounts._accounts.c.id == account_id)
                 )
             connection.execute(
-                delete(profiles._children).where(profiles._children.c.id == child.id)
+                delete(profiles._children).where(profiles._children.c.id.in_(resource_ids))
             )
+        delete_test_parent(accounts, owner.id)
         accounts.close()
         profiles.close()

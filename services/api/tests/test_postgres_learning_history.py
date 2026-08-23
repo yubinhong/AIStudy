@@ -276,6 +276,7 @@ def test_learning_history_cleanup_deletes_expired_details_but_preserves_open_mis
                     child_id=child_id,
                     task_id=task_id,
                     task_version=1,
+                    next_exercise_index=0,
                     status="active",
                     started_at=old,
                 )

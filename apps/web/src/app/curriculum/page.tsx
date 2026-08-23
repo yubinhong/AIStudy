@@ -19,6 +19,12 @@ import { AdminShell } from "@/app/components/admin-shell";
 import { resolveSelectedChildId } from "@/lib/child-selection";
 import { csrfHeaders } from "../../lib/csrf";
 import { idempotencyKey } from "../../lib/idempotency-key";
+import {
+  canApproveCurriculumAnalysis,
+  canRetryCurriculumAnalysis,
+  curriculumPublishMessage,
+  curriculumUploadMessage,
+} from "./curriculum-actions";
 
 type Child = {
   id: string;
@@ -245,9 +251,7 @@ function CurriculumPageContent() {
       } | null;
       setMessage(
         response.ok
-          ? uploadSubject === "math"
-            ? `已上传 ${selectedFiles.length} 个文件。服务端将保留原页图像并归纳整本教材知识点；家长审核前不会用于讲解。`
-            : `已上传 ${selectedFiles.length} 个语文文件。当前只建立私有草稿；语文教材分析 Schema 完成前不会进入 AI 理解或孩子练习。`
+          ? curriculumUploadMessage(uploadSubject, selectedFiles.length)
           : response.status === 413 || failure?.detail?.includes("too large")
             ? "上传失败：单个 PDF 上限为 50 MiB（52.4 MB），请重新选择不超过该大小的文件。"
             : "文件上传失败，请检查 PDF 格式、大小和登录状态",
@@ -261,9 +265,9 @@ function CurriculumPageContent() {
     }
   }
 
-  async function publish(snapshotId: string) {
+  async function publish(snapshot: Snapshot) {
     const response = await fetch(
-      `/api/curriculum/${childId}/snapshots/${snapshotId}/publish`,
+      `/api/curriculum/${childId}/snapshots/${snapshot.id}/publish`,
       {
         method: "POST",
         headers: {
@@ -274,7 +278,7 @@ function CurriculumPageContent() {
     );
     setMessage(
       response.ok
-        ? "教材已发布；已批准知识点现在可用于教材范围内的错题讲解"
+        ? curriculumPublishMessage(snapshot.subject)
         : "发布失败：文档正文尚未解析，或服务暂时不可用",
     );
     if (response.ok) await loadData(childId);
@@ -575,8 +579,9 @@ function CurriculumPageContent() {
                       查看原页与知识点
                     </button>
                   ) : null}
-                  {snapshot.subject === "math" &&
-                  knowledgeMaps[snapshot.id]?.status === "failed" ? (
+                  {canRetryCurriculumAnalysis(
+                    knowledgeMaps[snapshot.id]?.status,
+                  ) ? (
                     <button
                       className="secondary-button compact-button"
                       type="button"
@@ -586,8 +591,9 @@ function CurriculumPageContent() {
                       重新理解
                     </button>
                   ) : null}
-                  {snapshot.subject === "math" &&
-                  knowledgeMaps[snapshot.id]?.status === "needs_review" ? (
+                  {canApproveCurriculumAnalysis(
+                    knowledgeMaps[snapshot.id]?.status,
+                  ) ? (
                     <button
                       className="secondary-button compact-button"
                       type="button"
@@ -608,7 +614,7 @@ function CurriculumPageContent() {
                     <button
                       className="secondary-button compact-button"
                       type="button"
-                      onClick={() => void publish(snapshot.id)}
+                      onClick={() => void publish(snapshot)}
                     >
                       <SealCheck size={17} />
                       审核发布

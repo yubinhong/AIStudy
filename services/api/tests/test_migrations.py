@@ -239,7 +239,7 @@ def test_learning_schema_is_at_head_in_local_postgresql() -> None:
     study_session_columns = {
         column["name"] for column in inspect(engine).get_columns("study_sessions")
     }
-    assert {"completed_at", "outcome"} <= study_session_columns
+    assert {"completed_at", "outcome", "next_exercise_index"} <= study_session_columns
     task_columns = {column["name"] for column in inspect(engine).get_columns("study_tasks")}
     assert {
         "source_type",

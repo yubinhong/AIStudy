@@ -7,6 +7,8 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'offline_sync_queue.dart';
+
 const maxCaptureBytes = 8 * 1000 * 1000;
 const _captureRequestTimeout = Duration(seconds: 20);
 
@@ -82,6 +84,7 @@ class CaptureApiClient {
     this.sessionId,
     required this.authorizationToken,
     this.accountUsername,
+    this.offlineQueue,
   }) : _baseUri = Uri.parse(baseUrl),
        _resolvedSessionId = sessionId {
     if (authorizationToken.isEmpty) {
@@ -99,14 +102,187 @@ class CaptureApiClient {
   final String? sessionId;
   final String authorizationToken;
   final String? accountUsername;
+  final SqliteOfflineSyncQueue? offlineQueue;
   String? _resolvedSessionId;
+  int? _activeNextExerciseIndex;
   String? _verifiedQuestionId;
   String _captureSessionNonce = _newSessionNonce();
+  bool _lastTaskActionQueuedOffline = false;
 
   String get baseUrlForDiagnostics => _baseUri.toString();
 
+  String get taskProgressScopeKey =>
+      '${_baseUri.scheme}://${_baseUri.authority}:$householdId:$childId';
+
+  /// The active server-side StudySession selected by the most recent task or
+  /// capture preparation. The value is only an opaque identifier and is safe
+  /// to pass to the local task-progress store.
+  String? get activeSessionId => _resolvedSessionId;
+
+  /// The server-authoritative next exercise position for the active scheduled
+  /// task session, when the current flow is a multi-exercise task.
+  int? get activeNextExerciseIndex => _activeNextExerciseIndex;
+
+  /// True when the most recent scheduled-task action was persisted locally
+  /// because the server was unreachable.
+  bool get lastTaskActionQueuedOffline => _lastTaskActionQueuedOffline;
+
   Future<List<Map<String, dynamic>>> listTasks() =>
       _getJsonList(_path('/households/$householdId/tasks'));
+
+  /// Replays bounded, structured attempt events saved while the network was
+  /// unavailable. The queue is scoped to this server/household/child.
+  Future<int> syncOfflineAttempts() async {
+    final queue = await _openOfflineQueue();
+    if (queue == null) return 0;
+    var shouldClose = false;
+    final acknowledged = <String>{};
+    try {
+      if (offlineQueue == null) shouldClose = true;
+      final batch = await queue.nextBatch();
+      if (batch.isEmpty) return 0;
+
+      final attemptEvents = batch
+          .where((event) => _offlineEventKind(event) == 'record_attempt')
+          .toList(growable: false);
+      if (attemptEvents.isNotEmpty) {
+        final payload = await _postJson(
+          _path('/households/$householdId/sync-batches'),
+          headers: {
+            'Idempotency-Key':
+                'sync-attempts-$childId-${DateTime.now().microsecondsSinceEpoch}',
+          },
+          body: {
+            'schema_version': 1,
+            'events': [
+              for (final event in attemptEvents)
+                {
+                  ...event.payload,
+                  'event_id': event.eventId,
+                  'idempotency_key': event.idempotencyKey,
+                  'kind': 'record_attempt',
+                },
+            ],
+          },
+          acceptedStatuses: const {200},
+          failureMessage: '离线学习记录暂时无法同步，请稍后重试。',
+        );
+        final results = payload['results'];
+        if (results is! List) {
+          throw const CaptureApiException('离线同步结果无法识别。');
+        }
+        final attemptAcknowledged = results
+            .whereType<Map>()
+            .map((result) => result['event_id']?.toString())
+            .whereType<String>()
+            .toSet();
+        await queue.acknowledge(attemptAcknowledged);
+        acknowledged.addAll(attemptAcknowledged);
+      }
+
+      // Completion events are deliberately replayed after attempts. A queued
+      // closeout may require the evidence that was queued immediately before it.
+      for (final event in batch.where(
+        (event) => _offlineEventKind(event) != 'record_attempt',
+      )) {
+        await _replayOfflineTerminalEvent(event);
+        await queue.acknowledge([event.eventId]);
+        acknowledged.add(event.eventId);
+      }
+      return acknowledged.length;
+    } on CaptureApiException catch (error) {
+      for (final event in await queue.nextBatch()) {
+        if (acknowledged.contains(event.eventId)) continue;
+        await queue.recordRetry(
+          event.eventId,
+          error.statusCode == null ? 'network_unavailable' : 'sync_failed',
+        );
+      }
+      rethrow;
+    } finally {
+      if (shouldClose) await queue.close();
+    }
+  }
+
+  String _offlineEventKind(PendingSyncEvent event) =>
+      event.payload['kind']?.toString() ?? 'record_attempt';
+
+  Future<void> _replayOfflineTerminalEvent(PendingSyncEvent event) async {
+    final payload = event.payload;
+    final kind = _offlineEventKind(event);
+    final eventIdempotencyKey = event.idempotencyKey;
+    if (kind == 'complete_session') {
+      final sessionId = _string(payload['session_id']);
+      await _postJson(
+        _path('/households/$householdId/sessions/$sessionId/completion'),
+        headers: {'Idempotency-Key': eventIdempotencyKey},
+        body: {'outcome': _string(payload['outcome'])},
+        acceptedStatuses: const {200},
+        failureMessage: '离线任务完成状态暂时无法同步，请稍后重试。',
+      );
+      return;
+    }
+    if (kind == 'mistake_closeout') {
+      final sessionId = _string(payload['session_id']);
+      await _postJson(
+        _path('/households/$householdId/children/$childId/mistake-closeout'),
+        headers: {'Idempotency-Key': eventIdempotencyKey},
+        body: {
+          'verified_question_id': _string(payload['verified_question_id']),
+          'session_id': sessionId,
+          'outcome': _string(payload['outcome']),
+        },
+        acceptedStatuses: const {200},
+        failureMessage: '离线复习结果暂时无法同步，请稍后重试。',
+      );
+      return;
+    }
+    if (kind == 'skip_task') {
+      final taskId = _string(payload['task_id']);
+      final expectedVersion = _int(payload['expected_task_version']);
+      Map<String, dynamic>? session;
+      try {
+        session = await _postJson(
+          _path('/households/$householdId/tasks/$taskId/sessions'),
+          headers: {'Idempotency-Key': '$eventIdempotencyKey-start'},
+          body: {'expected_task_version': expectedVersion},
+          acceptedStatuses: const {200, 201},
+        );
+      } on CaptureApiException catch (error) {
+        if (error.statusCode != HttpStatus.conflict) rethrow;
+        try {
+          session = await _getJson(
+            _path('/households/$householdId/tasks/$taskId/active-session'),
+          );
+        } on CaptureApiException catch (activeError) {
+          if (activeError.statusCode != HttpStatus.notFound) rethrow;
+          final tasks = await listTasks();
+          Map<String, dynamic>? terminal;
+          for (final item in tasks) {
+            if (item['id']?.toString() == taskId) {
+              terminal = item;
+              break;
+            }
+          }
+          if (terminal?['status'] == 'completed' ||
+              terminal?['status'] == 'skipped') {
+            return;
+          }
+          rethrow;
+        }
+      }
+      final sessionId = _string(session['id']);
+      await _postJson(
+        _path('/households/$householdId/sessions/$sessionId/completion'),
+        headers: {'Idempotency-Key': '$eventIdempotencyKey-complete'},
+        body: const {'outcome': 'skipped'},
+        acceptedStatuses: const {200},
+        failureMessage: '离线跳过结果暂时无法同步，请稍后重试。',
+      );
+      return;
+    }
+    throw const CaptureApiException('离线事件类型无法识别，请重新登录后重试。');
+  }
 
   Future<Uint8List> loadCurriculumPageImage(String snapshotId, int pageNumber) {
     if (snapshotId.isEmpty || pageNumber < 1) {
@@ -172,6 +348,7 @@ class CaptureApiClient {
           _path('/households/$householdId/tasks/$taskId/active-session'),
         );
         _resolvedSessionId = _string(active['id']);
+        _activeNextExerciseIndex = _intOrNull(active['next_exercise_index']);
         return;
       } on CaptureApiException catch (error) {
         if (error.statusCode != HttpStatus.notFound) rethrow;
@@ -188,6 +365,48 @@ class CaptureApiClient {
       acceptedStatuses: const {200, 201},
     );
     _resolvedSessionId = _string(session['id']);
+    _activeNextExerciseIndex = _intOrNull(session['next_exercise_index']);
+  }
+
+  /// Marks a scheduled task as skipped without entering the capture flow.
+  ///
+  /// The task session is still created/resumed first so the API can apply its
+  /// normal household, child, version and idempotency checks.
+  Future<void> skipTask(Map<String, dynamic> task) async {
+    _lastTaskActionQueuedOffline = false;
+    try {
+      await prepareTaskSession(task);
+    } on CaptureApiException catch (error, stackTrace) {
+      if (error.statusCode != null) rethrow;
+      final taskId = _string(task['id']);
+      final version = _int(task['version']);
+      final eventId = _uuidFromNonce(_newSessionNonce());
+      final queued = await _enqueueOfflineEvent(
+        eventId: eventId,
+        idempotencyKey: 'skip-task-$taskId-$eventId',
+        payload: {
+          'kind': 'skip_task',
+          'task_id': taskId,
+          'expected_task_version': version,
+        },
+      );
+      if (!queued) Error.throwWithStackTrace(error, stackTrace);
+      _lastTaskActionQueuedOffline = true;
+      _resetCaptureSession();
+      return;
+    }
+    final activeSessionId = _resolvedSessionId;
+    if (activeSessionId == null || activeSessionId.isEmpty) {
+      throw const CaptureApiException('任务会话尚未准备好，请稍后重试。');
+    }
+    await _postJson(
+      _path('/households/$householdId/sessions/$activeSessionId/completion'),
+      headers: {'Idempotency-Key': 'skip-task-$activeSessionId'},
+      body: {'outcome': 'skipped'},
+      acceptedStatuses: const {200},
+      failureMessage: '任务暂时无法跳过，请稍后重试。',
+    );
+    _resetCaptureSession();
   }
 
   Future<CaptureUploadReceipt> uploadAndEnqueue(
@@ -497,20 +716,64 @@ class CaptureApiClient {
     required String answerSummary,
     required String answerState,
     required bool evidenceConfirmed,
+    int? nextExerciseIndex,
   }) async {
     final activeSessionId = await _ensureCaptureSession();
     final eventId = _newSessionNonce();
-    return _postJson(
-      _path('/households/$householdId/sessions/$activeSessionId/attempts'),
-      headers: {'Idempotency-Key': 'attempt-$activeSessionId-$eventId'},
-      body: {
-        'event_id': _uuidFromNonce(eventId),
-        'answer_summary': answerSummary,
-        'answer_state': answerState,
-        'evidence_confirmed': evidenceConfirmed,
-      },
-      acceptedStatuses: const {200, 201},
-    );
+    final eventUuid = _uuidFromNonce(eventId);
+    final idempotencyKey = 'attempt-$activeSessionId-$eventId';
+    final body = <String, dynamic>{
+      'event_id': eventUuid,
+      'answer_summary': answerSummary,
+      'answer_state': answerState,
+      'evidence_confirmed': evidenceConfirmed,
+      ...?nextExerciseIndex == null
+          ? null
+          : {'next_exercise_index': nextExerciseIndex},
+    };
+    try {
+      return await _postJson(
+        _path('/households/$householdId/sessions/$activeSessionId/attempts'),
+        headers: {'Idempotency-Key': idempotencyKey},
+        body: body,
+        acceptedStatuses: const {200, 201},
+      );
+    } on CaptureApiException catch (error) {
+      if (error.statusCode != null) rethrow;
+      final queue = await _openOfflineQueue();
+      if (queue == null) rethrow;
+      var shouldClose = false;
+      try {
+        if (offlineQueue == null) shouldClose = true;
+        await queue.enqueue(
+          PendingSyncEvent(
+            eventId: eventUuid,
+            idempotencyKey: idempotencyKey,
+            payload: {
+              'session_id': activeSessionId,
+              'answer_summary': answerSummary,
+              'answer_state': answerState,
+              'evidence_confirmed': evidenceConfirmed,
+              ...?nextExerciseIndex == null
+                  ? null
+                  : {'next_exercise_index': nextExerciseIndex},
+            },
+          ),
+        );
+        return <String, dynamic>{'offline_queued': true, 'event_id': eventUuid};
+      } finally {
+        if (shouldClose) await queue.close();
+      }
+    }
+  }
+
+  /// Keeps the active task session open while moving to its next exercise.
+  ///
+  /// The verified question belongs to the exercise just completed. Clearing
+  /// it here prevents the next exercise from accidentally reusing the prior
+  /// question while retaining the server-side session and its attempts.
+  void prepareNextTaskExercise() {
+    _verifiedQuestionId = null;
   }
 
   Future<Map<String, dynamic>> completeCurrentSession({
@@ -523,37 +786,62 @@ class CaptureApiClient {
       throw const CaptureApiException('请先确认题目和作答状态，才能加入复习。');
     }
     final activeSessionId = await _ensureCaptureSession();
-    final completed = _verifiedQuestionId == null
-        ? await _postJson(
-            _path(
-              '/households/$householdId/sessions/$activeSessionId/completion',
-            ),
-            headers: {
-              'Idempotency-Key': 'complete-session-$activeSessionId-$outcome',
-            },
-            body: {'outcome': outcome},
-            acceptedStatuses: const {200},
-          )
-        : await _postJson(
-            _path(
-              '/households/$householdId/children/$childId/mistake-closeout',
-            ),
-            headers: {
-              'Idempotency-Key': 'mistake-closeout-$activeSessionId-$outcome',
-            },
-            body: {
-              'verified_question_id': _verifiedQuestionId,
-              'session_id': activeSessionId,
-              'outcome': outcome,
-            },
-            acceptedStatuses: const {200},
-          );
+    final completionIdempotencyKey = _verifiedQuestionId == null
+        ? 'complete-session-$activeSessionId-$outcome'
+        : 'mistake-closeout-$activeSessionId-$outcome';
+    late final Map<String, dynamic> completed;
+    try {
+      completed = _verifiedQuestionId == null
+          ? await _postJson(
+              _path(
+                '/households/$householdId/sessions/$activeSessionId/completion',
+              ),
+              headers: {'Idempotency-Key': completionIdempotencyKey},
+              body: {'outcome': outcome},
+              acceptedStatuses: const {200},
+            )
+          : await _postJson(
+              _path(
+                '/households/$householdId/children/$childId/mistake-closeout',
+              ),
+              headers: {'Idempotency-Key': completionIdempotencyKey},
+              body: {
+                'verified_question_id': _verifiedQuestionId,
+                'session_id': activeSessionId,
+                'outcome': outcome,
+              },
+              acceptedStatuses: const {200},
+            );
+    } on CaptureApiException catch (error, stackTrace) {
+      if (error.statusCode != null) rethrow;
+      final eventId = _uuidFromNonce(_newSessionNonce());
+      final kind = _verifiedQuestionId == null
+          ? 'complete_session'
+          : 'mistake_closeout';
+      final payload = <String, Object?>{
+        'kind': kind,
+        'session_id': activeSessionId,
+        'outcome': outcome,
+        if (_verifiedQuestionId != null)
+          'verified_question_id': _verifiedQuestionId,
+      };
+      final queued = await _enqueueOfflineEvent(
+        eventId: eventId,
+        idempotencyKey: completionIdempotencyKey,
+        payload: payload,
+      );
+      if (!queued) Error.throwWithStackTrace(error, stackTrace);
+      _resetCaptureSession();
+      return <String, dynamic>{
+        'offline_queued': true,
+        'event_id': eventId,
+        'outcome': outcome,
+      };
+    }
     if (outcome == 'needs_review' && completed['mistake'] is! Map) {
       throw const CaptureApiException('复习计划尚未建立，请稍后重试。');
     }
-    _resolvedSessionId = null;
-    _verifiedQuestionId = null;
-    _captureSessionNonce = _newSessionNonce();
+    _resetCaptureSession();
     return completed;
   }
 
@@ -651,7 +939,48 @@ class CaptureApiClient {
     );
     final resolved = _string(session['id']);
     _resolvedSessionId = resolved;
+    _activeNextExerciseIndex = _intOrNull(session['next_exercise_index']);
     return resolved;
+  }
+
+  void _resetCaptureSession() {
+    _resolvedSessionId = null;
+    _activeNextExerciseIndex = null;
+    _verifiedQuestionId = null;
+    _captureSessionNonce = _newSessionNonce();
+  }
+
+  Future<bool> _enqueueOfflineEvent({
+    required String eventId,
+    required String idempotencyKey,
+    required Map<String, Object?> payload,
+  }) async {
+    final queue = await _openOfflineQueue();
+    if (queue == null) return false;
+    var shouldClose = false;
+    try {
+      if (offlineQueue == null) shouldClose = true;
+      await queue.enqueue(
+        PendingSyncEvent(
+          eventId: eventId,
+          idempotencyKey: idempotencyKey,
+          payload: payload,
+        ),
+      );
+      return true;
+    } finally {
+      if (shouldClose) await queue.close();
+    }
+  }
+
+  Future<SqliteOfflineSyncQueue?> _openOfflineQueue() async {
+    final injected = offlineQueue;
+    if (injected != null) return injected;
+    try {
+      return await SqliteOfflineSyncQueue.open(scopeKey: taskProgressScopeKey);
+    } on Object {
+      return null;
+    }
   }
 
   Uri _path(String path) {
@@ -932,6 +1261,11 @@ class CaptureApiClient {
   static int _int(Object? value) {
     if (value is int) return value;
     throw const CaptureApiException('服务端返回了无法识别的结果。');
+  }
+
+  static int? _intOrNull(Object? value) {
+    if (value == null) return null;
+    return _int(value);
   }
 
   static List<String> _stringList(Object? value) {

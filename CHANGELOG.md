@@ -1,5 +1,13 @@
 # Changelog
 
+- 2026-08-23：从未提交的本地工作区部署 Ubuntu 自用 Compose `0.17.0`/`0036_task_session_progress`。备份 `/home/syin/study-backups/20260823T030248Z` 已隔离恢复校验（39 张 PostgreSQL public 表、359 个 MinIO 文件）；API/Web/worker、OpenAPI、容器源码、私有 MinIO 端口和局域网健康检查均通过。随后已提交、推送并创建 `v0.17.0`；真实 Provider/PDF、Ubuntu 真实账号浏览器和真机 E2E 仍待执行。
+
+- 2026-08-23（未重新部署）：数学任务离线流程继续收口。确认作答、任务完成、复习收口和跳过现在使用同一受范围隔离的 SQLite 结构化队列；联网后先批量同步 Attempt，再按原幂等键重放完成/跳过，队列不保存图片、答案原文或令牌。服务端拒绝同一任务的第二个活动会话及终态任务重复启动。Flutter 回归 `67 passed`，API 非集成 `239 passed`，PostgreSQL 集成 `30 passed`。本轮未连接手机或平板。
+
+- 2026-08-23：继续收口数学和语文孩子端。数学今日任务用端侧 SQLite 保存当前题号，进程退出后可从同一服务端/家庭/孩子范围内的未完成题继续；已确认作答在断网时只保存结构化事件（不保存图片、答案或令牌），联网后按最多 50 条批次幂等同步，任务最终完成/跳过仍要求在线确认。语文首页固定为“古诗抽查”和“看图写话”两项，尚未审核教材时保留古诗入口并说明开放条件。Flutter `64 passed`；本轮未连接手机或平板。
+
+- 2026-08-22：继续收口数学与语文可用闭环。数学孩子端恢复“今日任务”，每道任务题必须带指定题干，并按顺序把当前题干与教材来源带入拍题/确认页；多题任务在同一会话内逐题完成，中间题追加作答、最后一题关闭任务，空题明确阻断；“稍后再做”现在以幂等 `skipped` 结果记录会话并刷新任务队列。语文新增拼音、生字、词语、句子、阅读、背诵、表达、古诗八类 deterministic scorer golden 覆盖，并把正式原创内容门禁落实为 Owner 审核、审核时间和权利凭证摘要；待审核内容不会进入孩子题库。古诗抽查现在先均匀抽取一首诗，再从该诗的相邻句题目中抽题，避免长诗因题目更多而被偏抽。PostgreSQL 集成测试夹具改用随机 Household/真实 Parent Owner，完整集成矩阵 `29 passed`；API 非集成 `238 passed`；Flutter `58 passed`。本轮未连接手机或平板，真实 Provider、正式内容签核、Ubuntu 真实账号浏览器和设备 E2E 仍待执行。
+
 - 2026-08-16：发布 `v0.16.0`（`dbaa9b0`）到 Ubuntu 自用 Compose。升级前备份 `/home/syin/study-backups/20260816T091344Z` 已隔离恢复为 38 张 PostgreSQL public 表和 353 个 MinIO 文件；API/OpenAPI `0.16.0`、Web、迁移 `0035_chinese_poem_skill`、四个 worker、picture-writing OpenAPI 路径和容器源码哈希均通过。MinIO 未发布宿主机端口。使用无人物、无文字的合成图完成一次真实 Provider 的 `picture-writing-guide.v1` Schema 冒烟，不包含儿童图片或 Provider 原始响应；Nova 9 已安装 `0.16.0 (2)` 并配置家庭 LAN 地址，WLAN 可达 Ubuntu 且健康检测无连接失败。重装后无登录会话，登录后相机/相册/权限 E2E 仍待执行。
 
 - 2026-08-16：发布修复版 `v0.15.1` 到 Ubuntu 自用 Compose。前置备份 `/home/syin/study-backups/20260816T072837Z` 已隔离恢复验证（38 张 PostgreSQL public 表、353 个 MinIO 文件）；API `0.15.0`、Web、四个 worker、`0032_chinese_original_content_pack` 迁移和私有 MinIO 端口均已运行验证。首次 `v0.15.0` 发布暴露历史 Alembic version 列为 `varchar(32)`，长 revision 写入失败且事务回滚；`v0.15.1` 先前向扩展为 `varchar(64)` 后成功迁移。Nova 9 保留登录态升级后加载数学、语文、锁定英语及新增语文内容；未提交答案、未读取或导出学习记录。
@@ -36,6 +44,14 @@
 本文件只记录用户可感知、运维可感知或兼容性相关的已发布变化，格式参考 Keep a Changelog，版本计划遵循 Semantic Versioning。
 
 ## [Unreleased]
+
+- 语文教材页现在对数学和语文使用同一套家长审核动作；语文上传和发布会明确提示独立分析 v2，并在批准知识图谱后自动开放古诗抽查。
+- 看图写话引导要求孩子先写出第一句再补充细节；图片入口或 Provider 暂时不可用时，可进入不包含图片判断的通用观察问题引导。
+- 增加“批准教材后自动生成古诗相邻句选择题”的 API 回归，以及 Web 审核动作和看图写话边界测试。当前本地验证：API 非集成 `244 passed`、PostgreSQL 集成 `32 passed`、Flutter `70 passed`、Web `35 passed`。
+- 本轮代码已部署 Ubuntu，并已提交、推送和创建 `v0.17.0`；没有连接真机或调用真实 Provider。
+
+- 数学今日任务新增服务端会话下一题号（迁移 `0036_task_session_progress`），跨设备恢复时以服务端进度为准；每个孩子每天最多 3 项任务，未来任务不可提前开始，过期任务仍可补做；家长可幂等撤销任务并关闭活动会话。
+- Flutter 任务客户端提交题号到在线/离线 Attempt，保留本机 SQLite 位置并优先采用服务端位置；新增 API、PostgreSQL 和 Widget 回归。当前本地和 Ubuntu API/OpenAPI 均为 `0.17.0`，已由 `v0.17.0` 固化发布。
 
 - 2026-08-15：完成多学科与语文改造。本地 API/OpenAPI 升至 `0.14.0`，`Subject`、孩子档案、任务与教材支持 `math/chinese`；additive `0031_multisubject_chinese` 将旧教材回填为数学并新增版本化语文内容、确定性 Attempt/Review。家长可逐孩子启用语文并选择教材学科，孩子端按档案显示语文入口，首个原创 synthetic 纵向切片支持句子排序和“回答 + 文中依据”。答案规范只留在服务端，评分固定为 `chinese-score.v1` 且不调用 AI。语文教材分析新 Schema 完成前拒绝复用数学 Prompt；英语保持最后、默认锁定。Ubuntu 发布事实见本文件顶部 `v0.14.0` 条目；正式教研内容、并发/导出集成、设备和语文教材分析仍待完成。
 

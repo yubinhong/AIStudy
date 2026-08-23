@@ -316,7 +316,7 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
                       _SubjectCard(
                         icon: Icons.menu_book_outlined,
                         title: '语文',
-                        subtitle: '字词、句子、阅读与古诗文',
+                        subtitle: '古诗抽查、看图写话',
                         onTap: () => Navigator.of(context).push(
                           MaterialPageRoute<void>(
                             builder: widget.chineseBuilder!,

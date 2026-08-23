@@ -4,9 +4,256 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:study_child/capture_api_client.dart';
+import 'package:study_child/offline_sync_queue.dart';
 
 void main() {
+  test(
+    'queues a confirmed attempt when the active session is offline',
+    () async {
+      sqfliteFfiInit();
+      final directory = await Directory.systemTemp.createTemp(
+        'study-attempt-queue-',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final queue = await SqliteOfflineSyncQueue.open(
+        scopeKey: 'server-a:household-a:child-a',
+        factory: databaseFactoryFfi,
+        databasePath: '${directory.path}/queue.db',
+      );
+      addTearDown(queue.close);
+
+      final client = CaptureApiClient(
+        baseUrl: 'http://127.0.0.1:1',
+        householdId: '00000000-0000-0000-0000-000000000001',
+        childId: '00000000-0000-0000-0000-000000000101',
+        sessionId: '00000000-0000-0000-0000-000000000111',
+        authorizationToken: 'test-session-token',
+        offlineQueue: queue,
+      );
+
+      final result = await client.recordAttempt(
+        answerSummary: '孩子已确认本题作答状态',
+        answerState: 'worked',
+        evidenceConfirmed: true,
+        nextExerciseIndex: 1,
+      );
+
+      expect(result['offline_queued'], isTrue);
+      final pending = await queue.pending;
+      expect(pending, hasLength(1));
+      expect(pending.single.payload, {
+        'session_id': '00000000-0000-0000-0000-000000000111',
+        'answer_summary': '孩子已确认本题作答状态',
+        'answer_state': 'worked',
+        'evidence_confirmed': true,
+        'next_exercise_index': 1,
+      });
+    },
+  );
+
+  test(
+    'replays the offline attempt batch and acknowledges returned events',
+    () async {
+      sqfliteFfiInit();
+      final directory = await Directory.systemTemp.createTemp(
+        'study-attempt-sync-',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final queue = await SqliteOfflineSyncQueue.open(
+        scopeKey: 'server-a:household-a:child-a',
+        factory: databaseFactoryFfi,
+        databasePath: '${directory.path}/queue.db',
+      );
+      addTearDown(queue.close);
+      final event = PendingSyncEvent(
+        eventId: '00000000-0000-0000-0000-000000000121',
+        idempotencyKey: 'offline-attempt-121',
+        payload: {
+          'session_id': '00000000-0000-0000-0000-000000000111',
+          'answer_summary': '孩子已确认本题作答状态',
+          'answer_state': 'worked',
+          'evidence_confirmed': true,
+        },
+      );
+      await queue.enqueue(event);
+
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final subscription = server.listen((request) async {
+        expect(request.method, 'POST');
+        expect(request.uri.path, contains('/sync-batches'));
+        expect(
+          request.headers.value(HttpHeaders.authorizationHeader),
+          'Bearer test-session-token',
+        );
+        final body =
+            jsonDecode(
+                  utf8.decode(await request.expand((chunk) => chunk).toList()),
+                )
+                as Map<String, dynamic>;
+        expect((body['events'] as List).single['event_id'], event.eventId);
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..headers.contentType = ContentType.json
+          ..write(
+            jsonEncode({
+              'schema_version': 1,
+              'results': [
+                {'event_id': event.eventId, 'status': 'applied'},
+              ],
+            }),
+          );
+        await request.response.close();
+      });
+      addTearDown(() async {
+        await subscription.cancel();
+        await server.close(force: true);
+      });
+
+      final client = CaptureApiClient(
+        baseUrl: 'http://${server.address.host}:${server.port}',
+        householdId: '00000000-0000-0000-0000-000000000001',
+        childId: '00000000-0000-0000-0000-000000000101',
+        authorizationToken: 'test-session-token',
+        offlineQueue: queue,
+      );
+
+      expect(await client.syncOfflineAttempts(), 1);
+      expect(await queue.pending, isEmpty);
+    },
+  );
+
+  test(
+    'queues task completion after the final attempt loses the network',
+    () async {
+      sqfliteFfiInit();
+      final directory = await Directory.systemTemp.createTemp(
+        'study-completion-queue-',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final queue = await SqliteOfflineSyncQueue.open(
+        scopeKey: 'server-a:household-a:child-a',
+        factory: databaseFactoryFfi,
+        databasePath: '${directory.path}/queue.db',
+      );
+      addTearDown(queue.close);
+      final client = CaptureApiClient(
+        baseUrl: 'http://127.0.0.1:1',
+        householdId: '00000000-0000-0000-0000-000000000001',
+        childId: '00000000-0000-0000-0000-000000000101',
+        sessionId: '00000000-0000-0000-0000-000000000111',
+        authorizationToken: 'test-session-token',
+        offlineQueue: queue,
+      );
+
+      final result = await client.completeCurrentSession(outcome: 'learned');
+
+      expect(result['offline_queued'], isTrue);
+      final pending = await queue.pending;
+      expect(pending, hasLength(1));
+      expect(pending.single.payload, {
+        'kind': 'complete_session',
+        'session_id': '00000000-0000-0000-0000-000000000111',
+        'outcome': 'learned',
+      });
+    },
+  );
+
+  test(
+    'queues skipping an assigned task before its session can be created',
+    () async {
+      sqfliteFfiInit();
+      final directory = await Directory.systemTemp.createTemp(
+        'study-skip-queue-',
+      );
+      addTearDown(() => directory.delete(recursive: true));
+      final queue = await SqliteOfflineSyncQueue.open(
+        scopeKey: 'server-a:household-a:child-a',
+        factory: databaseFactoryFfi,
+        databasePath: '${directory.path}/queue.db',
+      );
+      addTearDown(queue.close);
+      final client = CaptureApiClient(
+        baseUrl: 'http://127.0.0.1:1',
+        householdId: '00000000-0000-0000-0000-000000000001',
+        childId: '00000000-0000-0000-0000-000000000101',
+        authorizationToken: 'test-session-token',
+        offlineQueue: queue,
+      );
+
+      await client.skipTask({
+        'id': '00000000-0000-0000-0000-000000000221',
+        'status': 'assigned',
+        'version': 3,
+      });
+
+      expect(client.lastTaskActionQueuedOffline, isTrue);
+      final pending = await queue.pending;
+      expect(pending, hasLength(1));
+      expect(pending.single.payload, {
+        'kind': 'skip_task',
+        'task_id': '00000000-0000-0000-0000-000000000221',
+        'expected_task_version': 3,
+      });
+    },
+  );
+
+  test('replays a queued completion after queued attempts', () async {
+    sqfliteFfiInit();
+    final directory = await Directory.systemTemp.createTemp(
+      'study-terminal-sync-',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final queue = await SqliteOfflineSyncQueue.open(
+      scopeKey: 'server-a:household-a:child-a',
+      factory: databaseFactoryFfi,
+      databasePath: '${directory.path}/queue.db',
+    );
+    addTearDown(queue.close);
+    final completion = PendingSyncEvent(
+      eventId: '00000000-0000-0000-0000-000000000122',
+      idempotencyKey: 'offline-completion-122',
+      payload: {
+        'kind': 'complete_session',
+        'session_id': '00000000-0000-0000-0000-000000000111',
+        'outcome': 'learned',
+      },
+    );
+    await queue.enqueue(completion);
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final subscription = server.listen((request) async {
+      expect(request.method, 'POST');
+      expect(
+        request.uri.path,
+        contains('/sessions/00000000-0000-0000-0000-000000000111/completion'),
+      );
+      expect(
+        request.headers.value('Idempotency-Key'),
+        completion.idempotencyKey,
+      );
+      request.response
+        ..statusCode = HttpStatus.ok
+        ..headers.contentType = ContentType.json
+        ..write(jsonEncode({'status': 'completed'}));
+      await request.response.close();
+    });
+    addTearDown(() async {
+      await subscription.cancel();
+      await server.close(force: true);
+    });
+    final client = CaptureApiClient(
+      baseUrl: 'http://${server.address.host}:${server.port}',
+      householdId: '00000000-0000-0000-0000-000000000001',
+      childId: '00000000-0000-0000-0000-000000000101',
+      authorizationToken: 'test-session-token',
+      offlineQueue: queue,
+    );
+
+    expect(await client.syncOfflineAttempts(), 1);
+    expect(await queue.pending, isEmpty);
+  });
+
   test(
     'loads a private curriculum page image with the child session',
     () async {
@@ -77,7 +324,7 @@ void main() {
           request.uri.path.endsWith('/tasks/$taskId/active-session')) {
         request.response
           ..statusCode = HttpStatus.ok
-          ..write(jsonEncode({'id': sessionId}));
+          ..write(jsonEncode({'id': sessionId, 'next_exercise_index': 1}));
       } else {
         request.response.statusCode = HttpStatus.notFound;
       }
@@ -98,9 +345,64 @@ void main() {
     await client.prepareTaskSession(tasks.single);
 
     expect(tasks.single['id'], taskId);
+    expect(client.activeNextExerciseIndex, 1);
     expect(requests, [
       'GET /households/00000000-0000-0000-0000-000000000001/tasks',
       'GET /households/00000000-0000-0000-0000-000000000001/tasks/$taskId/active-session',
+    ]);
+  });
+
+  test('skips an assigned task through an idempotent session completion', () async {
+    final requests = <String>[];
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    const taskId = '00000000-0000-0000-0000-000000000221';
+    const sessionId = '00000000-0000-0000-0000-000000000222';
+    final subscription = server.listen((request) async {
+      requests.add('${request.method} ${request.uri.path}');
+      request.response.headers.contentType = ContentType.json;
+      if (request.method == 'POST' &&
+          request.uri.path.endsWith('/tasks/$taskId/sessions')) {
+        expect(
+          request.headers.value('Idempotency-Key'),
+          'start-task-$taskId-v3',
+        );
+        request.response
+          ..statusCode = HttpStatus.created
+          ..write(jsonEncode({'id': sessionId}));
+      } else if (request.method == 'POST' &&
+          request.uri.path.endsWith('/sessions/$sessionId/completion')) {
+        expect(
+          request.headers.value('Idempotency-Key'),
+          'skip-task-$sessionId',
+        );
+        final body = jsonDecode(
+          utf8.decode(await request.expand((chunk) => chunk).toList()),
+        );
+        expect(body, {'outcome': 'skipped'});
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..write(jsonEncode({'outcome': 'skipped'}));
+      } else {
+        request.response.statusCode = HttpStatus.notFound;
+      }
+      await request.response.close();
+    });
+    addTearDown(() async {
+      await subscription.cancel();
+      await server.close(force: true);
+    });
+    final client = CaptureApiClient(
+      baseUrl: 'http://${server.address.host}:${server.port}',
+      householdId: '00000000-0000-0000-0000-000000000001',
+      childId: '00000000-0000-0000-0000-000000000101',
+      authorizationToken: 'test-session-token',
+    );
+
+    await client.skipTask({'id': taskId, 'status': 'assigned', 'version': 3});
+
+    expect(requests, [
+      'POST /households/00000000-0000-0000-0000-000000000001/tasks/$taskId/sessions',
+      'POST /households/00000000-0000-0000-0000-000000000001/sessions/$sessionId/completion',
     ]);
   });
 

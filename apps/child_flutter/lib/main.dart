@@ -12,10 +12,10 @@ import 'features/chinese/chinese_home_page.dart';
 import 'features/chinese/data/chinese_api_client.dart';
 import 'privacy_sanitization_preview.dart';
 import 'startup_transition.dart';
+import 'task_progress_store.dart';
 
-// Task recommendations remain available to parents but are not child-facing
-// until their execution flow can present the assigned exercise directly.
-const _todayTaskEntryVisible = false;
+// A child-facing task must carry its assigned exercise into the capture flow.
+const _todayTaskEntryVisible = true;
 
 typedef ChildrenLoader = Future<List<Map<String, dynamic>>> Function();
 typedef ChildLoginAction =
@@ -1115,12 +1115,14 @@ class LearningDeskScreen extends StatefulWidget {
     required this.curriculumVersion,
     this.username,
     this.captureClient,
+    this.taskProgressStore,
   });
 
   final String displayName;
   final String curriculumVersion;
   final String? username;
   final CaptureApiClient? captureClient;
+  final TaskProgressStore? taskProgressStore;
 
   @override
   State<LearningDeskScreen> createState() => _LearningDeskScreenState();
@@ -1137,18 +1139,63 @@ class _TaskSchedule {
 
 class _LearningDeskScreenState extends State<LearningDeskScreen> {
   late Future<_TaskSchedule> _tasks;
+  late Future<TaskProgressStore?> _taskProgressStore;
   bool _startingTask = false;
 
   @override
   void initState() {
     super.initState();
     _tasks = Future.value(const _TaskSchedule.empty());
+    _taskProgressStore = _openTaskProgressStore();
     if (_todayTaskEntryVisible) _tasks = _loadTasks();
+  }
+
+  Future<TaskProgressStore?> _openTaskProgressStore() async {
+    final injected = widget.taskProgressStore;
+    if (injected != null) return injected;
+    final client = widget.captureClient;
+    if (client == null) return null;
+    try {
+      return await SqliteTaskProgressStore.open(
+        scopeKey: client.taskProgressScopeKey,
+      );
+    } on Object {
+      // A preview/widget environment may not expose SQLite. The task remains
+      // usable; production devices retry persistence when the next task starts.
+      return null;
+    }
+  }
+
+  Future<TaskProgressStore?> _getTaskProgressStore() async {
+    try {
+      return await _taskProgressStore;
+    } on Object {
+      return null;
+    }
+  }
+
+  @override
+  void dispose() {
+    if (widget.taskProgressStore == null) {
+      unawaited(_closeTaskProgressStore());
+    }
+    super.dispose();
+  }
+
+  Future<void> _closeTaskProgressStore() async {
+    final store = await _getTaskProgressStore();
+    await store?.close();
   }
 
   Future<_TaskSchedule> _loadTasks() async {
     final client = widget.captureClient;
     if (client == null) return const _TaskSchedule.empty();
+    try {
+      await client.syncOfflineAttempts();
+    } on CaptureApiException {
+      // The task list remains the source of truth. A failed replay is kept in
+      // SQLite and will be retried on the next successful connection.
+    }
     final all = await client.listTasks();
     final today = DateTime.now().toIso8601String().substring(0, 10);
     final active = all
@@ -1200,16 +1247,29 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
     return username == null || username.isEmpty ? widget.displayName : username;
   }
 
-  Future<void> _openCaptureFlow() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (context) =>
-            CaptureInputScreen(captureClient: widget.captureClient),
+  Future<String?> _openCaptureFlow({
+    String? taskId,
+    Map<String, dynamic>? taskExercise,
+    int? taskExerciseIndex,
+    int? taskExerciseCount,
+    TaskProgressStore? taskProgressStore,
+  }) async {
+    final result = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
+        builder: (context) => CaptureInputScreen(
+          captureClient: widget.captureClient,
+          taskId: taskId,
+          taskExercise: taskExercise,
+          taskExerciseIndex: taskExerciseIndex,
+          taskExerciseCount: taskExerciseCount,
+          taskProgressStore: taskProgressStore,
+        ),
       ),
     );
     if (mounted && widget.captureClient != null && _todayTaskEntryVisible) {
       _reloadTasks();
     }
+    return result;
   }
 
   Future<void> _startTask(Map<String, dynamic> task) async {
@@ -1218,10 +1278,107 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
       _openPreviewLearning();
       return;
     }
+    final exercises = task['exercises'];
+    final exerciseList = exercises is List
+        ? exercises
+              .whereType<Map>()
+              .map(Map<String, dynamic>.from)
+              .toList(growable: false)
+        : const <Map<String, dynamic>>[];
+    if (exerciseList.isEmpty ||
+        exerciseList.any((exercise) {
+          final questionText = exercise['question_text']?.toString().trim();
+          return questionText == null || questionText.isEmpty;
+        })) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('这项任务的题目还在准备中，请稍后再试。'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
     setState(() => _startingTask = true);
     try {
+      final taskId = task['id']?.toString();
+      if (taskId == null || taskId.isEmpty) {
+        throw const CaptureApiException('任务编号缺失，请稍后重试。');
+      }
+      final progressStore = await _getTaskProgressStore();
+      try {
+        await client.syncOfflineAttempts();
+      } on CaptureApiException {
+        // Do not block a new online task because an older event is pending.
+      }
       await client.prepareTaskSession(task);
-      if (mounted) await _openCaptureFlow();
+      final sessionId = client.activeSessionId;
+      if (sessionId == null || sessionId.isEmpty) {
+        throw const CaptureApiException('任务会话尚未准备好，请稍后重试。');
+      }
+      var firstIndex = client.activeNextExerciseIndex ?? 0;
+      if (progressStore != null) {
+        final saved = await progressStore.load(taskId);
+        if (saved?.sessionId == sessionId) {
+          final savedIndex = saved!.nextExerciseIndex
+              .clamp(0, exerciseList.length)
+              .toInt();
+          firstIndex = savedIndex > firstIndex ? savedIndex : firstIndex;
+          if (firstIndex != saved.nextExerciseIndex) {
+            await progressStore.save(
+              taskId: taskId,
+              sessionId: sessionId,
+              nextExerciseIndex: firstIndex,
+            );
+          }
+        } else {
+          await progressStore.save(
+            taskId: taskId,
+            sessionId: sessionId,
+            nextExerciseIndex: firstIndex.clamp(0, exerciseList.length).toInt(),
+          );
+        }
+      }
+      if (firstIndex >= exerciseList.length) {
+        final sessionIdBeforeCompletion = client.activeSessionId;
+        final completion = await client.completeCurrentSession(
+          outcome: 'learned',
+        );
+        if (completion['offline_queued'] == true &&
+            sessionIdBeforeCompletion != null) {
+          await progressStore?.save(
+            taskId: taskId,
+            sessionId: sessionIdBeforeCompletion,
+            nextExerciseIndex: exerciseList.length,
+          );
+        } else {
+          await progressStore?.clear(taskId);
+        }
+        if (mounted) _reloadTasks();
+        return;
+      }
+      for (var index = firstIndex; index < exerciseList.length; index++) {
+        if (!mounted) return;
+        final outcome = await _openCaptureFlow(
+          taskId: taskId,
+          taskExercise: exerciseList[index],
+          taskExerciseIndex: index,
+          taskExerciseCount: exerciseList.length,
+          taskProgressStore: progressStore,
+        );
+        if (outcome != 'learned') break;
+        final nextIndex = index + 1;
+        if (nextIndex >= exerciseList.length) {
+          await progressStore?.clear(taskId);
+        } else {
+          await progressStore?.save(
+            taskId: taskId,
+            sessionId: sessionId,
+            nextExerciseIndex: nextIndex,
+          );
+        }
+      }
     } on CaptureApiException catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1236,13 +1393,40 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
     }
   }
 
-  void _showLaterMessage() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('已保留今天的任务，随时可以回来继续。'),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+  Future<void> _skipTask(Map<String, dynamic> task) async {
+    final client = widget.captureClient;
+    if (client == null) return;
+    setState(() => _startingTask = true);
+    try {
+      await client.skipTask(task);
+      final taskId = task['id']?.toString();
+      if (taskId != null && taskId.isNotEmpty) {
+        await (await _getTaskProgressStore())?.clear(taskId);
+      }
+      if (!mounted) return;
+      _reloadTasks();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            client.lastTaskActionQueuedOffline
+                ? '已保存在本机，联网后会同步跳过这项任务。'
+                : '已跳过今天的任务，之后可以从家长安排中重新开始。',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } on CaptureApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.message),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _startingTask = false);
+    }
   }
 
   @override
@@ -1269,15 +1453,6 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
                     if (_todayTaskEntryVisible) ...[
                       SizedBox(height: compact ? 18 : 24),
                       _buildTaskArea(compact),
-                      const SizedBox(height: 16),
-                      TextButton(
-                        onPressed: _showLaterMessage,
-                        style: TextButton.styleFrom(foregroundColor: _coral),
-                        child: const Text(
-                          '稍后再做',
-                          style: TextStyle(fontSize: 16),
-                        ),
-                      ),
                     ],
                   ],
                 ),
@@ -1430,14 +1605,7 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
             onPressed: _openCaptureFlow,
           );
         }
-        return Column(
-          children: [
-            for (var index = 0; index < schedule.ready.length; index++) ...[
-              if (index > 0) const SizedBox(height: 16),
-              _buildTaskSurface(compact, schedule.ready[index]),
-            ],
-          ],
-        );
+        return _buildTaskSurface(compact, schedule.ready.first);
       },
     );
   }
@@ -1535,7 +1703,7 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
         children: [
           _buildTaskDetails(task),
           const SizedBox(height: 28),
-          _buildActions(task),
+          _buildActions(task, compact: true),
         ],
       );
     }
@@ -1545,7 +1713,7 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
         const SizedBox(height: 24),
         _buildTaskDetails(task),
         const SizedBox(height: 28),
-        _buildActions(task),
+        _buildActions(task, compact: true),
       ],
     );
   }
@@ -1628,43 +1796,62 @@ class _LearningDeskScreenState extends State<LearningDeskScreen> {
     );
   }
 
-  Widget _buildActions(Map<String, dynamic>? task) {
+  Widget _buildActions(Map<String, dynamic>? task, {bool compact = false}) {
+    final primary = FilledButton(
+      onPressed: _startingTask
+          ? null
+          : () => task == null ? _openPreviewLearning() : _startTask(task),
+      style: _filledButtonStyle(),
+      child: Text(_startingTask ? '正在准备……' : (task == null ? '继续学习' : '开始任务')),
+    );
+    final camera = OutlinedButton.icon(
+      onPressed: _startingTask ? null : _openCaptureFlow,
+      icon: const Icon(Icons.camera_alt_outlined, size: 28),
+      label: const Text('拍题'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: _mint,
+        side: const BorderSide(color: _mint, width: 1.5),
+        minimumSize: const Size.fromHeight(72),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        textStyle: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+      ),
+    );
+    final skip = TextButton.icon(
+      onPressed: _startingTask ? null : () => _skipTask(task!),
+      icon: const Icon(Icons.schedule_outlined),
+      label: const Text('稍后再做'),
+      style: TextButton.styleFrom(
+        foregroundColor: _coral,
+        minimumSize: const Size.fromHeight(72),
+        textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+      ),
+    );
+    if (compact) {
+      return Column(
+        children: [
+          SizedBox(width: double.infinity, child: primary),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              if (task != null) ...[
+                Expanded(child: skip),
+                const SizedBox(width: 12),
+              ],
+              Expanded(child: camera),
+            ],
+          ),
+        ],
+      );
+    }
     return Row(
       children: [
-        Expanded(
-          flex: 5,
-          child: FilledButton(
-            onPressed: _startingTask
-                ? null
-                : () =>
-                      task == null ? _openPreviewLearning() : _startTask(task),
-            style: _filledButtonStyle(),
-            child: Text(
-              _startingTask ? '正在准备……' : (task == null ? '继续学习' : '开始任务'),
-            ),
-          ),
-        ),
-        const SizedBox(width: 24),
-        Expanded(
-          flex: 2,
-          child: OutlinedButton.icon(
-            onPressed: _startingTask ? null : _openCaptureFlow,
-            icon: const Icon(Icons.camera_alt_outlined, size: 28),
-            label: const Text('拍题'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _mint,
-              side: const BorderSide(color: _mint, width: 1.5),
-              minimumSize: const Size.fromHeight(72),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(22),
-              ),
-              textStyle: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ),
+        Expanded(flex: 5, child: primary),
+        if (task != null) ...[
+          const SizedBox(width: 16),
+          Expanded(flex: 2, child: skip),
+        ],
+        const SizedBox(width: 16),
+        Expanded(flex: 2, child: camera),
       ],
     );
   }
@@ -2045,10 +2232,90 @@ class _DueMistakesScreenState extends State<DueMistakesScreen> {
   }
 }
 
+class _TaskPromptBanner extends StatelessWidget {
+  const _TaskPromptBanner({
+    required this.exercise,
+    this.exerciseIndex,
+    this.exerciseCount,
+  });
+
+  final Map<String, dynamic> exercise;
+  final int? exerciseIndex;
+  final int? exerciseCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final sourceTitle = exercise['source_title']?.toString().trim();
+    final sourcePage = exercise['source_page'];
+    final source = [
+      if (sourceTitle != null && sourceTitle.isNotEmpty) sourceTitle,
+      if (sourcePage is num) '第 ${sourcePage.toInt()} 页',
+    ].join(' · ');
+    final progress =
+        exerciseIndex != null && exerciseCount != null && exerciseCount! > 1
+        ? '第 ${exerciseIndex! + 1} 题，共 $exerciseCount 题'
+        : null;
+    final question = exercise['question_text']?.toString().trim();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _lightMint,
+        border: Border.all(color: _mint),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            [
+              ?progress,
+              source.isEmpty ? '本次任务题目' : '本次任务题目 · $source',
+            ].join(' · '),
+            style: const TextStyle(
+              color: _mint,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            question == null || question.isEmpty ? '题目内容暂不可用' : question,
+            style: const TextStyle(
+              color: _deepGreen,
+              fontSize: 20,
+              height: 1.4,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            '请拍这道题的作答区域，确认识别结果后再开始讲解。',
+            style: TextStyle(color: _muted, fontSize: 14, height: 1.35),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class CaptureInputScreen extends StatefulWidget {
-  const CaptureInputScreen({super.key, this.captureClient});
+  const CaptureInputScreen({
+    super.key,
+    this.captureClient,
+    this.taskId,
+    this.taskExercise,
+    this.taskExerciseIndex,
+    this.taskExerciseCount,
+    this.taskProgressStore,
+  });
 
   final CaptureApiClient? captureClient;
+  final String? taskId;
+  final Map<String, dynamic>? taskExercise;
+  final int? taskExerciseIndex;
+  final int? taskExerciseCount;
+  final TaskProgressStore? taskProgressStore;
 
   @override
   State<CaptureInputScreen> createState() => _CaptureInputScreenState();
@@ -2076,25 +2343,39 @@ class _CaptureInputScreenState extends State<CaptureInputScreen> {
           );
       if (!mounted || sanitized == null) return;
       final sanitization = _sanitizationMetadata(sanitized);
+      String? result;
       if (widget.captureClient == null) {
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(
+        result = await Navigator.of(context).push<String>(
+          MaterialPageRoute<String>(
             builder: (context) => OcrConfirmationScreen(
               imageBytes: sanitized.bytes,
               sanitization: sanitization,
+              taskId: widget.taskId,
+              taskExercise: widget.taskExercise,
+              taskExerciseIndex: widget.taskExerciseIndex,
+              taskExerciseCount: widget.taskExerciseCount,
+              taskProgressStore: widget.taskProgressStore,
             ),
           ),
         );
       } else if (mounted) {
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(
+        result = await Navigator.of(context).push<String>(
+          MaterialPageRoute<String>(
             builder: (context) => CaptureUploadProgressScreen(
               imageBytes: sanitized.bytes,
               sanitization: sanitization,
               captureClient: widget.captureClient!,
+              taskId: widget.taskId,
+              taskExercise: widget.taskExercise,
+              taskExerciseIndex: widget.taskExerciseIndex,
+              taskExerciseCount: widget.taskExerciseCount,
+              taskProgressStore: widget.taskProgressStore,
             ),
           ),
         );
+      }
+      if (mounted && result != null) {
+        Navigator.of(context).pop(result);
       }
     } on PlatformException {
       if (!mounted) return;
@@ -2151,6 +2432,14 @@ class _CaptureInputScreenState extends State<CaptureInputScreen> {
                     style: TextStyle(color: _muted, fontSize: 18),
                     textAlign: TextAlign.center,
                   ),
+                  if (widget.taskExercise != null) ...[
+                    const SizedBox(height: 18),
+                    _TaskPromptBanner(
+                      exercise: widget.taskExercise!,
+                      exerciseIndex: widget.taskExerciseIndex,
+                      exerciseCount: widget.taskExerciseCount,
+                    ),
+                  ],
                   SizedBox(height: compact ? 30 : 48),
                   ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 720),
@@ -2182,12 +2471,26 @@ class _CaptureInputScreenState extends State<CaptureInputScreen> {
                   TextButton(
                     onPressed: _isPicking
                         ? null
-                        : () => Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (context) =>
-                                  const OcrConfirmationScreen(),
-                            ),
-                          ),
+                        : () async {
+                            final result = await Navigator.of(context)
+                                .push<String>(
+                                  MaterialPageRoute<String>(
+                                    builder: (context) => OcrConfirmationScreen(
+                                      taskId: widget.taskId,
+                                      taskExercise: widget.taskExercise,
+                                      taskExerciseIndex:
+                                          widget.taskExerciseIndex,
+                                      taskExerciseCount:
+                                          widget.taskExerciseCount,
+                                      taskProgressStore:
+                                          widget.taskProgressStore,
+                                    ),
+                                  ),
+                                );
+                            if (context.mounted && result != null) {
+                              Navigator.of(context).pop(result);
+                            }
+                          },
                     style: TextButton.styleFrom(
                       foregroundColor: _deepGreen,
                       textStyle: const TextStyle(fontSize: 17),
@@ -2253,16 +2556,49 @@ class _PictureWritingCaptureScreenState
         SnackBar(
           content: Text(error.message),
           behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(
+            label: '从观察问题开始',
+            onPressed: _openFallbackGuide,
+          ),
         ),
       );
     } on PlatformException {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('暂时无法打开图片入口，请稍后再试。')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('暂时无法打开图片入口，请稍后再试。'),
+          action: SnackBarAction(
+            label: '从观察问题开始',
+            onPressed: _openFallbackGuide,
+          ),
+        ),
+      );
+    } on Exception {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('看图提示暂时不可用，请稍后重试。'),
+          behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(
+            label: '从观察问题开始',
+            onPressed: _openFallbackGuide,
+          ),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _picking = false);
     }
+  }
+
+  void _openFallbackGuide() {
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PictureWritingGuideScreen(
+          guideRecord: pictureWritingFallbackGuideRecord(),
+        ),
+      ),
+    );
   }
 
   @override
@@ -2350,6 +2686,20 @@ class _PictureWritingGuideScreenState extends State<PictureWritingGuideScreen> {
     return (guide[key] as List<dynamic>? ?? const <dynamic>[])
         .map((value) => value.toString())
         .toList(growable: false);
+  }
+
+  void _advance() {
+    if (_step == 1 && _sentence.text.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('先写一句，再进入下一步。')));
+      return;
+    }
+    if (_step == 2) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() => _step++);
   }
 
   @override
@@ -2445,9 +2795,7 @@ class _PictureWritingGuideScreenState extends State<PictureWritingGuideScreen> {
                 ),
               const Spacer(),
               FilledButton(
-                onPressed: _step == 2
-                    ? () => Navigator.of(context).pop()
-                    : () => setState(() => _step++),
+                onPressed: _advance,
                 child: Text(_step == 2 ? '完成' : '下一步'),
               ),
             ],
@@ -2457,6 +2805,22 @@ class _PictureWritingGuideScreenState extends State<PictureWritingGuideScreen> {
     );
   }
 }
+
+Map<String, dynamic> pictureWritingFallbackGuideRecord() => {
+  'schema_version': 'picture-writing-guide.v1',
+  'source': 'local-observation-prompts',
+  'needs_confirmation': true,
+  'guide': {
+    'scene_observations': <String>[
+      '先找一找画面里的人、动物或物品。',
+      '再看看它们在哪里，正在做什么。',
+      '最后注意颜色、大小和前后顺序。',
+    ],
+    'focus_questions': <String>['谁在做什么？', '事情发生在哪里？', '接下来可能发生什么？'],
+    'sentence_starters': <String>['早上，', '在……的时候，', '我看到……'],
+    'detail_prompts': <String>['补充一个动作或声音。', '补充一个地点或时间。'],
+  },
+};
 
 Map<String, dynamic> _sanitizationMetadata(SanitizedImageSelection selection) =>
     {
@@ -2480,12 +2844,22 @@ class CaptureUploadProgressScreen extends StatefulWidget {
     required this.imageBytes,
     required this.sanitization,
     required this.captureClient,
+    this.taskId,
+    this.taskExercise,
+    this.taskExerciseIndex,
+    this.taskExerciseCount,
+    this.taskProgressStore,
     this.uploadAction,
   });
 
   final Uint8List imageBytes;
   final Map<String, dynamic> sanitization;
   final CaptureApiClient captureClient;
+  final String? taskId;
+  final Map<String, dynamic>? taskExercise;
+  final int? taskExerciseIndex;
+  final int? taskExerciseCount;
+  final TaskProgressStore? taskProgressStore;
   final CaptureUploadAction? uploadAction;
 
   @override
@@ -2515,16 +2889,22 @@ class _CaptureUploadProgressScreenState
                 sanitization: widget.sanitization,
               ))();
       if (!mounted) return;
-      await Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
+      final result = await Navigator.of(context).push<String>(
+        MaterialPageRoute<String>(
           builder: (_) => OcrConfirmationScreen(
             imageBytes: widget.imageBytes,
             uploadReceipt: receipt,
             sanitization: widget.sanitization,
             captureClient: widget.captureClient,
+            taskId: widget.taskId,
+            taskExercise: widget.taskExercise,
+            taskExerciseIndex: widget.taskExerciseIndex,
+            taskExerciseCount: widget.taskExerciseCount,
+            taskProgressStore: widget.taskProgressStore,
           ),
         ),
       );
+      if (mounted) Navigator.of(context).pop(result);
     } on CaptureApiException catch (error) {
       if (!mounted) return;
       setState(() {
@@ -2649,6 +3029,10 @@ class TutorHintScreen extends StatefulWidget {
     this.captureClient,
     this.answerState = 'unclear',
     this.evidenceConfirmed = false,
+    this.taskId,
+    this.taskExerciseIndex,
+    this.taskExerciseCount,
+    this.taskProgressStore,
   });
 
   final String displayName;
@@ -2657,6 +3041,10 @@ class TutorHintScreen extends StatefulWidget {
   final CaptureApiClient? captureClient;
   final String answerState;
   final bool evidenceConfirmed;
+  final String? taskId;
+  final int? taskExerciseIndex;
+  final int? taskExerciseCount;
+  final TaskProgressStore? taskProgressStore;
 
   @override
   State<TutorHintScreen> createState() => _TutorHintScreenState();
@@ -2678,6 +3066,13 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
   String? _completionMessage;
   late final String _answerState;
   late final bool _evidenceConfirmed;
+
+  bool get _isTaskExercise =>
+      widget.taskExerciseIndex != null && widget.taskExerciseCount != null;
+
+  bool get _isFinalTaskExercise =>
+      !_isTaskExercise ||
+      widget.taskExerciseIndex! >= widget.taskExerciseCount! - 1;
 
   @override
   void initState() {
@@ -2761,6 +3156,10 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
     }
     final client = widget.captureClient;
     if (client == null) {
+      if (_isTaskExercise) {
+        Navigator.of(context).pop(outcome);
+        return;
+      }
       setState(() {
         _completed = true;
         _completionMessage = outcome == 'needs_review' ? '已加入复习清单。' : '本题已完成。';
@@ -2772,15 +3171,57 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
       _hintError = null;
     });
     try {
+      var attemptOfflineQueued = false;
       if (_answerState != 'unclear') {
-        await client.recordAttempt(
+        final attempt = await client.recordAttempt(
           answerSummary: '孩子已确认本题作答状态',
           answerState: _answerState,
           evidenceConfirmed: _evidenceConfirmed,
+          nextExerciseIndex: _isTaskExercise
+              ? widget.taskExerciseIndex! + 1
+              : null,
         );
+        attemptOfflineQueued = attempt['offline_queued'] == true;
       }
-      await client.completeCurrentSession(outcome: outcome);
+      if (_isTaskExercise && outcome == 'learned' && !_isFinalTaskExercise) {
+        client.prepareNextTaskExercise();
+        final taskId = widget.taskId;
+        final sessionId = client.activeSessionId;
+        final nextIndex = widget.taskExerciseIndex! + 1;
+        if (taskId != null && sessionId != null) {
+          await widget.taskProgressStore?.save(
+            taskId: taskId,
+            sessionId: sessionId,
+            nextExerciseIndex: nextIndex,
+          );
+        }
+        if (!mounted) return;
+        Navigator.of(context).pop('learned');
+        return;
+      }
+      final sessionIdBeforeCompletion = client.activeSessionId;
+      final completed = await client.completeCurrentSession(outcome: outcome);
+      final offlineQueued =
+          attemptOfflineQueued || completed['offline_queued'] == true;
+      if (widget.taskId != null) {
+        if (offlineQueued &&
+            _isFinalTaskExercise &&
+            sessionIdBeforeCompletion != null &&
+            widget.taskExerciseCount != null) {
+          await widget.taskProgressStore?.save(
+            taskId: widget.taskId!,
+            sessionId: sessionIdBeforeCompletion,
+            nextExerciseIndex: widget.taskExerciseCount!,
+          );
+        } else {
+          await widget.taskProgressStore?.clear(widget.taskId!);
+        }
+      }
       if (!mounted) return;
+      if (_isTaskExercise) {
+        Navigator.of(context).pop(outcome);
+        return;
+      }
       if (outcome == 'needs_review') {
         _returnToLearningDesk();
         return;
@@ -2788,7 +3229,9 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
       setState(() {
         _completionSaving = false;
         _completed = true;
-        _completionMessage = outcome == 'needs_review'
+        _completionMessage = offlineQueued
+            ? '已保存在本机，联网后会同步完成这次学习。'
+            : outcome == 'needs_review'
             ? '已完成本题，并加入复习清单。'
             : '本题已完成，家长端会看到这次进度。';
       });
@@ -3409,6 +3852,11 @@ class OcrConfirmationScreen extends StatefulWidget {
     this.uploadReceipt,
     this.sanitization,
     this.captureClient,
+    this.taskId,
+    this.taskExercise,
+    this.taskExerciseIndex,
+    this.taskExerciseCount,
+    this.taskProgressStore,
   });
 
   final String? imagePath;
@@ -3416,6 +3864,11 @@ class OcrConfirmationScreen extends StatefulWidget {
   final CaptureUploadReceipt? uploadReceipt;
   final Map<String, dynamic>? sanitization;
   final CaptureApiClient? captureClient;
+  final String? taskId;
+  final Map<String, dynamic>? taskExercise;
+  final int? taskExerciseIndex;
+  final int? taskExerciseCount;
+  final TaskProgressStore? taskProgressStore;
 
   @override
   State<OcrConfirmationScreen> createState() => _OcrConfirmationScreenState();
@@ -3634,7 +4087,7 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
 
   Future<void> _confirmText() async {
     if (_confirmed) {
-      _startTutor();
+      await _startTutor();
       return;
     }
     final receipt = _receipt;
@@ -3745,7 +4198,7 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
     );
   }
 
-  void _startTutor() {
+  Future<void> _startTutor() async {
     final verifiedQuestionId = _verifiedQuestion?['id']?.toString();
     if (_receipt != null &&
         (verifiedQuestionId == null || verifiedQuestionId.isEmpty)) {
@@ -3757,8 +4210,8 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
       );
       return;
     }
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
+    final result = await Navigator.of(context).push<String>(
+      MaterialPageRoute<String>(
         builder: (context) => TutorHintScreen(
           displayName:
               widget.captureClient?.accountUsername?.trim().isNotEmpty == true
@@ -3770,9 +4223,16 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
           answerState:
               _verifiedQuestion?['answer_state']?.toString() ?? _answerState,
           evidenceConfirmed: _verifiedQuestion?['evidence_confirmed'] == true,
+          taskId: widget.taskId,
+          taskExerciseIndex: widget.taskExerciseIndex,
+          taskExerciseCount: widget.taskExerciseCount,
+          taskProgressStore: widget.taskProgressStore,
         ),
       ),
     );
+    if (mounted && result != null) {
+      Navigator.of(context).pop(result);
+    }
   }
 
   Future<void> _retryRecognition() async {
@@ -4007,6 +4467,14 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('先确认题目', style: _titleStyle(40)),
+        if (widget.taskExercise != null) ...[
+          const SizedBox(height: 14),
+          _TaskPromptBanner(
+            exercise: widget.taskExercise!,
+            exerciseIndex: widget.taskExerciseIndex,
+            exerciseCount: widget.taskExerciseCount,
+          ),
+        ],
         const SizedBox(height: 12),
         Text(
           _remotePending

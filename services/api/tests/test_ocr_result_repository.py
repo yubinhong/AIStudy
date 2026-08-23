@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -59,6 +59,10 @@ def _headers(
     return session_headers(client, role=role, child_id=child_id)
 
 
+def _past_date() -> date:
+    return date(2020, 1, 1) + timedelta(days=uuid4().int % 2000)
+
+
 def _capture(client: TestClient) -> UUID:
     task = client.post(
         f"/households/{HOUSEHOLD_A}/tasks",
@@ -67,7 +71,7 @@ def _capture(client: TestClient) -> UUID:
             "child_id": str(CHILD_A),
             "title": "OCR persistence task",
             "subject": "math",
-            "scheduled_for": date(2026, 7, 13).isoformat(),
+            "scheduled_for": _past_date().isoformat(),
         },
     )
     assert task.status_code == 201

@@ -1,9 +1,11 @@
 from concurrent.futures import ThreadPoolExecutor
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
+from postgres_helpers import create_test_parent, delete_test_parent
 from sqlalchemy import delete, select
 
+from study_api.auth_domain import PostgresAccountRepository
 from study_api.domain.insights_repository import PostgresInsightsRepository
 from study_api.domain.models import CreateChildRequest, Subject
 from study_api.domain.sql_profile_repository import PostgresProfileRepository
@@ -18,15 +20,17 @@ from study_api.english_practice import (
 )
 
 pytestmark = pytest.mark.integration
-HOUSEHOLD_A = UUID("00000000-0000-0000-0000-000000000001")
 
 
 def test_postgres_english_settings_session_export_and_child_cascade() -> None:
     profiles = PostgresProfileRepository()
     english = PostgresEnglishPracticeRepository(engine=profiles.engine)
     insights = PostgresInsightsRepository()
+    accounts = PostgresAccountRepository()
+    household_id = uuid4()
+    owner = create_test_parent(accounts, household_id)
     child, _ = profiles.create_child(
-        HOUSEHOLD_A,
+        household_id,
         CreateChildRequest(
             display_name="Synthetic English child",
             grade=3,
@@ -34,12 +38,13 @@ def test_postgres_english_settings_session_export_and_child_cascade() -> None:
             subjects=[Subject.MATH],
         ),
         f"pg-english-child-{uuid4()}",
+        owner_account_id=owner.id,
     )
     config = EnglishLiveConfig(enabled=True, provider="fake", allow_test_provider=True)
     provider = FakeEnglishLiveProvider()
     try:
         settings, replayed = english.update_settings(
-            HOUSEHOLD_A,
+            household_id,
             child.id,
             child.owner_account_id,
             UpdateEnglishPracticeSettings(
@@ -53,7 +58,7 @@ def test_postgres_english_settings_session_export_and_child_cascade() -> None:
         assert replayed is False
         assert settings.version == 1
         session, _ = english.start_session(
-            HOUSEHOLD_A,
+            household_id,
             child.id,
             "greetings",
             config,
@@ -63,7 +68,7 @@ def test_postgres_english_settings_session_export_and_child_cascade() -> None:
         english.record_audio(session.id, input_ms=20, output_ms=40)
         english.record_turn(session.id)
         completed, _ = english.complete_session(
-            HOUSEHOLD_A,
+            household_id,
             child.id,
             session.id,
             EnglishSessionStatus.COMPLETED,
@@ -73,7 +78,7 @@ def test_postgres_english_settings_session_export_and_child_cascade() -> None:
         assert completed.output_audio_ms == 40
         assert completed.turn_count == 1
 
-        export, _ = insights.export_child(HOUSEHOLD_A, child.id, f"pg-english-export-{uuid4()}")
+        export, _ = insights.export_child(household_id, child.id, f"pg-english-export-{uuid4()}")
         assert export.english_practice_settings is not None
         assert export.english_practice_settings.level is EnglishLevel.A1
         assert len(export.english_practice_sessions) == 1
@@ -85,9 +90,7 @@ def test_postgres_english_settings_session_export_and_child_cascade() -> None:
                 )
             )
             connection.execute(
-                delete(profiles._idempotency).where(
-                    profiles._idempotency.c.resource_id.in_([child.id, export.id])
-                )
+                delete(profiles._idempotency).where(profiles._idempotency.c.resource_id == child.id)
             )
             connection.execute(
                 delete(profiles._children).where(profiles._children.c.id == child.id)
@@ -105,15 +108,30 @@ def test_postgres_english_settings_session_export_and_child_cascade() -> None:
                 is None
             )
     finally:
+        with profiles.engine.begin() as connection:
+            connection.execute(
+                delete(profiles._idempotency).where(
+                    profiles._idempotency.c.operation == f"export_child:{child.id}"
+                )
+            )
+            connection.execute(
+                delete(profiles._children).where(profiles._children.c.id == child.id)
+            )
+        delete_test_parent(accounts, owner.id)
         insights.close()
+        english.close()
         profiles.close()
+        accounts.close()
 
 
 def test_postgres_enforces_one_active_english_session_under_concurrency() -> None:
     profiles = PostgresProfileRepository()
     english = PostgresEnglishPracticeRepository(engine=profiles.engine)
+    accounts = PostgresAccountRepository()
+    household_id = uuid4()
+    owner = create_test_parent(accounts, household_id)
     child, _ = profiles.create_child(
-        HOUSEHOLD_A,
+        household_id,
         CreateChildRequest(
             display_name="Synthetic concurrent English child",
             grade=4,
@@ -121,11 +139,12 @@ def test_postgres_enforces_one_active_english_session_under_concurrency() -> Non
             subjects=[Subject.MATH],
         ),
         f"pg-english-concurrent-child-{uuid4()}",
+        owner_account_id=owner.id,
     )
     config = EnglishLiveConfig(enabled=True, provider="fake", allow_test_provider=True)
     provider = FakeEnglishLiveProvider()
     english.update_settings(
-        HOUSEHOLD_A,
+        household_id,
         child.id,
         child.owner_account_id,
         UpdateEnglishPracticeSettings(
@@ -141,7 +160,7 @@ def test_postgres_enforces_one_active_english_session_under_concurrency() -> Non
         repository = PostgresEnglishPracticeRepository()
         try:
             session, _ = repository.start_session(
-                HOUSEHOLD_A,
+                household_id,
                 child.id,
                 "school",
                 config,
@@ -177,4 +196,7 @@ def test_postgres_enforces_one_active_english_session_under_concurrency() -> Non
             connection.execute(
                 delete(profiles._children).where(profiles._children.c.id == child.id)
             )
+        delete_test_parent(accounts, owner.id)
         profiles.close()
+        english.close()
+        accounts.close()

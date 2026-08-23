@@ -117,6 +117,8 @@ PLAN-0013 的目标聚合不改变上述认证边界：家长通过一个带幂�
 5. 重连后客户端按顺序提交，写接口携带 `idempotency-key`；Attempt/AuditEvent 追加写，任务状态使用服务端版本号检测/合并冲突。
 6. API 返回逐项结果；失败项保留可重试和用户可理解状态，不静默丢弃或用最后写入覆盖历史。
 
+任务约束补充（本地 `0.17.0` / `0036_task_session_progress`）：`StudySession.next_exercise_index` 是服务端跨设备恢复事实，Attempt 只能按单步、不可回退地推进；孩子端只在本机 SQLite 保存同一范围的辅助位置并取两者较大值。任务创建按 Household/Child/日期加事务锁限制每天 3 个非撤销任务；未来日期只能只读，过期日期可补做。家长撤销将 Task 和活动 Session 置为 `revoked`，后续 Attempt/完成拒绝，撤销释放该日期名额。Ubuntu 尚未部署这轮变更。
+
 - 信任边界：账号输入、会话值、客户端时间、离线事件和幂等键均不可信，服务端必须验证会话、家庭、角色、孩子绑定、Schema 和版本。
 - 一致性：学习事实追加写；派生状态可重算；任务状态使用显式版本/冲突策略。
 - 失败处理：局部失败不清空队列；认证失效要求家长恢复；永久 Schema 错误进入可诊断失败状态。
@@ -189,7 +191,7 @@ PLAN-0013 的目标聚合不改变上述认证边界：家长通过一个带幂�
 | 同步事件批次 | Flutter | API | `packages/contracts/schemas` | 每事件有 ID/版本/幂等键；追加新事件类型 | `TBD` |
 | AuditEvent | 所有服务端模块 | 审计/可观测性 | `packages/contracts/schemas` | 稳定事件名；字段按敏感级别控制 | `TBD` |
 
-契约目录和结构检查已建立；SDK 生成器和自动兼容检查命令仍未固定。本地与 Ubuntu `0.14.0` 已在既有数学/英语合同上增加 subject-aware 教材、语文内容/Attempt 和导出字段，迁移头为 `0031_multisubject_chinese`。图片上传继续保持单一 Session 流式操作。
+契约目录和结构检查已建立；SDK 生成器和自动兼容检查命令仍未固定。本地 `0.17.0` / `0036_task_session_progress` 在既有数学/英语合同上增加服务端任务位置、容量/未来日期/撤销保护；Ubuntu 仍为 `0.16.0` / `0035_chinese_poem_skill`。本地与 Ubuntu 已在既有合同上增加 subject-aware 教材、语文内容/Attempt、古诗抽查和看图写话独立入口。数学任务的确认作答和终态事件由端侧 SQLite 按范围隔离并在联网后有序重放；图片上传继续保持单一 Session 流式操作。
 
 ## 6. 数据架构
 

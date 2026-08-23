@@ -2,11 +2,40 @@
 
 ## 当前任务元数据
 
-- 状态：`IN_PROGRESS（PLAN-0031 登录态浏览器 E2E、语文 PostgreSQL 并发/导出集成都完成；正式内容和设备验收继续）`
+- 状态：`IN_PROGRESS（数学/语文本地可用闭环与 PostgreSQL 集成已补齐；正式内容、真实 Provider 和设备验收继续）`
 - 类型：`FEATURE / AUTH / BROWSER E2E / CHILD UI`
 - 优先级：`P0`
 - Owner：Codex（执行）；项目 Owner（2026-08-15 明确要求先多学科、再语文、英语最后）
 - 关联：`PLAN-0031`、`PLAN-0030`、`PLAN-0007`、`ADR-0017`、`ADR-0027`、`docs/deep-research-report.md`
+
+## 2026-08-22 继续实现记录
+
+- [x] 修复 PostgreSQL 集成测试夹具：每个测试创建随机 Household、真实 Parent/Child Owner 外键并在子数据清理后删除，完整集成矩阵 `30 passed`。
+- [x] 语文确定性 scorer 为拼音、生字、词语、句子、阅读、背诵、表达、古诗八类技能补齐 golden 覆盖；失败选择题返回正确答案，待审核原创内容不会进入孩子题库。
+- [x] 数学恢复“今日任务”孩子入口；启动前要求每道任务题都有指定题干，并按顺序把题干/教材来源带入拍题与题目确认页；空题任务明确阻断，不退化成通用拍题。
+- [x] 数学多题任务在同一会话内逐题执行：中间题追加 Attempt 并保留会话，最后一题才关闭任务；返回或加入复习会停止当前任务序列。
+- [x] 数学今日任务的“稍后再做”改为幂等服务端 `skipped` 完成，会话/任务状态和孩子端任务队列同步刷新。
+- [ ] 正式教研/版权具名签核、真实 Provider/PDF 质量与成本评测、Ubuntu 真实账号浏览器和相机/相册/弱网/重启等设备 E2E 仍未执行；本轮按约定未连接手机或平板。
+
+## 2026-08-23 继续实现记录
+
+- [x] 数学今日任务增加端侧 SQLite 题号记录；同一服务端/家庭/孩子范围内，进程退出后重新进入任务会从上次未完成的题继续，且不保存题目图片、答案或 Session Token。
+- [x] 数学已确认作答在网络不可用时写入端侧 SQLite 结构化队列；恢复联网后按最多 50 条批次调用既有 `/sync-batches`，服务端按事件幂等处理并只确认已返回的事件。
+- [x] 数学任务完成、复习收口和“稍后再做”在断网时也写入同一结构化队列；联网后先同步 Attempt，再按顺序重放完成/跳过，幂等键保持不变。
+- [x] 服务端拒绝同一任务的第二个活动会话和已结束任务的再次启动；孩子端可在另一台设备通过活动会话继续任务。
+- [x] `0036_task_session_progress` 将会话的下一题号保存到 PostgreSQL；Attempt/离线同步只能单步推进，Flutter 启动任务时取服务端与本机位置的较大值，支持另一台设备继续。
+- [x] 服务端限制每个孩子每天最多 3 个非撤销任务；未来日期任务提前开始返回明确冲突，过期任务仍可补做；家长可幂等撤销任务，活动会话变为 `revoked` 且后续 Attempt/完成被拒绝，撤销会释放当天名额。
+- [x] 语文首页固定为“古诗抽查”和“看图写话”两项；无已审核古诗时仍显示入口和原因，不再展示旧的字词/句子/阅读入口说明。
+- [x] Flutter 全量回归增至 `68 passed`，包含 SQLite 任务位置跨进程重开、服务端位置优先、离线作答/完成/跳过入队与重放、任务恢复和空古诗题库入口。
+- [ ] 正式教研/版权签核、真实 Provider/PDF 评测、Ubuntu 真实账号浏览器和真机 E2E 留待后续；本轮未连接手机或平板。`0.17.0/0036` 已部署 Ubuntu，并已提交、推送和创建 tag `v0.17.0`。
+
+## 2026-08-23 本地闭环收口记录
+
+- [x] 家长 Web 教材页对数学和语文统一提供“重新理解”“批准知识图谱”和“审核发布”；语文上传/发布提示明确教材分析 v2 和批准后自动开放古诗抽查，不再把语文误显示为未接入分析。
+- [x] 看图写话第 2 步没有第一句时不能进入补细节；Provider、网络或图片入口失败时提供不包含图片判断的通用观察问题降级，不复用数学题目提取链路。
+- [x] 增加 API 回归：批准语文知识图谱后，已提取的相邻诗句会自动生成孩子端选择题；Web 审核动作和看图写话边界均有单元/Widget 覆盖。
+- [x] 本地质量门槛：API 非集成 `244 passed, 32 deselected`，PostgreSQL 集成 `32 passed`，Flutter `70 passed`，Web `35 passed`；Ruff、Mypy（62 files）、OpenAPI `0.17.0`/67 paths、Alembic `0036` 和 `git diff --check` 通过。
+- [ ] 正式教研/版权签核、真实 Provider/PDF 质量与成本评测、Ubuntu 真实账号浏览器、Nova 9/iPad/Windows/iPhone 设备 E2E 仍未执行；`0.17.0/0036` 已部署 Ubuntu，并已提交、推送和创建 tag `v0.17.0`。
 
 ## 当前目标与验收
 
@@ -15,14 +44,15 @@
 - [x] 语文内容保存 grade/skill/task group/revision/source/license；孩子响应不包含服务端 `AnswerSpec`。
 - [x] `exact_choice`、`ordered_tokens`、`normalized_text_set`、`concept_evidence` 使用 `chinese-score.v1` 确定性评分，不调用 Provider；提交幂等且追加 Attempt/更新 Review。
 - [x] Household/Owner/绑定孩子/已启用学科反向授权；只有绑定孩子可提交，家长只读内容并控制学科开关。
-- [x] Flutter 按档案学科显示语文入口并支持句子排序、阅读回答/依据提交；英语仍排最后且保持原禁用门禁。
-- [x] 家长 Web 可逐孩子启用语文、按学科上传教材；语文 subject-aware 教材分析未实现前明确阻断旧数学 Prompt。
+- [x] Flutter 按档案学科显示语文入口；孩子端当前只提供古诗抽查和看图写话，英语仍排最后且保持原禁用门禁。
+- [x] 家长 Web 可逐孩子启用语文、按学科上传教材；语文使用独立 subject-aware 教材分析 v2，批准后自动提取古诗题。
 - [x] Ubuntu PostgreSQL `0030 → 0031` 前滚和旧教材/快照 `math` 回填；发布前备份隔离恢复、迁移 current/head、表/主键/种子和运行源码通过。
 - [x] 本机 PostgreSQL 语文并发提交与导出集成：两条不同幂等键 Attempt 均追加、Review 原子合并、导出和 child cascade 清理通过；随机 Household/Parent/Child synthetic 行均已删除。
-- [ ] 正式教研/版权审核内容、拼音/字词/古诗文完整 MVP、到期复习 UI、语文教材分析 v2、家长技能报告和设备 E2E。`PLAN-0033` 已以古诗抽查/看图写话替换旧六项演示内容；正式版权、真实 Provider、PostgreSQL 前滚和设备验收仍待项目 Owner 记录。
+- [x] 语文 scorer 的拼音/字词/古诗等确定性类型、到期 ReviewItem API/Flutter 页面、语文教材分析 v2 和家长技能报告代码已实现并有本地/集成覆盖；孩子端 MVP 已以古诗抽查/看图写话替换旧六项演示内容。
+- [ ] 正式教研/版权审核内容、真实 Provider/PDF 质量与成本评测、Ubuntu 真实账号浏览器和设备 E2E；公开教材仍须经过具名审核和权利凭证记录后才可作为正式课程发布。
 - [x] 登录态 Chromium E2E：首次改密、Cookie/CSRF/撤销、跨家庭角色、双孩子聚合创建与当前孩子切换，并接入 GitHub Actions。
 
-本轮验证：API Ruff/Mypy（60 source files）与定向测试通过，全量非集成 `229 passed, 28 deselected`；Flutter Analyze 和 52 项测试通过；Web 32 项、TypeScript、ESLint、Prettier、production build 通过。OpenAPI `0.14.0` 62 paths/本地引用闭合，Alembic 单 head 和从零离线 SQL 通过。Ubuntu 发布前备份 `/home/syin/study-backups/20260815T144358Z` 隔离恢复为 35 个 public 表/353 个 MinIO 文件；API/Web、`0031` current/head、三张语文表、复合主键、3 条 synthetic seed、旧教材/快照 `math` 回填、四个 worker、英语关闭态、私有 MinIO 端口和容器源码均通过。2026-08-16 新增隔离 synthetic Chromium 登录态 E2E，Web 32 项/构建、认证与档案 API 25 项及 E2E `1 passed`；本机 PostgreSQL 从 `0025` 前滚到 `0031` 后，语文并发/导出集成 `1 passed`。同日 Xcode 已确认 iPad mini 6 在线、开发者模式启用且安装 `Study Child 0.1.0 (1)`，但 `devicectl` 两次远程启动均被 macOS `CoreDeviceService` 初始化超时阻断；随后带 Ubuntu 地址的 Release 构建在签名阶段因 Xcode 没有登录账号及 Team `VZ59988J63` 缺少 `com.example.studyChild` 开发描述文件失败，未产出或安装新包。Nova 9 已由 ADB 识别为 Android 12 的 `NAM-AL00`；当前 Release 已以 `adb install -r` 覆盖安装、登录并显示数学/语文/英语入口，Ubuntu 语文拼音与句子原创练习可加载，未作答提交被设备端拦截且未产生 Attempt。语文到期复习列表尚未实现，不能把“答对后加入后续复习”反馈视为完成；相机/相册、弱网、重启、账号切换和真实到期复习仍未执行。Ubuntu 真实账号/PostgreSQL 浏览器链路、Flutter release、真实 Provider/PDF 和设备仍未运行。
+历史验收记录：API Ruff/Mypy（60 source files）与定向测试通过，全量非集成 `229 passed, 28 deselected`；Flutter Analyze 和 52 项测试通过；Web 32 项、TypeScript、ESLint、Prettier、production build 通过。后续 2026-08-22 记录已更新为 API 非集成 `238 passed, 29 deselected`、完整 PostgreSQL `29 passed` 和 Flutter `58 passed`；2026-08-23 Flutter 增至 `67 passed`。OpenAPI `0.16.0` 62 paths/本地引用闭合，Alembic 单 head 和从零离线 SQL 通过。Ubuntu 发布前备份 `/home/syin/study-backups/20260815T144358Z` 隔离恢复为 35 个 public 表/353 个 MinIO 文件；API/Web、`0031` current/head、三张语文表、复合主键、3 条 synthetic seed、旧教材/快照 `math` 回填、四个 worker、英语关闭态、私有 MinIO 端口和容器源码均通过。2026-08-16 新增隔离 synthetic Chromium 登录态 E2E，Web 32 项/构建、认证与档案 API 25 项及 E2E `1 passed`；本机 PostgreSQL 从 `0025` 前滚到 `0031` 后，语文并发/导出集成 `1 passed`。同日 Xcode 已确认 iPad mini 6 在线、开发者模式启用且安装 `Study Child 0.1.0 (1)`，但 `devicectl` 两次远程启动均被 macOS `CoreDeviceService` 初始化超时阻断；随后带 Ubuntu 地址的 Release 构建在签名阶段因 Xcode 没有登录账号及 Team `VZ59988J63` 缺少开发描述文件失败，未产出或安装新包。Nova 9 已由 ADB 识别为 Android 12 的 `NAM-AL00`；设备侧历史记录未完成相机/相册、弱网、重启、账号切换和真实到期复习。当前本地 Flutter 已实现到期 ReviewItem UI、数学指定题目串行入口和任务跳过状态；Ubuntu 真实账号/PostgreSQL 浏览器链路、真实 Provider/PDF 和设备仍未运行。
 
 2026-08-16 PLAN-0032 实现增量：语文内容响应加入待项目 Owner 审核的来源/权利凭证摘要，`docs/chinese-content-review.md` 建立不可伪造的签核台账；新增拼音、生字、词语和原创古诗文积累样例的确定性题型。孩子端可读取到期 ReviewItem 并以相同内容版本重做，家长首页按当前孩子汇总拼音/生字/词语/句子/阅读/背诵技能的 Attempt、正确数与到期数；本机 PostgreSQL 集成 `1 passed` 覆盖并发、导出、复习队列和报告。教材分析现按 Material subject 分派：数学继续 `curriculum-*.v1`，语文使用独立 `chinese-curriculum-*.v2` schema/prompt 和短篇章边界证据，保留既有父母审核与私有页图边界；定向 API `21 passed`、Ruff/Mypy 通过，未上传真实 PDF 或调用 Provider。正式具名教研/版权签核、Ubuntu 发布、真实账号浏览器和四设备完整 E2E 仍未完成。
 
@@ -283,7 +313,7 @@
 - `2026-07-20`：OpenAPI/API 前滚为 `0.9.0`，新增 `0020_answer_evidence`。视觉提取现在必须返回四态候选、置信度和可见作答步骤；确认后写入 VerifiedQuestion，Tutor 不再信任客户端临时状态。`worked/blank` 在第三级通过已配置 NewAPI 仅传已确认文字生成完整步骤、答案和验算并持久化；`unclear/answer_area_missing` 明确要求确认或补拍。Flutter 去除硬编码 `2/4` 和练习页二次手选，家长 Web 增加 Household-scoped 逐题详情。Ubuntu 已在备份后 rsync、重建并健康前滚到 `0020`；合成题现场返回正确 3 步、答案 17 只和验算。iPad 已安装 profile App 并完成账号/档案/任务 200 启动 smoke，实际相机闭环仍待人工操作。
 
 - `0013_tutor_turn_persistence`～`0015_child_data_export` 已部署：Tutor 只读取服务端 VerifiedQuestion，TutorTurn 追加写；会话完成/复习和周报可追溯；导出为 24 小时不可变 JSON 快照并随孩子删除级联。
-- Flutter 使用真实任务与活动会话，确认题目后进入真实 Tutor；离线 Attempt 队列使用 SQLite 并按服务端/账号隔离。同一天重复拍题使用新的流程幂等 nonce，避免复用已完成会话。
+- Flutter 使用真实任务与活动会话，确认题目后进入真实 Tutor；离线 Attempt 与任务终态队列使用 SQLite 并按服务端/账号隔离。同一天重复拍题使用新的流程幂等 nonce，避免复用已完成会话。
 - 家长 Web 可创建当天数学任务、查看周报摘要、下载孩子数据导出；API 删除孩子档案会按依赖顺序清理学习、Capture/OCR、视觉、VerifiedQuestion、Tutor 和导出数据。
 - 自动验证：API 162 项非集成测试、Ruff/Mypy；Web 14 项测试/类型/Lint/生产构建；Flutter 39 项测试/analyze、Android release APK 和 iOS release 无签名构建（以 `TESTING.md` 最新记录为准）。
 - 未执行：用户当前不在实体设备旁，Nova 9/iPad 的最终相机、权限拒绝/允许、弱网、横竖屏和重启人工回归保留。自动视觉检测器仍未实现，当前外发门禁依赖规则信号、手动涂抹和用户确认，不得宣传为绝对匿名。

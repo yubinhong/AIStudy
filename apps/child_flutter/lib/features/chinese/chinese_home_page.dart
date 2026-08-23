@@ -10,10 +10,12 @@ class ChineseHomePage extends StatefulWidget {
     super.key,
     required this.gateway,
     this.onPictureWriting,
+    this.poemRandom,
   });
 
   final ChinesePracticeGateway gateway;
   final VoidCallback? onPictureWriting;
+  final Random? poemRandom;
 
   @override
   State<ChineseHomePage> createState() => _ChineseHomePageState();
@@ -77,8 +79,7 @@ class _ChineseHomePageState extends State<ChineseHomePage> {
               .toList(growable: false);
           return ListView.separated(
             padding: const EdgeInsets.all(20),
-            itemCount:
-                1 + (dueItems.isEmpty ? 0 : 1) + (poemItems.isEmpty ? 0 : 1),
+            itemCount: 2 + (dueItems.isEmpty ? 0 : 1),
             separatorBuilder: (_, _) => const SizedBox(height: 12),
             itemBuilder: (context, index) {
               if (index == 0) {
@@ -133,27 +134,31 @@ class _ChineseHomePageState extends State<ChineseHomePage> {
                   ),
                 );
               }
-              if (poemItems.isEmpty) {
-                return const Text('家长上传并审核教材后，这里会出现古诗抽查。');
-              }
               return Card(
                 child: ListTile(
                   leading: const Icon(Icons.menu_book_outlined),
                   title: const Text('古诗抽查'),
-                  subtitle: const Text('随机抽一首，选择下一句'),
+                  subtitle: Text(
+                    poemItems.isEmpty ? '家长上传并审核教材后开放' : '随机抽一首，选择下一句',
+                  ),
                   trailing: const Icon(Icons.chevron_right),
-                  onTap: () {
-                    final item =
-                        poemItems[Random.secure().nextInt(poemItems.length)];
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => _ChinesePracticePage(
-                          gateway: widget.gateway,
-                          item: item,
-                        ),
-                      ),
-                    );
-                  },
+                  enabled: poemItems.isNotEmpty,
+                  onTap: poemItems.isEmpty
+                      ? null
+                      : () {
+                          final item = _pickPoemQuestion(
+                            poemItems,
+                            widget.poemRandom ?? Random.secure(),
+                          );
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => _ChinesePracticePage(
+                                gateway: widget.gateway,
+                                item: item,
+                              ),
+                            ),
+                          );
+                        },
                 ),
               );
             },
@@ -162,6 +167,25 @@ class _ChineseHomePageState extends State<ChineseHomePage> {
       ),
     );
   }
+}
+
+ChineseContentItem _pickPoemQuestion(
+  List<ChineseContentItem> items,
+  Random random,
+) {
+  if (items.isEmpty) {
+    throw ArgumentError.value(items, 'items', 'at least one poem is required');
+  }
+  final groups = <String, List<ChineseContentItem>>{};
+  for (final item in items) {
+    // Each generated next-line question carries the poem title. Pick the
+    // poem first so long poems do not appear more often just because they
+    // generated more adjacent-line questions.
+    final key = '${item.title}\u0000${item.passage ?? ''}';
+    groups.putIfAbsent(key, () => <ChineseContentItem>[]).add(item);
+  }
+  final poem = groups.values.elementAt(random.nextInt(groups.length));
+  return poem[random.nextInt(poem.length)];
 }
 
 class _ChinesePracticePage extends StatefulWidget {

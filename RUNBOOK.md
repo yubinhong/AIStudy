@@ -3,11 +3,19 @@
 ## 1. 服务概览
 
 - 服务：家庭 AI 学习助手（目标包括 Flutter 孩子端、Web/PWA、FastAPI/Worker、PostgreSQL、Redis、S3/MinIO 和 AI Provider）。
-- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.16.0`/`0035_chinese_poem_skill`；`2026-08-16` 发布前备份已隔离恢复（38 张 PostgreSQL public 表、353 个 MinIO 文件），API/Web/worker 健康。没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
+- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.17.0`/`0036_task_session_progress`；2026-08-23 发布前备份已隔离恢复（39 张 PostgreSQL public 表、359 个 MinIO 文件），API/Web/worker 健康。没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
 - Owner/值班：`TBD（项目 Owner/运维负责人在 staging 前确认）`。
 - 用户影响：服务中断会阻止同步、拍题、AI 提示和周报；孩子端必须保留离线任务/作答，不能因服务中断丢学习记录。
 - 外部依赖：单一获批云视觉 Provider、Tutor Provider、HMS（或应用内提醒）和对象存储；具体供应商 `TBD`。本地 OCR 仅是目标 PrivacySanitizer 的隐私检测依赖，不是外部 Provider。
 - Dashboard/日志/Trace：目标为 OpenTelemetry 接入批准的可观测平台；链接和查询 `TBD`。
+
+### 2026-08-23 部署记录
+
+- 来源：部署动作先使用本地未提交工作区，随后以提交和 tag `v0.17.0` 固化并推送；远端运行目录为 `/home/syin/study`。
+- 备份：`/home/syin/study-backups/20260823T030248Z`；`verify-restore.sh` 报告 `postgres_public_tables=39`、`minio_snapshot_files=359`。
+- 发布：保留远端 `.env` 和数据卷，只同步 Git 跟踪文件及本轮新增运行时文件；`docker compose config`、`DOCKER_BUILDKIT=0 docker compose up -d --build` 和 Alembic `0035 -> 0036` 均成功。
+- 验收：API/Web `/healthz`、OpenAPI `0.17.0`（68 paths）、Alembic `0036`、四个 worker、容器内源码哈希和局域网 `192.168.1.4:8000/3000` smoke 均通过；MinIO `HostConfig.PortBindings={}`，没有发布 `9000`。
+- 未执行：真实 Provider/PDF 质量评测、Ubuntu 真实账号浏览器、Nova 9/iPad/Windows/iPhone 真机 E2E；这些不能由本次服务端部署代替。
 
 ## 2. SLO 与关键指标
 

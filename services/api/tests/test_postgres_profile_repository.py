@@ -4,8 +4,10 @@ from threading import Barrier
 from uuid import UUID, uuid4
 
 import pytest
+from postgres_helpers import create_test_parent, delete_test_parent
 from sqlalchemy import MetaData, Table, delete, insert, select
 
+from study_api.auth_domain import PostgresAccountRepository
 from study_api.domain.insights_repository import PostgresInsightsRepository
 from study_api.domain.models import (
     CreateChildRequest,
@@ -23,9 +25,6 @@ from study_api.domain.sql_learning_repository import PostgresLearningRepository
 from study_api.domain.sql_profile_repository import PostgresProfileRepository
 
 pytestmark = pytest.mark.integration
-
-HOUSEHOLD_A = UUID("00000000-0000-0000-0000-000000000001")
-HOUSEHOLD_B = UUID("00000000-0000-0000-0000-000000000002")
 
 
 def child_request(name: str = "Synthetic persisted child") -> CreateChildRequest:
@@ -64,13 +63,19 @@ def cleanup(repository: PostgresProfileRepository, resource_ids: set[UUID]) -> N
 
 def test_profile_create_update_and_device_survive_repository_reconnect() -> None:
     first = PostgresProfileRepository()
+    accounts = PostgresAccountRepository()
+    household_id = uuid4()
+    other_household_id = uuid4()
+    owner = create_test_parent(accounts, household_id)
     resource_ids: set[UUID] = set()
     try:
         child_key = f"pg-profile-create-{uuid4()}"
-        child, replayed = first.create_child(HOUSEHOLD_A, child_request(), child_key)
+        child, replayed = first.create_child(
+            household_id, child_request(), child_key, owner_account_id=owner.id
+        )
         resource_ids.add(child.id)
         assert replayed is False
-        replay, replayed = first.create_child(HOUSEHOLD_A, child_request(), child_key)
+        replay, replayed = first.create_child(household_id, child_request(), child_key)
         assert replayed is True
         assert replay == child
 
@@ -81,12 +86,12 @@ def test_profile_create_update_and_device_survive_repository_reconnect() -> None
             subjects=[Subject.MATH],
         )
         update_key = f"pg-profile-update-{uuid4()}"
-        changed, replayed = first.update_child(HOUSEHOLD_A, child.id, update, update_key)
+        changed, replayed = first.update_child(household_id, child.id, update, update_key)
         assert replayed is False
         assert changed is not None and changed.grade == 4
 
         device, replayed = first.create_device(
-            HOUSEHOLD_A,
+            household_id,
             CreateDeviceRequest(
                 kind=DeviceKind.CHILD,
                 platform=DevicePlatform.ANDROID,
@@ -100,20 +105,20 @@ def test_profile_create_update_and_device_survive_repository_reconnect() -> None
 
         second = PostgresProfileRepository()
         try:
-            persisted = second.get_child(HOUSEHOLD_A, child.id)
+            persisted = second.get_child(household_id, child.id)
             assert persisted is not None
             assert persisted.display_name == "Synthetic updated child"
             assert persisted.grade == 4
-            assert second.get_child(HOUSEHOLD_B, child.id) is None
+            assert second.get_child(other_household_id, child.id) is None
             assert [
-                item.id for item in second.list_devices(HOUSEHOLD_A) if item.id == device.id
+                item.id for item in second.list_devices(household_id) if item.id == device.id
             ] == [device.id]
-            replay, replayed = second.update_child(HOUSEHOLD_A, child.id, update, update_key)
+            replay, replayed = second.update_child(household_id, child.id, update, update_key)
             assert replayed is True
             assert replay == persisted
             with pytest.raises(IdempotencyConflictError):
                 second.update_child(
-                    HOUSEHOLD_A,
+                    household_id,
                     child.id,
                     update.model_copy(update={"grade": 5}),
                     update_key,
@@ -122,21 +127,31 @@ def test_profile_create_update_and_device_survive_repository_reconnect() -> None
             cleanup(second, resource_ids)
             second.close()
     finally:
+        delete_test_parent(accounts, owner.id)
+        accounts.close()
         first.close()
 
 
 def test_child_data_export_replay_returns_immutable_short_lived_snapshot() -> None:
     profiles = PostgresProfileRepository()
     insights = PostgresInsightsRepository()
-    child, _ = profiles.create_child(HOUSEHOLD_A, child_request(), f"pg-export-child-{uuid4()}")
+    accounts = PostgresAccountRepository()
+    household_id = uuid4()
+    owner = create_test_parent(accounts, household_id)
+    child, _ = profiles.create_child(
+        household_id,
+        child_request(),
+        f"pg-export-child-{uuid4()}",
+        owner_account_id=owner.id,
+    )
     key = f"pg-export-{uuid4()}"
     try:
-        first, replayed = insights.export_child(HOUSEHOLD_A, child.id, key)
+        first, replayed = insights.export_child(household_id, child.id, key)
         assert replayed is False
         assert first.child.display_name == "Synthetic persisted child"
 
         profiles.update_child(
-            HOUSEHOLD_A,
+            household_id,
             child.id,
             UpdateChildRequest(
                 display_name="Changed after export",
@@ -146,7 +161,7 @@ def test_child_data_export_replay_returns_immutable_short_lived_snapshot() -> No
             ),
             f"pg-export-update-{uuid4()}",
         )
-        replay, replayed = insights.export_child(HOUSEHOLD_A, child.id, key)
+        replay, replayed = insights.export_child(household_id, child.id, key)
         assert replayed is True
         assert replay == first
 
@@ -174,20 +189,27 @@ def test_child_data_export_replay_returns_immutable_short_lived_snapshot() -> No
             )
     finally:
         cleanup(profiles, {child.id})
+        delete_test_parent(accounts, owner.id)
         insights.close()
         profiles.close()
+        accounts.close()
 
 
 def test_concurrent_profile_create_reserves_one_durable_idempotency_result() -> None:
     first = PostgresProfileRepository()
     second = PostgresProfileRepository()
+    accounts = PostgresAccountRepository()
+    household_id = uuid4()
+    owner = create_test_parent(accounts, household_id)
     barrier = Barrier(2)
     key = f"pg-profile-concurrent-{uuid4()}"
     resource_ids: set[UUID] = set()
 
     def create(repository: PostgresProfileRepository) -> tuple[UUID, bool]:
         barrier.wait()
-        child, replayed = repository.create_child(HOUSEHOLD_A, child_request(), key)
+        child, replayed = repository.create_child(
+            household_id, child_request(), key, owner_account_id=owner.id
+        )
         return child.id, replayed
 
     try:
@@ -203,18 +225,26 @@ def test_concurrent_profile_create_reserves_one_durable_idempotency_result() -> 
         assert len(stored) == 1
     finally:
         cleanup(first, resource_ids)
+        delete_test_parent(accounts, owner.id)
         first.close()
         second.close()
+        accounts.close()
 
 
 def test_profile_delete_cascades_bound_child_account_and_session_and_replays() -> None:
     repository = PostgresProfileRepository()
+    accounts_repository = PostgresAccountRepository()
+    household_id = uuid4()
+    owner = create_test_parent(accounts_repository, household_id)
     learning = PostgresLearningRepository(repository)
     metadata = MetaData()
     accounts = Table("accounts", metadata, autoload_with=repository.engine)
     sessions = Table("auth_sessions", metadata, autoload_with=repository.engine)
     child, _ = repository.create_child(
-        HOUSEHOLD_A, child_request(), f"pg-profile-delete-create-{uuid4()}"
+        household_id,
+        child_request(),
+        f"pg-profile-delete-create-{uuid4()}",
+        owner_account_id=owner.id,
     )
     account_id = uuid4()
     session_id = uuid4()
@@ -225,7 +255,7 @@ def test_profile_delete_cascades_bound_child_account_and_session_and_replays() -
             connection.execute(
                 insert(accounts).values(
                     id=account_id,
-                    household_id=HOUSEHOLD_A,
+                    household_id=household_id,
                     username=f"synthetic-{uuid4()}",
                     role="child",
                     child_id=child.id,
@@ -242,7 +272,7 @@ def test_profile_delete_cascades_bound_child_account_and_session_and_replays() -
                 insert(sessions).values(
                     id=session_id,
                     account_id=account_id,
-                    household_id=HOUSEHOLD_A,
+                    household_id=household_id,
                     token_digest=uuid4().hex + uuid4().hex,
                     created_at=now,
                     expires_at=now + timedelta(hours=1),
@@ -251,7 +281,7 @@ def test_profile_delete_cascades_bound_child_account_and_session_and_replays() -
             )
 
         task, _ = learning.create_task(
-            HOUSEHOLD_A,
+            household_id,
             CreateTaskRequest(
                 child_id=child.id,
                 title="Synthetic child deletion task",
@@ -261,38 +291,38 @@ def test_profile_delete_cascades_bound_child_account_and_session_and_replays() -
             f"pg-profile-delete-task-{uuid4()}",
         )
         study_session, _ = learning.start_session(
-            HOUSEHOLD_A,
+            household_id,
             task.id,
             child.id,
             StartStudySessionRequest(expected_task_version=task.version),
             f"pg-profile-delete-study-session-{uuid4()}",
         )
         attempt, _ = learning.record_attempt(
-            HOUSEHOLD_A,
+            household_id,
             study_session.id,
             child.id,
             RecordAttemptRequest(event_id=uuid4(), answer_summary="synthetic deletion attempt"),
             f"pg-profile-delete-attempt-{uuid4()}",
         )
         assert repository.delete_child(
-            HOUSEHOLD_A,
+            household_id,
             child.id,
             delete_key,
             owner_account_id=child.owner_account_id,
         ) == (True, False)
         assert repository.delete_child(
-            HOUSEHOLD_A,
+            household_id,
             child.id,
             delete_key,
             owner_account_id=uuid4(),
         ) == (False, False)
         assert repository.delete_child(
-            HOUSEHOLD_A,
+            household_id,
             child.id,
             delete_key,
             owner_account_id=child.owner_account_id,
         ) == (True, True)
-        assert repository.get_child(HOUSEHOLD_A, child.id) is None
+        assert repository.get_child(household_id, child.id) is None
         with repository.engine.connect() as connection:
             assert (
                 connection.execute(select(accounts.c.id).where(accounts.c.id == account_id)).all()
@@ -324,5 +354,7 @@ def test_profile_delete_cascades_bound_child_account_and_session_and_replays() -
             )
     finally:
         cleanup(repository, {child.id, account_id, session_id})
+        delete_test_parent(accounts_repository, owner.id)
         learning.close()
         repository.close()
+        accounts_repository.close()

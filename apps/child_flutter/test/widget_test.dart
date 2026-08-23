@@ -12,6 +12,7 @@ import 'package:study_child/capture_api_client.dart';
 import 'package:study_child/main.dart';
 import 'package:study_child/privacy_sanitization_preview.dart';
 import 'package:study_child/startup_transition.dart';
+import 'package:study_child/task_progress_store.dart';
 
 class _FullSolutionCaptureClient extends CaptureApiClient {
   _FullSolutionCaptureClient()
@@ -55,6 +56,7 @@ class _ReviewCloseoutCaptureClient extends CaptureApiClient {
     required String answerSummary,
     required String answerState,
     required bool evidenceConfirmed,
+    int? nextExerciseIndex,
   }) async => <String, dynamic>{};
 
   @override
@@ -66,8 +68,8 @@ class _ReviewCloseoutCaptureClient extends CaptureApiClient {
   }
 }
 
-class _CurriculumTaskClient extends CaptureApiClient {
-  _CurriculumTaskClient()
+class _IntermediateTaskCaptureClient extends CaptureApiClient {
+  _IntermediateTaskCaptureClient()
     : super(
         baseUrl: 'http://localhost:8000',
         householdId: '00000000-0000-0000-0000-000000000001',
@@ -75,7 +77,68 @@ class _CurriculumTaskClient extends CaptureApiClient {
         authorizationToken: 'test-session',
       );
 
+  var attempts = 0;
+  var completions = 0;
+  var preparedNextExercise = false;
+
+  @override
+  Future<Map<String, dynamic>> recordAttempt({
+    required String answerSummary,
+    required String answerState,
+    required bool evidenceConfirmed,
+    int? nextExerciseIndex,
+  }) async {
+    attempts += 1;
+    return <String, dynamic>{};
+  }
+
+  @override
+  void prepareNextTaskExercise() {
+    preparedNextExercise = true;
+  }
+
+  @override
+  Future<Map<String, dynamic>> completeCurrentSession({
+    required String outcome,
+  }) async {
+    completions += 1;
+    return <String, dynamic>{'outcome': outcome};
+  }
+}
+
+class _CurriculumTaskClient extends CaptureApiClient {
+  _CurriculumTaskClient({
+    this.multiExercise = false,
+    this.serverNextExerciseIndex,
+  }) : super(
+         baseUrl: 'http://localhost:8000',
+         householdId: '00000000-0000-0000-0000-000000000001',
+         childId: '00000000-0000-0000-0000-000000000101',
+         authorizationToken: 'test-session',
+       );
+
+  final bool multiExercise;
+  final int? serverNextExerciseIndex;
+
   int taskListCalls = 0;
+  bool taskSessionPrepared = false;
+  bool taskSkipped = false;
+
+  @override
+  String? get activeSessionId => 'task-session';
+
+  @override
+  int? get activeNextExerciseIndex => serverNextExerciseIndex;
+
+  @override
+  Future<void> prepareTaskSession(Map<String, dynamic> task) async {
+    taskSessionPrepared = true;
+  }
+
+  @override
+  Future<void> skipTask(Map<String, dynamic> task) async {
+    taskSkipped = true;
+  }
 
   @override
   Future<List<Map<String, dynamic>>> listTasks() async {
@@ -97,6 +160,16 @@ class _CurriculumTaskClient extends CaptureApiClient {
             'visual_description': '原页展示一本书和一支铅笔。',
             'requires_visual_context': true,
           },
+          if (multiExercise)
+            {
+              'source_type': 'curriculum',
+              'source_title': '位置',
+              'source_page': 15,
+              'snapshot_id': '00000000-0000-0000-0000-000000000201',
+              'question_text': '把橡皮放在铅笔的右边。',
+              'visual_description': '原页展示一块橡皮和一支铅笔。',
+              'requires_visual_context': true,
+            },
         ],
       },
     ];
@@ -374,11 +447,11 @@ void main() {
     await tester.tap(find.text('数学'));
     await tester.pumpAndSettle();
     expect(find.text('错题讲解'), findsOneWidget);
-    expect(find.text('今日任务'), findsNothing);
+    expect(find.text('今日任务'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('hides today tasks and does not fetch their recommendations', (
+  testWidgets('shows today task context and starts its specified exercise', (
     tester,
   ) async {
     final client = _CurriculumTaskClient();
@@ -393,10 +466,127 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('今日任务'), findsNothing);
-    expect(find.text('位置关系练习'), findsNothing);
-    expect(find.text('把铅笔放在书本的下面。'), findsNothing);
-    expect(client.taskListCalls, 0);
+    expect(find.text('今日任务'), findsOneWidget);
+    expect(find.text('位置关系练习'), findsOneWidget);
+    expect(find.text('把铅笔放在书本的下面。'), findsOneWidget);
+    expect(client.taskListCalls, 1);
+
+    final startButton = find.widgetWithText(FilledButton, '开始任务');
+    await tester.ensureVisible(startButton);
+    await tester.tap(startButton);
+    await tester.pumpAndSettle();
+
+    expect(client.taskSessionPrepared, isTrue);
+    expect(find.text('拍题'), findsOneWidget);
+    expect(find.text('本次任务题目 · 位置 · 第 14 页'), findsOneWidget);
+    expect(find.text('把铅笔放在书本的下面。'), findsOneWidget);
+  });
+
+  testWidgets('starts a multi-exercise task at the first exercise', (
+    tester,
+  ) async {
+    final client = _CurriculumTaskClient(multiExercise: true);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LearningDeskScreen(
+          displayName: '小禾',
+          curriculumVersion: 'math-demo-2026',
+          captureClient: client,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('共 2 题'), findsOneWidget);
+    final startButton = find.widgetWithText(FilledButton, '开始任务');
+    await tester.ensureVisible(startButton);
+    await tester.tap(startButton);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('第 1 题，共 2 题'), findsOneWidget);
+    expect(find.text('把铅笔放在书本的下面。'), findsOneWidget);
+    expect(find.text('当前任务包含多道题，请让家长拆成单题后再开始。'), findsNothing);
+  });
+
+  testWidgets(
+    'resumes a task at the persisted exercise after process restart',
+    (tester) async {
+      final client = _CurriculumTaskClient(multiExercise: true);
+      final progress = MemoryTaskProgressStore();
+      await progress.save(
+        taskId: '00000000-0000-0000-0000-000000000501',
+        sessionId: 'task-session',
+        nextExerciseIndex: 1,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LearningDeskScreen(
+            displayName: '小禾',
+            curriculumVersion: 'math-demo-2026',
+            captureClient: client,
+            taskProgressStore: progress,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final startButton = find.widgetWithText(FilledButton, '开始任务');
+      await tester.ensureVisible(startButton);
+      await tester.tap(startButton);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('第 2 题，共 2 题'), findsOneWidget);
+      expect(find.text('把橡皮放在铅笔的右边。'), findsOneWidget);
+    },
+  );
+
+  testWidgets('prefers server task progress when another device advanced it', (
+    tester,
+  ) async {
+    final client = _CurriculumTaskClient(
+      multiExercise: true,
+      serverNextExerciseIndex: 1,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LearningDeskScreen(
+          displayName: '小禾',
+          curriculumVersion: 'math-demo-2026',
+          captureClient: client,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final startButton = find.widgetWithText(FilledButton, '开始任务');
+    await tester.ensureVisible(startButton);
+    await tester.tap(startButton);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('第 2 题，共 2 题'), findsOneWidget);
+    expect(find.text('把橡皮放在铅笔的右边。'), findsOneWidget);
+  });
+
+  testWidgets('records skipping the current task', (tester) async {
+    final client = _CurriculumTaskClient();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LearningDeskScreen(
+          displayName: '小禾',
+          curriculumVersion: 'math-demo-2026',
+          captureClient: client,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final skipButton = find.widgetWithText(TextButton, '稍后再做');
+    await tester.ensureVisible(skipButton);
+    await tester.tap(skipButton);
+    await tester.pumpAndSettle();
+
+    expect(client.taskSkipped, isTrue);
+    expect(find.text('已跳过今天的任务，之后可以从家长安排中重新开始。'), findsOneWidget);
   });
 
   testWidgets('opens OCR confirmation from the learning desk', (tester) async {
@@ -572,6 +762,49 @@ void main() {
     },
   );
 
+  testWidgets('keeps a task session open between exercises', (tester) async {
+    final client = _IntermediateTaskCaptureClient();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: FilledButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => TutorHintScreen(
+                    captureClient: client,
+                    verifiedQuestionId: 'verified-question',
+                    answerState: 'worked',
+                    evidenceConfirmed: true,
+                    taskExerciseIndex: 0,
+                    taskExerciseCount: 2,
+                  ),
+                ),
+              ),
+              child: const Text('打开任务题目'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('打开任务题目'));
+    await tester.pumpAndSettle();
+    final understood = find.text('我想到了');
+    await tester.ensureVisible(understood);
+    await tester.tap(understood);
+    await tester.pump();
+    final complete = find.text('我会了，完成本题');
+    await tester.ensureVisible(complete);
+    await tester.tap(complete);
+    await tester.pumpAndSettle();
+
+    expect(client.attempts, 1);
+    expect(client.preparedNextExercise, isTrue);
+    expect(client.completions, 0);
+    expect(find.text('打开任务题目'), findsOneWidget);
+  });
+
   testWidgets(
     'shows local sanitization preview and returns only sanitized copy',
     (tester) async {
@@ -734,6 +967,49 @@ void main() {
     upload.complete(receipt);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('ocr-confirmation')), findsOneWidget);
+  });
+
+  testWidgets('requires a first sentence before the detail step', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PictureWritingGuideScreen(
+          guideRecord: <String, dynamic>{
+            'guide': <String, dynamic>{
+              'scene_observations': <String>['画面里有一棵树。'],
+              'focus_questions': <String>['谁在做什么？', '在哪里？'],
+              'sentence_starters': <String>['早上，'],
+              'detail_prompts': <String>['补充一个动作。'],
+            },
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下一步'));
+    await tester.pump();
+    expect(find.text('先写一句，再进入下一步。'), findsOneWidget);
+    expect(find.text('第 2 步，共 3 步'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '小明在浇花。');
+    await tester.tap(find.text('下一步'));
+    await tester.pumpAndSettle();
+    expect(find.text('补上细节'), findsOneWidget);
+    expect(find.text('第 3 步，共 3 步'), findsOneWidget);
+  });
+
+  test('provides a generic safe fallback guide without image claims', () {
+    final record = pictureWritingFallbackGuideRecord();
+    final guide = record['guide']! as Map<String, dynamic>;
+    expect(record['source'], 'local-observation-prompts');
+    expect(record['needs_confirmation'], true);
+    expect(guide['scene_observations'], isA<List<String>>());
+    expect(guide['focus_questions'], isA<List<String>>());
+    expect(guide.containsKey('detected_subject'), isFalse);
   });
 
   testWidgets('shows account switching and logout actions', (tester) async {

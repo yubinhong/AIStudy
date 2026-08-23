@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AccountRole(StrEnum):
@@ -37,6 +37,7 @@ class TaskStatus(StrEnum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     SKIPPED = "skipped"
+    REVOKED = "revoked"
 
 
 class TaskSourceType(StrEnum):
@@ -49,12 +50,14 @@ class TaskSourceType(StrEnum):
 class StudySessionStatus(StrEnum):
     ACTIVE = "active"
     COMPLETED = "completed"
+    REVOKED = "revoked"
 
 
 class SessionOutcome(StrEnum):
     LEARNED = "learned"
     NEEDS_REVIEW = "needs_review"
     SKIPPED = "skipped"
+    REVOKED = "revoked"
 
 
 class AnswerState(StrEnum):
@@ -91,6 +94,9 @@ class OcrMode(StrEnum):
 
 class SyncEventKind(StrEnum):
     RECORD_ATTEMPT = "record_attempt"
+
+
+MAX_DAILY_TASKS = 3
 
 
 class ChildProfile(BaseModel):
@@ -194,6 +200,7 @@ class StudySession(BaseModel):
     child_id: UUID
     task_id: UUID
     task_version: int = Field(ge=1)
+    next_exercise_index: int = Field(default=0, ge=0)
     status: StudySessionStatus
     started_at: datetime
     completed_at: datetime | None = None
@@ -206,6 +213,13 @@ class StartStudySessionRequest(BaseModel):
 
 class CompleteStudySessionRequest(BaseModel):
     outcome: SessionOutcome
+
+    @field_validator("outcome")
+    @classmethod
+    def reject_revoked_outcome(cls, value: SessionOutcome) -> SessionOutcome:
+        if value is SessionOutcome.REVOKED:
+            raise ValueError("revoked is reserved for parent task revocation")
+        return value
 
 
 class Capture(BaseModel):
@@ -337,6 +351,7 @@ class RecordAttemptRequest(BaseModel):
     answer_summary: str = Field(min_length=1, max_length=200)
     answer_state: AnswerState = AnswerState.UNCLEAR
     evidence_confirmed: bool = False
+    next_exercise_index: int | None = Field(default=None, ge=0)
 
 
 class SyncEvent(BaseModel):
@@ -349,6 +364,7 @@ class SyncEvent(BaseModel):
     answer_summary: str = Field(min_length=1, max_length=200)
     answer_state: AnswerState = AnswerState.UNCLEAR
     evidence_confirmed: bool = False
+    next_exercise_index: int | None = Field(default=None, ge=0)
 
 
 class SyncBatchRequest(BaseModel):

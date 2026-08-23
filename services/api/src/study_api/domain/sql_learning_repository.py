@@ -17,14 +17,22 @@ from study_api.domain.learning_repository import (
     ChildAssignmentError,
     ResourceVersionConflictError,
     SessionAlreadyCompletedError,
+    SessionNotActiveError,
+    TaskCapacityError,
+    TaskNotRevocableError,
+    TaskNotScheduledError,
+    TaskNotStartableError,
+    TaskProgressConflictError,
 )
 from study_api.domain.models import (
+    MAX_DAILY_TASKS,
     AnswerState,
     Attempt,
     AuditEvent,
     CompleteStudySessionRequest,
     CreateTaskRequest,
     RecordAttemptRequest,
+    SessionOutcome,
     StartStudySessionRequest,
     StudySession,
     StudySessionStatus,
@@ -53,6 +61,10 @@ class LearningRepository(Protocol):
         request: StartStudySessionRequest,
         idempotency_key: str,
     ) -> tuple[StudySession, bool]: ...
+
+    def revoke_task(
+        self, household_id: UUID, task_id: UUID, idempotency_key: str
+    ) -> tuple[StudyTask, bool]: ...
 
     def create_capture_session(
         self, household_id: UUID, child_id: UUID, idempotency_key: str
@@ -184,6 +196,22 @@ class PostgresLearningRepository:
             )
             if existing is not None:
                 return self._replay_task(connection, existing, payload)
+            # Serialize the small per-child/day allocation window so two
+            # parents cannot both observe the same final capacity slot.
+            capacity_key = f"{household_id}:{request.child_id}:{request.scheduled_for}"
+            connection.execute(select(func.pg_advisory_xact_lock(func.hashtext(capacity_key))))
+            daily_count = connection.execute(
+                select(func.count())
+                .select_from(self._tasks)
+                .where(
+                    self._tasks.c.household_id == household_id,
+                    self._tasks.c.child_id == request.child_id,
+                    self._tasks.c.scheduled_for == request.scheduled_for,
+                    self._tasks.c.status != TaskStatus.REVOKED.value,
+                )
+            ).scalar_one()
+            if daily_count >= MAX_DAILY_TASKS:
+                raise TaskCapacityError("daily task capacity reached")
             task = StudyTask(
                 id=uuid4(),
                 household_id=household_id,
@@ -240,6 +268,10 @@ class PostgresLearningRepository:
                 raise ChildAssignmentError
             if task.version != request.expected_task_version:
                 raise ResourceVersionConflictError
+            if task.status is not TaskStatus.ASSIGNED:
+                raise TaskNotStartableError
+            if task.scheduled_for > self._now().date():
+                raise TaskNotScheduledError
             task_version = task.version + 1
             connection.execute(
                 update(self._tasks)
@@ -261,6 +293,65 @@ class PostgresLearningRepository:
             )
             self._audit(connection, household_id, "study_session_started", session.id)
             return session, False
+
+    def revoke_task(
+        self, household_id: UUID, task_id: UUID, idempotency_key: str
+    ) -> tuple[StudyTask, bool]:
+        operation = f"revoke_task:{task_id}"
+        payload = "revoke"
+        with self._engine.begin() as connection:
+            existing = self._idempotency_result(
+                connection, household_id, operation, idempotency_key
+            )
+            if existing is not None:
+                return self._replay_task(connection, existing, payload)
+            row = (
+                connection.execute(
+                    select(self._tasks)
+                    .where(
+                        self._tasks.c.id == task_id,
+                        self._tasks.c.household_id == household_id,
+                    )
+                    .with_for_update()
+                )
+                .mappings()
+                .one_or_none()
+            )
+            if row is None:
+                raise LookupError
+            task = self._task(row)
+            if task.status in {
+                TaskStatus.COMPLETED,
+                TaskStatus.SKIPPED,
+                TaskStatus.REVOKED,
+            }:
+                raise TaskNotRevocableError
+            revoked = task.model_copy(
+                update={"status": TaskStatus.REVOKED, "version": task.version + 1}
+            )
+            now = self._now()
+            connection.execute(
+                update(self._sessions)
+                .where(
+                    self._sessions.c.task_id == task_id,
+                    self._sessions.c.status == StudySessionStatus.ACTIVE.value,
+                )
+                .values(
+                    status=StudySessionStatus.REVOKED.value,
+                    completed_at=now,
+                    outcome=SessionOutcome.REVOKED.value,
+                )
+            )
+            connection.execute(
+                update(self._tasks)
+                .where(self._tasks.c.id == task_id)
+                .values(status=revoked.status.value, version=revoked.version)
+            )
+            self._store_idempotency(
+                connection, household_id, operation, idempotency_key, payload, "task", task_id
+            )
+            self._audit(connection, household_id, "study_task_revoked", task_id)
+            return revoked, False
 
     def create_capture_session(
         self,
@@ -342,6 +433,7 @@ class PostgresLearningRepository:
                 request.answer_summary,
                 request.answer_state,
                 request.evidence_confirmed,
+                request.next_exercise_index,
                 idempotency_key,
             )
 
@@ -380,6 +472,8 @@ class PostgresLearningRepository:
                 raise ChildAssignmentError
             if session.status is StudySessionStatus.COMPLETED:
                 raise SessionAlreadyCompletedError
+            if session.status is not StudySessionStatus.ACTIVE:
+                raise SessionNotActiveError
             task_row = (
                 connection.execute(
                     select(self._tasks)
@@ -448,6 +542,7 @@ class PostgresLearningRepository:
                     event.answer_summary,
                     event.answer_state,
                     event.evidence_confirmed,
+                    event.next_exercise_index,
                     event.idempotency_key,
                 )
             results: list[SyncEventResult] = []
@@ -461,6 +556,7 @@ class PostgresLearningRepository:
                     event.answer_summary,
                     event.answer_state,
                     event.evidence_confirmed,
+                    event.next_exercise_index,
                     event.idempotency_key,
                 )
                 results.append(
@@ -482,6 +578,7 @@ class PostgresLearningRepository:
         answer_summary: str,
         answer_state: AnswerState,
         evidence_confirmed: bool,
+        next_exercise_index: int | None,
         idempotency_key: str,
     ) -> tuple[Attempt, bool]:
         self._preflight_attempt(
@@ -493,6 +590,7 @@ class PostgresLearningRepository:
             answer_summary,
             answer_state,
             evidence_confirmed,
+            next_exercise_index,
             idempotency_key,
         )
         operation = f"record_attempt:{session_id}"
@@ -501,7 +599,7 @@ class PostgresLearningRepository:
             return self._replay_attempt(
                 connection,
                 existing,
-                f"{session_id}:{event_id}:{answer_summary}:{answer_state}:{evidence_confirmed}",
+                f"{session_id}:{event_id}:{answer_summary}:{answer_state}:{evidence_confirmed}:{next_exercise_index}",
             )
         event_row = (
             connection.execute(select(self._attempts).where(self._attempts.c.event_id == event_id))
@@ -515,12 +613,15 @@ class PostgresLearningRepository:
                 household_id,
                 operation,
                 idempotency_key,
-                f"{session_id}:{event_id}:{answer_summary}:{answer_state}:{evidence_confirmed}",
+                f"{session_id}:{event_id}:{answer_summary}:{answer_state}:{evidence_confirmed}:{next_exercise_index}",
                 "attempt",
                 attempt.id,
             )
             return attempt, True
         session = self._session_for_child(connection, household_id, session_id, child_id)
+        if session.status is not StudySessionStatus.ACTIVE:
+            raise SessionNotActiveError
+        self._advance_session_progress(connection, session, next_exercise_index)
         sequence = (
             connection.execute(
                 select(func.coalesce(func.max(self._attempts.c.sequence), 0)).where(
@@ -542,7 +643,10 @@ class PostgresLearningRepository:
             recorded_at=self._now(),
         )
         connection.execute(insert(self._attempts).values(**attempt.model_dump()))
-        payload = f"{session_id}:{event_id}:{answer_summary}:{answer_state}:{evidence_confirmed}"
+        payload = (
+            f"{session_id}:{event_id}:{answer_summary}:{answer_state}:"
+            f"{evidence_confirmed}:{next_exercise_index}"
+        )
         self._store_idempotency(
             connection, household_id, operation, idempotency_key, payload, "attempt", attempt.id
         )
@@ -559,10 +663,14 @@ class PostgresLearningRepository:
         answer_summary: str,
         answer_state: AnswerState,
         evidence_confirmed: bool,
+        next_exercise_index: int | None,
         idempotency_key: str,
     ) -> None:
         self._session_for_child(connection, household_id, session_id, child_id)
-        payload = f"{session_id}:{event_id}:{answer_summary}:{answer_state}:{evidence_confirmed}"
+        payload = (
+            f"{session_id}:{event_id}:{answer_summary}:{answer_state}:"
+            f"{evidence_confirmed}:{next_exercise_index}"
+        )
         existing = self._idempotency_result(
             connection, household_id, f"record_attempt:{session_id}", idempotency_key
         )
@@ -582,6 +690,31 @@ class PostgresLearningRepository:
                 or attempt.evidence_confirmed != evidence_confirmed
             ):
                 raise IdempotencyConflictError
+
+    def _advance_session_progress(
+        self,
+        connection: Connection,
+        session: StudySession,
+        next_exercise_index: int | None,
+    ) -> None:
+        if next_exercise_index is None:
+            return
+        task_row = (
+            connection.execute(select(self._tasks).where(self._tasks.c.id == session.task_id))
+            .mappings()
+            .one()
+        )
+        task = self._task(task_row)
+        if not task.exercises or next_exercise_index > len(task.exercises):
+            raise TaskProgressConflictError
+        if next_exercise_index > session.next_exercise_index + 1:
+            raise TaskProgressConflictError
+        if next_exercise_index > session.next_exercise_index:
+            connection.execute(
+                update(self._sessions)
+                .where(self._sessions.c.id == session.id)
+                .values(next_exercise_index=next_exercise_index)
+            )
 
     def _session_for_child(
         self, connection: Connection, household_id: UUID, session_id: UUID, child_id: UUID

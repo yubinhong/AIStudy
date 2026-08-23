@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from uuid import uuid4
 
 from auth_helpers import session_headers
@@ -177,6 +177,32 @@ def test_bound_child_can_resume_only_own_active_task_session() -> None:
     assert sibling.status_code == 404
 
 
+def test_task_cannot_start_a_second_active_session() -> None:
+    client = TestClient(create_app())
+    task = create_task(client)
+    first = start_session(client, task)
+    current = client.get(
+        f"/households/{HOUSEHOLD_A}/tasks",
+        headers=principal(client, role="child", child_id=CHILD_A),
+    ).json()[0]
+
+    second = client.post(
+        f"/households/{HOUSEHOLD_A}/tasks/{task['id']}/sessions",
+        headers={
+            **principal(client, role="child", child_id=CHILD_A),
+            "Idempotency-Key": "session-start-duplicate",
+        },
+        json={"expected_task_version": current["version"]},
+    )
+
+    assert first["status"] == "active"
+    assert second.status_code == 409
+    assert second.json() == {
+        "code": "HTTP_409",
+        "message": "task is no longer available to start",
+    }
+
+
 def test_child_completes_session_with_an_explicit_review_outcome() -> None:
     client = TestClient(create_app())
     task = create_task(client)
@@ -207,6 +233,32 @@ def test_child_completes_session_with_an_explicit_review_outcome() -> None:
     assert replay.json() == first.json()
     assert changed.status_code == 409
     assert tasks.json()[0]["status"] == "completed"
+
+
+def test_child_can_skip_a_task_and_the_skip_is_idempotent() -> None:
+    client = TestClient(create_app())
+    task = create_task(client)
+    session = start_session(client, task)
+    path = f"/households/{HOUSEHOLD_A}/sessions/{session['id']}/completion"
+    headers = {
+        **principal(client, role="child", child_id=CHILD_A),
+        "Idempotency-Key": "session-skip-001",
+    }
+
+    first = client.post(path, headers=headers, json={"outcome": "skipped"})
+    replay = client.post(path, headers=headers, json={"outcome": "skipped"})
+    tasks = client.get(
+        f"/households/{HOUSEHOLD_A}/tasks",
+        headers=principal(client, role="child", child_id=CHILD_A),
+    )
+
+    assert first.status_code == 200
+    assert first.json()["status"] == "completed"
+    assert first.json()["outcome"] == "skipped"
+    assert replay.status_code == 200
+    assert replay.headers["Idempotency-Replayed"] == "true"
+    assert replay.json() == first.json()
+    assert tasks.json()[0]["status"] == "skipped"
 
 
 def test_offline_batch_replays_events_and_rejects_conflicts_without_partial_write() -> None:
@@ -273,6 +325,178 @@ def test_outdated_task_version_is_an_explicit_conflict() -> None:
 
     assert stale.status_code == 409
     assert stale.json() == {"code": "HTTP_409", "message": "task version conflict"}
+
+
+def test_daily_task_capacity_is_three_and_revocation_frees_one_slot() -> None:
+    client = TestClient(create_app())
+    scheduled_for = date.today().isoformat()
+    for index in range(3):
+        response = client.post(
+            f"/households/{HOUSEHOLD_A}/tasks",
+            headers={**principal(client), "Idempotency-Key": f"capacity-task-{index:03d}"},
+            json={
+                "child_id": CHILD_A,
+                "title": f"Capacity task {index}",
+                "subject": "math",
+                "scheduled_for": scheduled_for,
+            },
+        )
+        assert response.status_code == 201
+
+    blocked = client.post(
+        f"/households/{HOUSEHOLD_A}/tasks",
+        headers={**principal(client), "Idempotency-Key": "capacity-task-blocked"},
+        json={
+            "child_id": CHILD_A,
+            "title": "Capacity task 4",
+            "subject": "math",
+            "scheduled_for": scheduled_for,
+        },
+    )
+    tasks = client.get(
+        f"/households/{HOUSEHOLD_A}/tasks",
+        headers=principal(client, role="child", child_id=CHILD_A),
+    ).json()
+    revoked = client.post(
+        f"/households/{HOUSEHOLD_A}/tasks/{tasks[0]['id']}/revoke",
+        headers={**principal(client), "Idempotency-Key": "capacity-task-revoke"},
+    )
+    replacement = client.post(
+        f"/households/{HOUSEHOLD_A}/tasks",
+        headers={**principal(client), "Idempotency-Key": "capacity-task-replacement"},
+        json={
+            "child_id": CHILD_A,
+            "title": "Capacity replacement",
+            "subject": "math",
+            "scheduled_for": scheduled_for,
+        },
+    )
+
+    assert blocked.status_code == 409
+    assert blocked.json() == {"code": "HTTP_409", "message": "daily task capacity reached"}
+    assert revoked.status_code == 200
+    assert revoked.json()["status"] == "revoked"
+    assert replacement.status_code == 201
+
+
+def test_future_task_cannot_start_before_its_scheduled_date() -> None:
+    client = TestClient(create_app())
+    response = client.post(
+        f"/households/{HOUSEHOLD_A}/tasks",
+        headers={**principal(client), "Idempotency-Key": "future-task-create"},
+        json={
+            "child_id": CHILD_A,
+            "title": "Tomorrow task",
+            "subject": "math",
+            "scheduled_for": (date.today() + timedelta(days=1)).isoformat(),
+        },
+    )
+    task = response.json()
+    started = client.post(
+        f"/households/{HOUSEHOLD_A}/tasks/{task['id']}/sessions",
+        headers={
+            **principal(client, role="child", child_id=CHILD_A),
+            "Idempotency-Key": "future-task-start",
+        },
+        json={"expected_task_version": task["version"]},
+    )
+
+    assert response.status_code == 201
+    assert started.status_code == 409
+    assert started.json() == {"code": "HTTP_409", "message": "task is not scheduled yet"}
+
+
+def test_server_session_progress_is_monotonic_and_cross_device_readable() -> None:
+    client = TestClient(create_app())
+    response = client.post(
+        f"/households/{HOUSEHOLD_A}/tasks",
+        headers={**principal(client), "Idempotency-Key": "progress-task-create"},
+        json={
+            "child_id": CHILD_A,
+            "title": "Two-step task",
+            "subject": "math",
+            "scheduled_for": date.today().isoformat(),
+            "exercises": [
+                {"question_text": "1 + 1 = ?", "source_type": "curriculum"},
+                {"question_text": "2 + 2 = ?", "source_type": "curriculum"},
+            ],
+        },
+    )
+    task = response.json()
+    session = start_session(client, task)
+    attempt = client.post(
+        f"/households/{HOUSEHOLD_A}/sessions/{session['id']}/attempts",
+        headers={
+            **principal(client, role="child", child_id=CHILD_A),
+            "Idempotency-Key": "progress-attempt-1",
+        },
+        json={
+            "event_id": str(uuid4()),
+            "answer_summary": "first exercise confirmed",
+            "next_exercise_index": 1,
+        },
+    )
+    resumed = client.get(
+        f"/households/{HOUSEHOLD_A}/tasks/{task['id']}/active-session",
+        headers=principal(client, role="child", child_id=CHILD_A),
+    )
+    skipped_ahead = client.post(
+        f"/households/{HOUSEHOLD_A}/sessions/{session['id']}/attempts",
+        headers={
+            **principal(client, role="child", child_id=CHILD_A),
+            "Idempotency-Key": "progress-attempt-jump",
+        },
+        json={
+            "event_id": str(uuid4()),
+            "answer_summary": "jump attempt",
+            "next_exercise_index": 3,
+        },
+    )
+
+    assert response.status_code == 201
+    assert attempt.status_code == 201
+    assert resumed.status_code == 200
+    assert resumed.json()["next_exercise_index"] == 1
+    assert skipped_ahead.status_code == 409
+    assert skipped_ahead.json() == {
+        "code": "HTTP_409",
+        "message": "task exercise progress conflict",
+    }
+
+
+def test_parent_revoke_closes_active_session_and_blocks_child_writes() -> None:
+    client = TestClient(create_app())
+    task = create_task(client)
+    session = start_session(client, task)
+    path = f"/households/{HOUSEHOLD_A}/tasks/{task['id']}/revoke"
+    revoked = client.post(
+        path,
+        headers={**principal(client), "Idempotency-Key": "revoke-task-001"},
+    )
+    replay = client.post(
+        path,
+        headers={**principal(client), "Idempotency-Key": "revoke-task-001"},
+    )
+    active = client.get(
+        f"/households/{HOUSEHOLD_A}/tasks/{task['id']}/active-session",
+        headers=principal(client, role="child", child_id=CHILD_A),
+    )
+    attempt = client.post(
+        f"/households/{HOUSEHOLD_A}/sessions/{session['id']}/attempts",
+        headers={
+            **principal(client, role="child", child_id=CHILD_A),
+            "Idempotency-Key": "revoke-attempt-001",
+        },
+        json={"event_id": str(uuid4()), "answer_summary": "late answer"},
+    )
+
+    assert revoked.status_code == 200
+    assert revoked.json()["status"] == "revoked"
+    assert replay.status_code == 200
+    assert replay.headers["Idempotency-Replayed"] == "true"
+    assert active.status_code == 404
+    assert attempt.status_code == 409
+    assert attempt.json() == {"code": "HTTP_409", "message": "study session is no longer active"}
 
 
 def test_bound_child_creates_idempotent_capture_session_without_parent_task() -> None:

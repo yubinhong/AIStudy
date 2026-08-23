@@ -11,12 +11,14 @@ from hashlib import sha256
 from uuid import UUID, uuid4
 
 from study_api.domain.models import (
+    MAX_DAILY_TASKS,
     AnswerState,
     Attempt,
     AuditEvent,
     CompleteStudySessionRequest,
     CreateTaskRequest,
     RecordAttemptRequest,
+    SessionOutcome,
     StartStudySessionRequest,
     StudySession,
     StudySessionStatus,
@@ -40,6 +42,30 @@ class ChildAssignmentError(Exception):
 
 class SessionAlreadyCompletedError(Exception):
     """Raised when a final session is completed again with another command."""
+
+
+class TaskNotStartableError(Exception):
+    """Raised when a task is already active or has reached a terminal state."""
+
+
+class TaskNotScheduledError(Exception):
+    """Raised when a child tries to start a future task."""
+
+
+class TaskCapacityError(Exception):
+    """Raised when a child already has the daily task capacity assigned."""
+
+
+class SessionNotActiveError(Exception):
+    """Raised when a revoked or otherwise closed session receives a write."""
+
+
+class TaskNotRevocableError(Exception):
+    """Raised when a terminal task cannot be revoked."""
+
+
+class TaskProgressConflictError(Exception):
+    """Raised when a client tries to skip an exercise in a task session."""
 
 
 @dataclass(frozen=True)
@@ -83,6 +109,19 @@ class InMemoryLearningRepository:
         task = self._tasks.get(task_id)
         return task if task is not None and task.household_id == household_id else None
 
+    def _assert_daily_capacity(
+        self, household_id: UUID, child_id: UUID, scheduled_for: object
+    ) -> None:
+        assigned = sum(
+            task.household_id == household_id
+            and task.child_id == child_id
+            and task.scheduled_for == scheduled_for
+            and task.status is not TaskStatus.REVOKED
+            for task in self._tasks.values()
+        )
+        if assigned >= MAX_DAILY_TASKS:
+            raise TaskCapacityError("daily task capacity reached")
+
     def create_task(
         self, household_id: UUID, request: CreateTaskRequest, idempotency_key: str
     ) -> tuple[StudyTask, bool]:
@@ -93,24 +132,28 @@ class InMemoryLearningRepository:
             "create_task",
             request.model_dump_json(),
             idempotency_key,
-            lambda: StudyTask(
-                id=uuid4(),
-                household_id=household_id,
-                child_id=request.child_id,
-                title=request.title,
-                subject=request.subject,
-                scheduled_for=request.scheduled_for,
-                status=TaskStatus.ASSIGNED,
-                version=1,
-                created_at=self._now(),
-                source_type=request.source_type,
-                reason=request.reason,
-                knowledge_point=request.knowledge_point,
-                knowledge_point_id=request.knowledge_point_id,
-                exercises=request.exercises,
-                estimated_minutes=request.estimated_minutes,
-            ),
+            lambda: self._new_task(household_id, request),
             self._tasks,
+        )
+
+    def _new_task(self, household_id: UUID, request: CreateTaskRequest) -> StudyTask:
+        self._assert_daily_capacity(household_id, request.child_id, request.scheduled_for)
+        return StudyTask(
+            id=uuid4(),
+            household_id=household_id,
+            child_id=request.child_id,
+            title=request.title,
+            subject=request.subject,
+            scheduled_for=request.scheduled_for,
+            status=TaskStatus.ASSIGNED,
+            version=1,
+            created_at=self._now(),
+            source_type=request.source_type,
+            reason=request.reason,
+            knowledge_point=request.knowledge_point,
+            knowledge_point_id=request.knowledge_point_id,
+            exercises=request.exercises,
+            estimated_minutes=request.estimated_minutes,
         )
 
     def start_session(
@@ -126,8 +169,6 @@ class InMemoryLearningRepository:
             raise LookupError
         if task.child_id != child_id:
             raise ChildAssignmentError
-        if task.version != request.expected_task_version:
-            raise ResourceVersionConflictError
         payload = request.model_dump_json()
         key = (household_id, f"start_session:{task_id}", idempotency_key)
         existing = self._idempotency.get(key)
@@ -135,6 +176,12 @@ class InMemoryLearningRepository:
             if existing.fingerprint != self._fingerprint(payload):
                 raise IdempotencyConflictError
             return self._as_session(existing.value), True
+        if task.version != request.expected_task_version:
+            raise ResourceVersionConflictError
+        if task.status is not TaskStatus.ASSIGNED:
+            raise TaskNotStartableError
+        if task.scheduled_for > self._now().date():
+            raise TaskNotScheduledError
         updated_task = task.model_copy(
             update={"status": TaskStatus.IN_PROGRESS, "version": task.version + 1}
         )
@@ -152,6 +199,43 @@ class InMemoryLearningRepository:
         self._idempotency[key] = StoredResult(self._fingerprint(payload), session)
         self._audit(household_id, "study_session_started", session.id)
         return session, False
+
+    def revoke_task(
+        self, household_id: UUID, task_id: UUID, idempotency_key: str
+    ) -> tuple[StudyTask, bool]:
+        task = self.get_task(household_id, task_id)
+        if task is None:
+            raise LookupError
+        key = (household_id, f"revoke_task:{task_id}", idempotency_key)
+        existing = self._idempotency.get(key)
+        payload = "revoke"
+        if existing is not None:
+            if existing.fingerprint != self._fingerprint(payload):
+                raise IdempotencyConflictError
+            return self._as_task(existing.value), True
+        if task.status in {
+            TaskStatus.COMPLETED,
+            TaskStatus.SKIPPED,
+            TaskStatus.REVOKED,
+        }:
+            raise TaskNotRevocableError
+        revoked = task.model_copy(
+            update={"status": TaskStatus.REVOKED, "version": task.version + 1}
+        )
+        self._tasks[task.id] = revoked
+        now = self._now()
+        for session_id, session in tuple(self._sessions.items()):
+            if session.task_id == task.id and session.status is StudySessionStatus.ACTIVE:
+                self._sessions[session_id] = session.model_copy(
+                    update={
+                        "status": StudySessionStatus.REVOKED,
+                        "completed_at": now,
+                        "outcome": SessionOutcome.REVOKED,
+                    }
+                )
+        self._idempotency[key] = StoredResult(self._fingerprint(payload), revoked)
+        self._audit(household_id, "study_task_revoked", task.id)
+        return revoked, False
 
     def create_capture_session(
         self,
@@ -240,6 +324,7 @@ class InMemoryLearningRepository:
             request.answer_summary,
             request.answer_state,
             request.evidence_confirmed,
+            request.next_exercise_index,
             idempotency_key,
         )
 
@@ -265,6 +350,8 @@ class InMemoryLearningRepository:
             return self._as_session(existing.value), True
         if session.status is StudySessionStatus.COMPLETED:
             raise SessionAlreadyCompletedError
+        if session.status is not StudySessionStatus.ACTIVE:
+            raise SessionNotActiveError
         completed = session.model_copy(
             update={
                 "status": StudySessionStatus.COMPLETED,
@@ -287,7 +374,7 @@ class InMemoryLearningRepository:
     def sync_attempts(
         self, household_id: UUID, child_id: UUID, request: SyncBatchRequest
     ) -> SyncBatchResult:
-        prepared: list[tuple[StudySession, UUID, str, AnswerState, bool, str]] = []
+        prepared: list[tuple[StudySession, UUID, str, AnswerState, bool, int | None, str]] = []
         for event in request.events:
             session = self.get_session(household_id, event.session_id)
             if session is None:
@@ -301,6 +388,7 @@ class InMemoryLearningRepository:
                     event.answer_summary,
                     event.answer_state,
                     event.evidence_confirmed,
+                    event.next_exercise_index,
                     event.idempotency_key,
                 )
             )
@@ -312,6 +400,7 @@ class InMemoryLearningRepository:
             answer_summary,
             answer_state,
             evidence_confirmed,
+            next_exercise_index,
             idempotency_key,
         ) in prepared:
             attempt, replayed = self._append_attempt(
@@ -321,6 +410,7 @@ class InMemoryLearningRepository:
                 answer_summary,
                 answer_state,
                 evidence_confirmed,
+                next_exercise_index,
                 idempotency_key,
             )
             results.append(
@@ -333,7 +423,7 @@ class InMemoryLearningRepository:
     def _preflight_attempts(
         self,
         household_id: UUID,
-        prepared: list[tuple[StudySession, UUID, str, AnswerState, bool, str]],
+        prepared: list[tuple[StudySession, UUID, str, AnswerState, bool, int | None, str]],
     ) -> None:
         seen_events: set[UUID] = set()
         for (
@@ -342,13 +432,15 @@ class InMemoryLearningRepository:
             answer_summary,
             answer_state,
             evidence_confirmed,
+            next_exercise_index,
             idempotency_key,
         ) in prepared:
             if event_id in seen_events:
                 raise IdempotencyConflictError
             seen_events.add(event_id)
             payload = (
-                f"{session.id}:{event_id}:{answer_summary}:{answer_state}:{evidence_confirmed}"
+                f"{session.id}:{event_id}:{answer_summary}:{answer_state}:"
+                f"{evidence_confirmed}:{next_exercise_index}"
             )
             key = (household_id, f"record_attempt:{session.id}", idempotency_key)
             existing = self._idempotency.get(key)
@@ -371,9 +463,13 @@ class InMemoryLearningRepository:
         answer_summary: str,
         answer_state: AnswerState,
         evidence_confirmed: bool,
+        next_exercise_index: int | None,
         idempotency_key: str,
     ) -> tuple[Attempt, bool]:
-        payload = f"{session.id}:{event_id}:{answer_summary}:{answer_state}:{evidence_confirmed}"
+        payload = (
+            f"{session.id}:{event_id}:{answer_summary}:{answer_state}:"
+            f"{evidence_confirmed}:{next_exercise_index}"
+        )
         key = (household_id, f"record_attempt:{session.id}", idempotency_key)
         existing = self._idempotency.get(key)
         if existing is not None:
@@ -388,6 +484,9 @@ class InMemoryLearningRepository:
             ):
                 raise IdempotencyConflictError
             return event_attempt, True
+        if session.status is not StudySessionStatus.ACTIVE:
+            raise SessionNotActiveError
+        self._advance_session_progress(session, next_exercise_index)
         sequence = len(self._attempts.setdefault(session.id, [])) + 1
         attempt = Attempt(
             id=uuid4(),
@@ -406,6 +505,24 @@ class InMemoryLearningRepository:
         self._idempotency[key] = StoredResult(self._fingerprint(payload), attempt)
         self._audit(household_id, "attempt_recorded", attempt.id)
         return attempt, False
+
+    def _advance_session_progress(
+        self, session: StudySession, next_exercise_index: int | None
+    ) -> None:
+        if next_exercise_index is None:
+            return
+        task = self._tasks.get(session.task_id)
+        if task is None or not task.exercises:
+            raise TaskProgressConflictError
+        if next_exercise_index > len(task.exercises):
+            raise TaskProgressConflictError
+        current = self._sessions[session.id]
+        if next_exercise_index > current.next_exercise_index + 1:
+            raise TaskProgressConflictError
+        if next_exercise_index > current.next_exercise_index:
+            self._sessions[session.id] = current.model_copy(
+                update={"next_exercise_index": next_exercise_index}
+            )
 
     def _write_once(
         self,

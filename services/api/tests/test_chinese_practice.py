@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from auth_helpers import DEFAULT_HOUSEHOLD_ID, session_headers
@@ -5,9 +6,13 @@ from fastapi.testclient import TestClient
 
 from study_api.chinese_practice import (
     ChineseContentItem,
+    ChineseContentReview,
     ChineseContentSource,
     ChineseSkill,
     ConceptEvidenceSpec,
+    ExactChoiceSpec,
+    InMemoryChinesePracticeRepository,
+    NormalizedTextSetSpec,
     OrderedTokensSpec,
     PublishChinesePoemsRequest,
     score_chinese,
@@ -180,6 +185,146 @@ def test_deterministic_scorer_handles_order_and_evidence_without_provider() -> N
     partial = score_chinese(reading, {"answer": "长出嫩叶", "evidence": "别的句子"})
     assert partial.score == 1
     assert partial.feedback_tags == ("evidence_missing",)
+
+
+def test_chinese_golden_scorer_covers_every_learning_skill() -> None:
+    cases = (
+        (
+            ChineseSkill.PINYIN,
+            ExactChoiceSpec(type="exact_choice", answer="青"),
+            {"choice": "青"},
+        ),
+        (
+            ChineseSkill.CHARACTER,
+            NormalizedTextSetSpec(type="normalized_text_set", accepted=("晴", "晴天")),
+            {"text": " 晴。"},
+        ),
+        (
+            ChineseSkill.VOCABULARY,
+            NormalizedTextSetSpec(type="normalized_text_set", accepted=("清新", "空气清新")),
+            {"text": "空气清新"},
+        ),
+        (
+            ChineseSkill.SENTENCE,
+            OrderedTokensSpec(type="ordered_tokens", tokens=("小鸟", "飞过", "天空")),
+            {"tokens": ["小鸟", "飞过", "天空"]},
+        ),
+        (
+            ChineseSkill.READING,
+            ConceptEvidenceSpec(
+                type="concept_evidence",
+                required_concepts=(("新叶", "嫩叶"),),
+                evidence_spans=("小树长出了嫩绿的新叶",),
+            ),
+            {"answer": "因为小树长出了嫩叶", "evidence": "小树长出了嫩绿的新叶"},
+        ),
+        (
+            ChineseSkill.RECITATION,
+            ExactChoiceSpec(type="exact_choice", answer="花落知多少"),
+            {"choice": "花落知多少"},
+        ),
+        (
+            ChineseSkill.EXPRESSION,
+            ConceptEvidenceSpec(
+                type="concept_evidence",
+                required_concepts=(("开头",), ("结尾",)),
+                evidence_spans=("先说开头，再写结尾",),
+            ),
+            {"answer": "有开头和结尾", "evidence": "先说开头，再写结尾"},
+        ),
+        (
+            ChineseSkill.POEM,
+            ExactChoiceSpec(type="exact_choice", answer="处处闻啼鸟"),
+            {"choice": "处处闻啼鸟"},
+        ),
+    )
+
+    for index, (skill, answer_spec, response) in enumerate(cases):
+        item = ChineseContentItem(
+            id=UUID(f"20000000-0000-0000-0000-{index + 10:012d}"),
+            revision=1,
+            grade_min=1,
+            grade_max=6,
+            skill=skill,
+            task_group="golden",
+            title=f"{skill.value} golden",
+            prompt="请作答",
+            answer_spec=answer_spec,
+            knowledge_key=f"golden-{skill.value}",
+            source=ChineseContentSource(
+                type="original",
+                source_id="golden",
+                license_status="cleared",
+            ),
+        )
+        result = score_chinese(item, response)
+        assert result.correct is True, skill
+        assert (
+            result.score == result.max_score == (2 if answer_spec.type == "concept_evidence" else 1)
+        )
+        assert result.feedback_tags == ("correct",)
+
+
+def test_chinese_golden_scorer_exposes_bounded_retry_feedback() -> None:
+    item = ChineseContentItem(
+        id=UUID("20000000-0000-0000-0000-000000000020"),
+        revision=1,
+        grade_min=1,
+        grade_max=6,
+        skill=ChineseSkill.PINYIN,
+        task_group="golden",
+        title="拼音重试",
+        prompt="选择正确读音",
+        answer_spec=ExactChoiceSpec(type="exact_choice", answer="青"),
+        knowledge_key="golden-retry",
+        source=ChineseContentSource(type="original", source_id="golden", license_status="cleared"),
+    )
+
+    result = score_chinese(item, {"choice": "请"})
+
+    assert result.correct is False
+    assert result.score == 0
+    assert result.feedback_tags == ("choice_retry",)
+    assert result.correct_answer == "青"
+
+
+def test_pending_original_content_is_not_available_to_learners() -> None:
+    practice = InMemoryChinesePracticeRepository()
+    pending = ChineseContentItem(
+        id=UUID("20000000-0000-0000-0000-000000000021"),
+        revision=1,
+        grade_min=1,
+        grade_max=6,
+        skill=ChineseSkill.PINYIN,
+        task_group="review-gate",
+        title="待审核原创内容",
+        prompt="不能展示",
+        answer_spec=ExactChoiceSpec(type="exact_choice", answer="青"),
+        knowledge_key="review-gate",
+        source=ChineseContentSource(type="original", source_id="pending", license_status="cleared"),
+    )
+    practice._content[pending.id] = pending
+
+    assert practice.list_content(grade=1) == []
+
+    approved = pending.model_copy(
+        update={
+            "id": UUID("20000000-0000-0000-0000-000000000022"),
+            "source": pending.source.model_copy(
+                update={
+                    "review": ChineseContentReview(
+                        status="approved",
+                        rights_evidence_sha256="a" * 64,
+                        reviewed_at=datetime.now(UTC),
+                        reviewer_role="project_owner",
+                    )
+                }
+            ),
+        }
+    )
+    practice._content[approved.id] = approved
+
+    assert practice.list_content(grade=1) == [approved]
 
 
 def test_retired_demos_are_not_listed_and_private_poems_are_child_scoped() -> None:

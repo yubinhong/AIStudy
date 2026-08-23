@@ -369,6 +369,33 @@ def _starter_content() -> tuple[ChineseContentItem, ...]:
     return ()
 
 
+def _source_is_available_for_learning(status: str, source: ChineseContentSource) -> bool:
+    """Apply the content gate before a learner can see or submit an item.
+
+    Household curriculum is released by the parent's approved snapshot and
+    authorization statement.  Original material needs the separate, auditable
+    project-owner review with a rights-evidence digest.
+    """
+
+    if status != "approved":
+        return False
+    if source.type == "private_curriculum":
+        return source.license_status == "private_authorized"
+    review = source.review
+    return (
+        source.license_status == "cleared"
+        and review.status == "approved"
+        and review.protocol_version == "chinese-content-review.v1"
+        and review.rights_evidence_sha256 is not None
+        and review.reviewed_at is not None
+        and review.reviewer_role == "project_owner"
+    )
+
+
+def _is_available_for_learning(item: ChineseContentItem) -> bool:
+    return _source_is_available_for_learning(item.status, item.source)
+
+
 def _is_visible_to(item: ChineseContentItem, household_id: UUID, child_id: UUID) -> bool:
     """Original content is global; curriculum-derived content is household scoped."""
 
@@ -394,7 +421,7 @@ class InMemoryChinesePracticeRepository:
         return [
             item
             for item in self._content.values()
-            if item.status == "approved"
+            if _is_available_for_learning(item)
             and item.grade_min <= grade <= item.grade_max
             and (skill is None or item.skill is skill)
             and (
@@ -422,7 +449,7 @@ class InMemoryChinesePracticeRepository:
         item = self._content.get(request.content_id)
         if (
             item is None
-            or item.status != "approved"
+            or not _is_available_for_learning(item)
             or not item.grade_min <= grade <= item.grade_max
             or not _is_visible_to(item, household_id, child_id)
         ):
@@ -474,7 +501,7 @@ class InMemoryChinesePracticeRepository:
                 and review.child_id == child_id
                 and (item := self._content.get(review.content_id)) is not None
                 and item.revision == review.content_revision
-                and item.status == "approved"
+                and _is_available_for_learning(item)
                 and item.grade_min <= grade <= item.grade_max
                 and (not due_only or review.due_at <= now)
             ),
@@ -593,8 +620,12 @@ class PostgresChinesePracticeRepository:
         with self._engine.connect() as connection:
             items = [self._item(dict(row)) for row in connection.execute(statement).mappings()]
         if household_id is None or child_id is None:
-            return items
-        return [item for item in items if _is_visible_to(item, household_id, child_id)]
+            return [item for item in items if _is_available_for_learning(item)]
+        return [
+            item
+            for item in items
+            if _is_available_for_learning(item) and _is_visible_to(item, household_id, child_id)
+        ]
 
     def submit_attempt(
         self,
@@ -645,7 +676,9 @@ class PostgresChinesePracticeRepository:
             if content_row is None:
                 raise LookupError("content not found")
             item = self._item(dict(content_row))
-            if not _is_visible_to(item, household_id, child_id):
+            if not _is_available_for_learning(item) or not _is_visible_to(
+                item, household_id, child_id
+            ):
                 raise LookupError("content not found")
             if item.revision != request.content_revision:
                 raise ValueError("content revision conflict")
@@ -719,7 +752,11 @@ class PostgresChinesePracticeRepository:
         self, household_id: UUID, child_id: UUID, grade: int, due_only: bool
     ) -> list[ChineseReviewItem]:
         statement = (
-            select(self._reviews)
+            select(
+                self._reviews,
+                self._content.c.status.label("_content_status"),
+                self._content.c.source_json.label("_content_source"),
+            )
             .join(
                 self._content,
                 and_(
@@ -742,6 +779,10 @@ class PostgresChinesePracticeRepository:
             return [
                 ChineseReviewItem.model_validate(dict(row))
                 for row in connection.execute(statement).mappings()
+                if _source_is_available_for_learning(
+                    row["_content_status"],
+                    ChineseContentSource.model_validate(row["_content_source"]),
+                )
             ]
 
     def skill_report(self, household_id: UUID, child_id: UUID) -> ChineseSkillReport:

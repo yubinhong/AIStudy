@@ -29,9 +29,11 @@
 
 Apple Silicon 的默认 Compose 镜像是 Linux ARM64 调试运行时；由于锁定的 PaddlePaddle 3.3.1 只提供 macOS ARM64 和 Linux x86_64 wheel，该镜像不含 Paddle OCR。不得把规则/手工遮挡或“ARM 镜像可以启动”解释成完整 PrivacySanitizer 已通过；启用图片外发前仍必须在具备获批本地检测器的运行时完成固定脱敏评测和用户确认门禁。
 
-当前实现状态：Profile/Device、Learning/Capture/OCR/ImageAnalysis、Account/AuthSession、TutorTurn、教材知识图谱、语文 Content/Attempt/Review 和短期 Export 均有 PostgreSQL 仓储；本地与 Ubuntu OpenAPI 为 `0.14.0`、迁移头 `0031_multisubject_chinese`。孩子绑定拍题/活动会话、家长学习记录/周报/导出/删除、Compose 和反向 Household 授权测试已存在。孩子档案删除按依赖清理学习、Capture/OCR、视觉、Tutor、教材派生数据、语文 Attempt/Review 和导出数据并级联账号/会话；Flutter 令牌只进系统安全存储，离线 Attempt 只进按账号隔离的 SQLite。2026-08-15 Ubuntu 前滚前的 PostgreSQL/MinIO 备份 `/home/syin/study-backups/20260815T144358Z` 已隔离恢复验证；英语 Provider 保持关闭，真实视觉检测器和真实教材 Provider 质量/成本验收仍未完成。
+当前实现状态：Profile/Device、Learning/Capture/OCR/ImageAnalysis、Account/AuthSession、TutorTurn、教材知识图谱、语文 Content/Attempt/Review 和短期 Export 均有 PostgreSQL 仓储；本地 API/OpenAPI 为 `0.17.0`、迁移头 `0036_task_session_progress`，Ubuntu 仍为 `0.16.0`/`0035_chinese_poem_skill`。孩子绑定拍题/活动会话、家长学习记录/周报/导出/删除、Compose 和反向 Household 授权测试已存在。孩子档案删除按依赖清理学习、Capture/OCR、视觉、Tutor、教材派生数据、语文 Attempt/Review 和导出数据并级联账号/会话；Flutter 令牌只进系统安全存储，确认作答、任务完成、复习收口和跳过的离线事件只进按服务端/家庭/账号隔离的 SQLite，联网后先同步 Attempt 再按序重放终态。2026-08-15 Ubuntu 前滚前的 PostgreSQL/MinIO 备份 `/home/syin/study-backups/20260815T144358Z` 已隔离恢复验证；英语 Provider 保持关闭，真实视觉检测器和真实教材 Provider 质量/成本验收仍未完成。
 
 2026-08-15 语文边界：家长显式启用语文后孩子才可读取和提交；Household、Owner、绑定孩子和学科开关均在服务端重新授权。语文 `AnswerSpec` 只存在服务端/数据库，孩子 OpenAPI 响应与 Flutter 模型不包含答案；`chinese-score.v1` 只做固定选择、排序、规范化文本集合和“回答 + 文中依据”的确定性校验，不调用 Provider，也不把评分直接解释为永久掌握。Attempt 追加写并纳入家庭导出/孩子删除，Review 是可重算调度状态。首批内容为 synthetic 原创样例；正式内容上线前仍须教研、版权和年龄适配审核。语文教材只创建私有 subject-scoped 草稿，专用 Schema/Prompt 完成前阻断分析，禁止借用数学 Prompt 或跨学科复用材料。
+
+2026-08-23 任务生命周期边界：本地 API/OpenAPI `0.17.0` 的 `0036_task_session_progress` 只保存会话下一题号，不保存题目正文或图片；服务端按家庭/孩子/日期限制每天 3 个非撤销任务，未来任务不能提前启动、过期任务仍可补做。家长撤销会关闭活动会话并使后续 Attempt/完成失效，所有写入继续经过 Household/角色/孩子授权和幂等键。Ubuntu 尚未部署这轮变更。
 
 2026-07-31 英语口语边界：供应商中立框架和 `0029` 表已随 `0.13.0` 部署 Ubuntu，但运行态确认 `STUDY_ENGLISH_LIVE_ENABLED=false`、Provider `disabled`。当前 Gemini/Google Cloud 生成式 AI 条款不允许本项目这类可能由未成年人访问的应用使用，因此仓库禁止 Gemini SDK、Key、Adapter、临时令牌和客户端 Provider URL。测试 `fake` 还要求显式测试开关。真实 Provider 必须先完成书面条款/儿童数据处理审查、监护人同意文本和新 ADR。
 

@@ -17,6 +17,12 @@ from study_api.domain.learning_repository import (
     ChildAssignmentError,
     ResourceVersionConflictError,
     SessionAlreadyCompletedError,
+    SessionNotActiveError,
+    TaskCapacityError,
+    TaskNotRevocableError,
+    TaskNotScheduledError,
+    TaskNotStartableError,
+    TaskProgressConflictError,
 )
 from study_api.domain.models import (
     AccountRole,
@@ -82,6 +88,8 @@ def create_task(
         ) from error
     except IdempotencyConflictError as error:
         raise _conflict("idempotency key reused with a different payload") from error
+    except TaskCapacityError as error:
+        raise _conflict("daily task capacity reached") from error
     return JSONResponse(
         status_code=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
         content=task.model_dump(mode="json"),
@@ -116,11 +124,43 @@ def start_session(
         ) from error
     except ResourceVersionConflictError as error:
         raise _conflict("task version conflict") from error
+    except TaskNotStartableError as error:
+        raise _conflict("task is no longer available to start") from error
+    except TaskNotScheduledError as error:
+        raise _conflict("task is not scheduled yet") from error
     except IdempotencyConflictError as error:
         raise _conflict("idempotency key reused with a different payload") from error
     return JSONResponse(
         status_code=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
         content=session.model_dump(mode="json"),
+        headers={"Idempotency-Replayed": "true"} if replayed else {},
+    )
+
+
+@router.post("/tasks/{task_id}/revoke", response_model=StudyTask)
+def revoke_task(
+    household_id: UUID,
+    task_id: UUID,
+    idempotency_key: IdempotencyKey,
+    principal: Principal,
+    repository: Repository,
+) -> JSONResponse:
+    """Revoke a parent-assigned task and close any active child session."""
+
+    require_parent(require_household(principal, household_id))
+    try:
+        task, replayed = repository.revoke_task(household_id, task_id, idempotency_key)
+    except LookupError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="resource not found"
+        ) from error
+    except TaskNotRevocableError as error:
+        raise _conflict("task is no longer revocable") from error
+    except IdempotencyConflictError as error:
+        raise _conflict("idempotency key reused with a different payload") from error
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=task.model_dump(mode="json"),
         headers={"Idempotency-Replayed": "true"} if replayed else {},
     )
 
@@ -193,6 +233,10 @@ def record_attempt(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="resource not found"
         ) from error
+    except SessionNotActiveError as error:
+        raise _conflict("study session is no longer active") from error
+    except TaskProgressConflictError as error:
+        raise _conflict("task exercise progress conflict") from error
     except IdempotencyConflictError as error:
         raise _conflict("idempotency key reused with a different payload") from error
     return JSONResponse(
@@ -223,6 +267,8 @@ def complete_session(
         ) from error
     except SessionAlreadyCompletedError as error:
         raise _conflict("study session is already completed") from error
+    except SessionNotActiveError as error:
+        raise _conflict("study session is no longer active") from error
     except IdempotencyConflictError as error:
         raise _conflict("idempotency key reused with a different payload") from error
     return JSONResponse(
@@ -255,5 +301,9 @@ def sync_batch(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="resource not found"
         ) from error
+    except SessionNotActiveError as error:
+        raise _conflict("study session is no longer active") from error
+    except TaskProgressConflictError as error:
+        raise _conflict("task exercise progress conflict") from error
     except IdempotencyConflictError as error:
         raise _conflict("offline event conflict") from error

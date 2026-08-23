@@ -88,6 +88,10 @@ def _headers(
     return session_headers(client, role=role, child_id=child_id)
 
 
+def _past_date() -> date:
+    return date(2020, 1, 1) + timedelta(days=uuid4().int % 2000)
+
+
 def _client(
     object_storage: CaptureObjectStorage | None = None,
     ocr_job_queue: PostgresOcrJobQueue | None = None,
@@ -131,7 +135,7 @@ def _session(client: TestClient) -> str:
             "child_id": CHILD_A,
             "title": "Synthetic PostgreSQL capture task",
             "subject": "math",
-            "scheduled_for": date(2026, 7, 13).isoformat(),
+            "scheduled_for": _past_date().isoformat(),
         },
     ).json()
     response = client.post(

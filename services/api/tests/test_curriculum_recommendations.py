@@ -7,6 +7,7 @@ import pytest
 from auth_helpers import session_headers
 from fastapi.testclient import TestClient
 
+from study_api.chinese_practice import ChinesePoemDraft, InMemoryChinesePracticeRepository
 from study_api.curriculum_analysis_jobs import InMemoryCurriculumKnowledgeRepository
 from study_api.curriculum_limits import MAX_DOCUMENT_BYTES
 from study_api.domain.curriculum_knowledge import (
@@ -80,6 +81,18 @@ class CurriculumWithChunks(InMemoryCurriculumRepository):
         return self.list_chunks(household_id, child_id, snapshot_id)
 
 
+class ChinesePoemCurriculumRepository(InMemoryCurriculumKnowledgeRepository):
+    def __init__(self, poems: tuple[ChinesePoemDraft, ...]) -> None:
+        super().__init__()
+        self._poems = poems
+
+    def list_chinese_poems(
+        self, household_id: UUID, child_id: UUID, snapshot_id: UUID
+    ) -> tuple[ChinesePoemDraft, ...]:
+        del household_id, child_id, snapshot_id
+        return self._poems
+
+
 def test_parent_uploads_multiple_curriculum_documents_into_private_drafts() -> None:
     storage = MemoryDocumentStorage()
     client = TestClient(create_app(object_storage=storage))
@@ -150,6 +163,105 @@ def test_chinese_curriculum_is_subject_scoped_and_analysis_is_queued() -> None:
     assert snapshot["subject"] == "chinese"
     assert analysis.status_code == 202
     assert analysis.json()["status"] == "queued"
+
+
+def test_approving_chinese_curriculum_publishes_extracted_poem_questions() -> None:
+    curriculum_repository = InMemoryCurriculumRepository()
+    knowledge_repository = ChinesePoemCurriculumRepository(
+        (
+            ChinesePoemDraft(
+                title="春晓",
+                page_number=12,
+                lines=("春眠不觉晓", "处处闻啼鸟", "夜来风雨声", "花落知多少"),
+            ),
+        )
+    )
+    chinese_repository = InMemoryChinesePracticeRepository()
+    client = TestClient(
+        create_app(
+            curriculum_repository=curriculum_repository,
+            curriculum_knowledge_repository=knowledge_repository,
+            chinese_practice_repository=chinese_repository,
+        )
+    )
+    parent = session_headers(client)
+    enabled = client.patch(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}",
+        headers={**parent, "Idempotency-Key": "enable-chinese-auto-poem"},
+        json={
+            "display_name": "Synthetic Child A",
+            "grade": 3,
+            "curriculum_version": "multi-subject-2026",
+            "subjects": ["math", "chinese"],
+        },
+    )
+    assert enabled.status_code == 200
+    imported = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/imports",
+        headers={**parent, "Idempotency-Key": "import-chinese-auto-poem"},
+        json={
+            "filename": "语文上册.json",
+            "media_type": "application/json",
+            "byte_size": 128,
+            "content_sha256": "e" * 64,
+            "authorization_statement": "家庭公开教材授权",
+            "grade": 3,
+            "subject": "chinese",
+            "textbook_version": "公开语文三年级上册",
+            "term": "上学期",
+            "sections": [
+                {
+                    "title": "古诗两首",
+                    "chapter": "第一单元",
+                    "learning_objectives": ["背诵古诗"],
+                }
+            ],
+        },
+    )
+    assert imported.status_code == 201
+    result = imported.json()
+    snapshot_id = result["snapshot"]["id"]
+    now = datetime.now(UTC)
+    knowledge_repository.save_for_testing(
+        CurriculumKnowledgeMap(
+            id=UUID("00000000-0000-0000-0000-000000000951"),
+            household_id=UUID(HOUSEHOLD_A),
+            child_id=UUID(CHILD_A),
+            material_id=UUID(result["material"]["id"]),
+            snapshot_id=UUID(snapshot_id),
+            status=KnowledgeMapStatus.NEEDS_REVIEW,
+            attempt=1,
+            book_summary="古诗两首",
+            page_count=1,
+            analyzed_page_count=1,
+            provider="newapi",
+            model="chinese-model",
+            schema_version="chinese-curriculum-book-analysis.v2",
+            prompt_version="chinese-curriculum-book-consolidation.v2",
+            created_at=now,
+            updated_at=now,
+        )
+    )
+
+    approved = client.post(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/curriculum/snapshots/{snapshot_id}/analysis/approve",
+        headers={**parent, "Idempotency-Key": "approve-chinese-auto-poem"},
+    )
+    assert approved.status_code == 200
+    content = client.get(
+        f"/households/{HOUSEHOLD_A}/children/{CHILD_A}/chinese/content",
+        headers=session_headers(client, role="child", household_id=HOUSEHOLD_A, child_id=CHILD_A),
+    )
+
+    assert content.status_code == 200
+    assert len(content.json()) == 3
+    assert {item["prompt"] for item in content.json()} == {
+        "“春眠不觉晓”的下一句是哪一句？",
+        "“处处闻啼鸟”的下一句是哪一句？",
+        "“夜来风雨声”的下一句是哪一句？",
+    }
+    assert all(len(item["options"]) >= 2 for item in content.json())
+    assert all(item["source"]["snapshot_id"] == snapshot_id for item in content.json())
 
 
 def test_file_upload_uses_a_pdf_specific_provisional_title_when_metadata_is_omitted() -> None:
