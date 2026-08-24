@@ -6,7 +6,7 @@
 - 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.17.0`/`0036_task_session_progress`；2026-08-23 发布前备份已隔离恢复（39 张 PostgreSQL public 表、359 个 MinIO 文件），API/Web/worker 健康。没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
 - Owner/值班：`TBD（项目 Owner/运维负责人在 staging 前确认）`。
 - 用户影响：服务中断会阻止同步、拍题、AI 提示和周报；孩子端必须保留离线任务/作答，不能因服务中断丢学习记录。
-- 外部依赖：单一获批云视觉 Provider、Tutor Provider、HMS（或应用内提醒）和对象存储；具体供应商 `TBD`。本地 OCR 仅是目标 PrivacySanitizer 的隐私检测依赖，不是外部 Provider。
+- 外部依赖：单一获批云视觉 Provider、Tutor Provider、可选本地 Qwen 模型镜像/权重、HMS（或应用内提醒）和对象存储；具体云供应商 `TBD`。本地 OCR 仅是目标 PrivacySanitizer 的隐私检测依赖，不是外部 Provider。
 - Dashboard/日志/Trace：目标为 OpenTelemetry 接入批准的可观测平台；链接和查询 `TBD`。
 
 ### 2026-08-23 部署记录
@@ -38,8 +38,8 @@ GitHub Actions Android APK 构建、稳定签名 Secret、Artifact 校验/安装
 
 ### 当前环境
 
-- local：`infra/compose/compose.yml` 已编排 PostgreSQL、Redis、MinIO、API、家长 Web、一次性 Alembic migration 和默认启动的 ImageAnalysis worker；Apple Silicon `linux/arm64` 调试镜像构建成功。NewAPI 默认关闭；此时 worker 保持空闲。
-- Ubuntu 自用验收：宿主为 Ubuntu 24.04/x86_64，远端 `infra/compose/.env` 权限 600。2026-08-15 已在保留数据卷和配置的前提下前滚至 `0031_multisubject_chinese`；备份 `/home/syin/study-backups/20260815T144358Z` 已完成 PostgreSQL/MinIO 隔离恢复验证。API `0.14.0`、PostgreSQL、MinIO、Redis、Web、ImageAnalysis、DataLifecycle、MaterialParse 和 CurriculumAnalysis worker 运行健康。新流式上传使用内部 `minio:9000`，宿主/LAN 未发布 MinIO `9000`。既有数学闭环与新 `math/chinese`、subject-aware 教材、语文确定性 Content/Attempt/Review 已部署；API/Web `/healthz`、远端 current/head、OpenAPI、语文表/复合主键/seed、旧教材数学回填、未认证保护、英语关闭态和容器内运行源码已校验。Web 使用 Node `24.18`/pnpm `11.7` 重建，语文并发/导出集成、正式内容、真实教材质量/成本、跨家庭登录态浏览器/设备和生产监控仍未实现。
+- local：`infra/compose/compose.yml` 已编排 PostgreSQL、Redis、MinIO、API、家长 Web、一次性 Alembic migration、AI worker 和可切换的 llama.cpp/Qwen 本地模型服务；Apple Silicon `linux/arm64` 调试镜像构建成功。`STUDY_LOCAL_MODEL_ENABLED=false` 时本地模型容器保持空闲，路由读取 NewAPI；设置为 `true` 时所有当前 AI 请求只走 Compose 内部本地模型，模型缓存写入独立持久卷且不发布推理端口。
+- Ubuntu 自用验收：宿主为 Ubuntu 24.04/x86_64、12 GB 内存/4 核，远端 `infra/compose/.env` 权限 600。2026-08-24 备份 `/home/syin/study-backups/20260824T024445Z` 已隔离恢复验证 39 张 PostgreSQL public 表和 353 个 MinIO 文件；API/OpenAPI `0.17.0`、迁移 `0036_task_session_progress`、PostgreSQL、MinIO、Redis、Web、四个 worker 和内部 Qwen 模型健康。模型与 MinIO 均不发布宿主端口，运行态选择 `local_qwen`，文本 JSON smoke 通过；模型空闲约 3.8 GiB、推理约 4.6 GiB。视觉 `question-extraction.v1` synthetic 大图 600 秒内不收敛，质量门禁失败；真实 PDF、账号浏览器和设备未验证。
 - 真机拍题当前事实：API/Flutter/Compose/Ubuntu 已切换为 App 携带 Session 向 API 上传，且 Compose 不发布 MinIO `9000`。最新 iPad Release `Runner.app` 已安装到无线设备 `00008110-0011356E0E41801E`，但 iOS 首次启动要求用户在“设置 → 通用 → VPN 与设备管理”显式信任开发者 Team `VZ59988J63`；信任后仍需执行拍题、权限、弱网和重启验收。Provider HTTP `402` 只表示 NewAPI 余额/模型额度不可用，不应误判为上传或 MinIO 故障。
 - staging：未建立。
 - production：未建立且未获部署授权。
@@ -97,6 +97,21 @@ uv run python scripts/run_curriculum_analysis_worker.py --watch
 
 启用前先用 synthetic 图片验证 NewAPI 返回 `question-extraction.v1`，再用 synthetic 图文教材验证 `curriculum-page-analysis.v1` 与 `curriculum-book-analysis.v1`；教材 Provider 会依次尝试 `json_schema`、`json_object`、无 `response_format` 以兼容网关，但无论采用哪种格式均必须在服务端通过固定 Schema。页级 Prompt `curriculum-page-visual.v5` 仅将明确的中英文难度同义标签、0–100/百分比置信度标度和同页章节标题归一化；页级观察可省略无法可靠判断的学习目标，最终整书知识点仍严格要求目标，其他字段错误仍拒绝。整书 Prompt `curriculum-book-consolidation.v5` 允许封面/目录/过渡章节为空，把非数组可选引用收敛为空、过滤缺少非空目标的知识点，并将超过既有 Schema 上限的章节、知识点、目标、先修项和练习引用截为有界前缀；至少一个最终知识点、其目标、页码和练习来源校验仍不可省略。单次请求只对 `429`、`5xx`、网络错误和超时按 1 秒、2 秒退避，最多三次；最终失败留在可见状态，须由家长明确重新理解。默认 `STUDY_NEWAPI_USER_AGENT=study-api/0.5`，用于兼容会拦截 Python 默认 `urllib` 签名的前置网关。该值只能是 1–256 个可打印 ASCII 字符，禁止换行或其他控制字符。worker 的失败只写稳定错误码和 Schema 字段路径及截断计数，原始 Provider 请求/响应、教材文字和页图不写日志。发现外发范围、模型行为或成本异常时，立即将 `STUDY_NEWAPI_ENABLED=false` 并停止两个 Provider worker；已入队任务不会在关闭开关后继续被新 worker 领取。
 
+### 自用本地 Qwen 启用流程（ADR-0028）
+
+在 `infra/compose/.env` 设置：
+
+```dotenv
+STUDY_LOCAL_MODEL_ENABLED=true
+STUDY_LOCAL_MODEL_NAME=Qwen3.5-4B-Q4_K_M
+STUDY_LOCAL_MODEL_HF_REPO=bjivanovich/Qwen3.5-4B-Vision-GGUF
+STUDY_LOCAL_MODEL_MODEL_FILE=Qwen3.5-4B.Q4_K_M.gguf
+STUDY_LOCAL_MODEL_MMPROJ_FILE=Qwen3.5-4B.BF16-mmproj.gguf
+STUDY_LOCAL_MODEL_BASE_URL=http://local-model:8080/v1
+```
+
+执行 `docker compose -f infra/compose/compose.yml up -d local-model api image-analysis-worker curriculum-analysis-worker`，等待 `local-model` 健康后再运行不含儿童数据的 text/vision/schema smoke。开启后不要同时把真实请求送往 NewAPI；本地服务或模型不可用时不会自动云端回退。恢复云端路径时把开关改为 `false`，配置并验证 `STUDY_NEWAPI_*`，再重启 API 和两个 AI worker。本机 Linux ARM64 已完成镜像、权重/projector 下载和 synthetic smoke；GGUF 来源/许可证、镜像摘要、目标 Ubuntu 硬件内存/速度、固定 AI eval 与视觉质量仍未验收。
+
 ### 生产前置检查
 
 - [ ] CI、契约、测试、AI eval、安全扫描和四设备回归通过。
@@ -105,6 +120,7 @@ uv run python scripts/run_curriculum_analysis_worker.py --watch
 - [ ] 适用法域、儿童隐私、保留期限、Owner/值班和安全联系渠道已批准。
 - [ ] ADR-0017 环境验收：代码及隔离 Chromium 已验证首次改密阻断、会话轮换/撤销、Web Cookie/CSRF、跨家庭角色和双孩子；Ubuntu 真实账号/PostgreSQL 浏览器及真实设备验证后才能勾选。
 - [x] 自用 NewAPI 的 URL、API key、视觉模型、响应 Schema、停用开关和 synthetic 大图联调已验证；PrivacySanitizer/用户确认/临时副本删除 eval 已通过。
+- [ ] ADR-0028 本地 Qwen：Ubuntu 已完成首次下载、health/models、文本 JSON、路由、内存和私有端口核验；`question-extraction.v1` synthetic 大图在 600 秒内不收敛，视觉质量门禁失败。模型来源最终核对、chat template/Schema 修复、固定质量评测和真实设备回归尚未完成。
 - [ ] ADR-0018 上传收敛：本地与 Ubuntu OpenAPI/Flutter/API/Compose 已切换为单一有界流式上传；公开 MinIO 配置和 `9000` 映射已删除，相关本地回归及远端端口复核通过；断连/超限/超时/并发现场压测和真机验证待执行。
 - [ ] ADR-0019/PLAN-0013：孩子聚合原子创建/幂等/唯一约束、孩子选择/服务端过滤、反向授权和 API/Web 成对部署已通过；隔离 Chromium 双孩子已通过，旧数据审计、真实 PostgreSQL 浏览器和设备回归仍待执行。
 - [ ] PLAN-0016/0017/0018、ADR-0021/0022/0023：Ubuntu 已实施 `0.11.0`/`0025` 的 PDF-only、错题 closeout/ReviewAttempt、私有原页、多模态知识图谱、家长批准、批准知识点推荐和孩子端原页入口，并完成备份恢复、迁移头、健康和私有端口烟雾。仍须完成真实 Provider/PDF/iPad/浏览器验收、个人信息门禁及 AI 成本观测后才可勾选。

@@ -42,7 +42,7 @@ AIStudy 是给一个家庭自己使用的小学生学习助手。孩子在平板
 | 英语 | 暂未开放 |
 | 自用部署 | 已在家庭 Ubuntu 服务器运行；不等同于公开网站或商业服务 |
 
-Ubuntu 当前运行 API/OpenAPI `0.17.0`、迁移 `0036_task_session_progress`。本次部署先从未提交的本地工作区完成，随后已由提交和 tag `v0.17.0` 固化并推送，包含跨设备任务位置、每天最多 3 项、未来任务保护、家长撤销、语文教材批准后自动古诗出题和看图写话安全降级。备份、恢复校验、健康检查和仍待完成的设备/Provider 验证见 [RUNBOOK.md](RUNBOOK.md) 和 [TESTING.md](TESTING.md)。
+Ubuntu 当前运行 API/OpenAPI `0.17.0`、迁移 `0036_task_session_progress`。服务器配有 12 GB 内存，并已启用本地 `Qwen3.5-4B Q4_K_M`；模型只在 Compose 内网提供服务，不向宿主机或局域网暴露端口。跨设备任务位置、每天最多 3 项、未来任务保护、家长撤销、语文教材批准后自动古诗出题和看图写话安全降级由 tag `v0.17.0` 固化；本地模型路由是后续增量。备份、恢复校验、健康检查和仍待完成的设备/Provider 验证见 [RUNBOOK.md](RUNBOOK.md) 和 [TESTING.md](TESTING.md)。
 
 ## 家庭使用流程
 
@@ -79,6 +79,17 @@ curl -fsS http://127.0.0.1:3000/healthz
 空数据库会创建一次性 `admin/admin123456` 引导账号。只应在受信本机或家庭局域网首次登录，并立即修改密码；改密前家庭数据接口会被阻断。不要把默认账号暴露到公网。
 
 完整配置、Apple Silicon 限制、NewAPI 接入、备份与恢复步骤见 [infra/compose/README.md](infra/compose/README.md) 和 [RUNBOOK.md](RUNBOOK.md)。
+
+### AI 模型路由
+
+Compose 支持在本地 Qwen 和现有 NewAPI 云端模型之间进行显式切换：
+
+- `STUDY_LOCAL_MODEL_ENABLED=true`：启动 `Qwen3.5-4B Q4_K_M`，当前所有 AI 大模型请求统一走本地 OpenAI-compatible 服务。请求失败时不会静默回退到云端，避免同一份内容在未确认时被外发。
+- `STUDY_LOCAL_MODEL_ENABLED=false`：不加载本地权重，恢复现有 `STUDY_NEWAPI_*` 云端路由；云端仍需单独设置 `STUDY_NEWAPI_ENABLED=true` 和有效配置。
+
+本地模型首次启动会下载约数 GB 权重并写入持久化 Docker volume，所需时间取决于网络。若只有 Docker 守护进程能访问外网，可设置仅传给模型容器的 `STUDY_LOCAL_MODEL_PROXY_URL`。当前家庭 Ubuntu 服务器使用 12 GB 内存、4 个 CPU 核心和 `8192` context 完成部署；大图结构化视觉请求可能需要数分钟，因此这是可运行的家庭自用规格，不是低延迟服务基线，也不代表所有请求负载下的通用最低配置。开关和模型参数示例见 [infra/compose/.env.example](infra/compose/.env.example)。
+
+当前目标服务器的文本 JSON smoke 已通过，但 synthetic 数学大图尚未在 600 秒内通过固定 Schema，视觉质量门禁仍为失败。修复并重跑固定评测前，不应把本地视觉、教材分析或 Tutor 描述为质量验收通过；失败不会自动切换到云端。
 
 ## Android APK 与部署
 

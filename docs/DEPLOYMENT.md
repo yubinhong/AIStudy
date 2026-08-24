@@ -7,7 +7,7 @@
 | 交付物 | 生成方式 | 当前边界 |
 | --- | --- | --- |
 | Android APK | GitHub Actions `Build Android APK` | 默认是 runner debug 证书签名的 evaluation 包；配置稳定密钥后才是可持续升级的自签名包 |
-| API、Web、Worker | `infra/compose/compose.yml` | 单家庭自托管；不应直接暴露到公网 |
+| API、Web、Worker、可选本地模型 | `infra/compose/compose.yml` | 单家庭自托管；`STUDY_LOCAL_MODEL_ENABLED=true` 时加载 Compose 内部 Qwen3.5-4B Q4_K_M，否则选择已配置云端 NewAPI；不应直接暴露到公网 |
 | PostgreSQL、Redis、MinIO | 同一 Compose | MinIO 只在 Compose 内部可达，不发布 `9000` |
 | 英语口语 | 客户端和 Provider 中立框架 | 真实 Provider 未接入，默认锁定 |
 | 教材 PDF | 家长自行合法取得并通过 Web 上传 | 不进入 Git 仓库，不随 AIStudy 分发，不因 Apache-2.0 获得额外授权 |
@@ -160,7 +160,7 @@ http://192.168.1.20:8000
 - Docker Engine 与 Docker Compose v2。
 - 至少为 PostgreSQL、MinIO、镜像和备份预留充足磁盘空间。
 - 家庭局域网内固定或可发现的服务器地址。
-- 可选 NewAPI；没有它时保持图片 Provider 关闭，基础服务仍可启动。
+- 可选 NewAPI；如果不启用本地模型，没有 NewAPI 时保持 AI Provider 关闭，基础服务仍可启动。
 
 ### 配置
 
@@ -202,6 +202,8 @@ docker compose -f infra/compose/compose.yml logs --tail=100 migrate api web
 空数据库会建立一次性 `admin/admin123456` 引导账号。只在服务器本机或受信家庭局域网首次登录并立即改密；改密前家庭数据接口会被阻断。随后在家长 Web 创建孩子档案和孩子账号，孩子 App 使用该账号登录。
 
 更完整的 Compose 配置、NewAPI、备份恢复和架构限制见 [Compose 部署说明](../infra/compose/README.md) 与 [运维手册](../RUNBOOK.md)。
+
+本地模型模式：复制 `infra/compose/.env.example` 后设置 `STUDY_LOCAL_MODEL_ENABLED=true`。Compose 会启动 `llama.cpp` 并从配置的 Hugging Face GGUF 仓库加载 `Qwen3.5-4B` 的 `Q4_K_M` 权重和视觉 projector；模型端口不发布到宿主/LAN。开启本地模式后 API、ImageAnalysis worker、CurriculumAnalysis worker 的所有当前 NewAPI-compatible 请求都只发给本地服务，不会在失败时静默切回云端。首次启动后应先用不含儿童数据的 synthetic 文本/图片和 Schema eval 验证，再进行家庭使用；模型来源、镜像摘要、目标硬件质量和成本/延迟记录仍是独立验收项。
 
 ## 7. 获取和导入电子教材
 

@@ -46,9 +46,12 @@ flowchart LR
     R --> PS["本地 PrivacySanitizer\nOCR / 规则 / 人脸与码检测"]
     PS --> UC["用户预览 / 手动涂抹 / 确认"]
     UC --> SD["不可逆脱敏副本"]
-    SD --> CV["单一获批云端视觉 Provider\nQuestionExtraction"]
+    SD --> ROUTER["Provider Router\nSTUDY_LOCAL_MODEL_ENABLED"]
+    ROUTER --> LOCAL["Compose 内部 llama.cpp\nQwen3.5-4B Q4_K_M"]
+    ROUTER --> CV["单一获批 NewAPI\nQuestionExtraction / Tutor"]
+    LOCAL --> API
     CV --> API
-    API --> T["Tutor Policy / 云端推理 Provider"]
+    API --> T["Tutor Policy / Provider Adapter"]
     API --> N["HMS / 应用内提醒"]
     CA --> SQ["端侧 SQLite / 离线队列"]
 ```
@@ -57,7 +60,7 @@ flowchart LR
 
 1. 儿童/家长设备与 API 之间是互联网/本地网络边界，所有身份、输入和文件均不可信。
 2. Capture 原图与 `PrivacySanitizer` 在家庭控制边界内；Capture 原图、对象键和 MinIO URL 不得跨越到云端，只有安全门禁通过并由用户确认的不可逆脱敏副本可以进入第三方边界。教材分析是独立边界：家长确认清洁电子教材不含个人信息后，服务端只发送最多 4 页一批的有界页级派生图/辅助文字，不发送 PDF 对象、对象键或存储 URL。
-3. API 与云视觉/Tutor Provider、对象存储、推送服务之间是第三方/基础设施边界，需最小权限、单 Provider、超时、有界重试、成本和数据最小化控制。
+3. API 与云视觉/Tutor Provider、Compose 内部本地模型、对象存储、推送服务之间是第三方/基础设施边界，需最小权限、单 Provider、超时、有界重试、成本和数据最小化控制。`STUDY_LOCAL_MODEL_ENABLED=true` 时所有当前 Adapter 请求只进入本地模型，不自动回退云端；关闭时才读取 NewAPI 云端配置。
 4. 家庭之间是强授权边界；任何跨 Household 访问都是高危事件。
 5. 本地、staging、production 是独立环境边界，禁止真实数据和凭据向低环境复制。
 
@@ -72,13 +75,13 @@ flowchart LR
 | Curriculum/Content | `services/api` 内模块 + parser/analysis worker | PDF 授权/私有上传、文字辅助解析、PDFium 私有页图、NewAPI 页批次理解、全书知识图谱和家长批准 | 原件、页图元数据、页级分析、知识点与版本 | Web、Tutor、Task、Mistake | 本地 `0025` 已实现；Provider 失败/Schema 或来源越界会进入 failed，批准前不能发布 |
 | Plan/Task/Session | `services/api` 内模块 | 全量错题/批准知识点排序、来源受限云端规划、家长审批、任务/会话/Attempt | 学习任务与过程记录 | 客户端、Curriculum、Report、Mistake、NewAPI | 不再从页文字正则抽题；具体题来自批准知识点，视觉题携带描述和受鉴权来源页 |
 | Capture / PrivacySanitizer | `services/api` 内模块 | 受限媒体、API 有界流式上传、本地脱敏/手动涂抹；ImageAnalysis、NewAPI 结构化和人工确认 | Capture/脱敏/解析状态；图片在私有 MinIO；Extraction/VerifiedQuestion 在 PostgreSQL | 对象存储、NewAPI Provider、Tutor | 已实现 Session 鉴权流式上传、安全读取/实际 SHA-256、提取/确认和生命周期，并部署 Ubuntu；当前 Provider HTTP `402` 阻断真实 Extraction，自动视觉检测器尚未完成 |
-| Tutor | `services/api` 内模块 | 只消费 VerifiedQuestion；按练习/复习/错题讲解模式执行 Policy、教材 grounding、Schema、确定性校验和成本控制 | 追加写 TutorTurn、Policy/Prompt/模型和来源版本 | Capture、Curriculum、AI Provider、Mistake | NewAPI L1/L2 使用确认文字并绑定递进，答案/重复/题意门禁失败时回退题型相关本地提示；L3 完整步骤/答案/验算已实现；真实质量/成本验收待完成 |
+| Tutor | `services/api` 内模块 | 只消费 VerifiedQuestion；按练习/复习/错题讲解模式执行 Policy、教材 grounding、Schema、确定性校验和成本控制 | 追加写 TutorTurn、Policy/Prompt/模型和来源版本 | Capture、Curriculum、AI Provider、Mistake | 由统一路由选择 `local_qwen` 或 `newapi`；答案/重复/题意门禁失败时回退题型相关本地提示；L3 完整步骤/答案/验算已实现；本地模型质量/成本验收待完成 |
 | Mistake/Review/Report | `services/api` 内模块 | 错题证据、错因、讲解引用、确定性复习调度、周报聚合 | MistakeRecord、ReviewSchedule、复习 Attempt 和报告 | Session/Tutor/Curriculum、家长端 | `0017`、错题创建/到期查询/复习和基础 Web/Flutter 调用已实现；完整 AttemptEvidence 绑定、完整 UI 和教材依据待完成 |
 | Notification | `services/api` 内模块 | 应用内提醒和可替换推送适配器 | 通知状态 | Report/Task、HMS | 未创建 |
 | 跨端契约 | `packages/contracts` | OpenAPI、AI JSON Schema、生成 SDK | 接口/Schema 的唯一事实来源 | API、Flutter、Web、evals | `0.11.0` 增加私有教材原页、知识图谱、知识点引用和视觉题上下文；SDK 生成器未实现 |
 | AI 评测 | `evals` | 固定样本与质量/安全/延迟/成本回归 | 合成或脱敏评测数据 | Tutor、CI | OCR、PrivacySanitizer、Tutor Policy 和真实 NewAPI synthetic 大图已实现；自动视觉检测器 eval 待其实现后补充 |
-| 本地基础设施 | `infra/compose` | PostgreSQL、Redis、MinIO、API/Web/Worker 编排 | 单家庭自用数据 | 开发/自托管 | Ubuntu 完整栈、迁移、生命周期 worker、备份和隔离恢复已验证 |
-| ADR | `docs/adr` | 不可逆或跨模块决策记录 | 架构决策历史 | `DECISIONS.md` | ADR-0001～0011、0013～0018、0020～0022 Accepted；ADR-0019 Proposed；替代关系见决策索引 |
+| 本地基础设施 | `infra/compose` | PostgreSQL、Redis、MinIO、API/Web/Worker 和可切换 llama.cpp/Qwen 服务编排 | 单家庭自用数据与本地模型缓存 | 开发/自托管 | Ubuntu 完整栈、迁移、生命周期 worker、备份和隔离恢复已验证；本地模型首次下载/质量验收待完成 |
+| ADR | `docs/adr` | 不可逆或跨模块决策记录 | 架构决策历史 | `DECISIONS.md` | ADR-0001～0011、0013～0018、0020～0028 Accepted；ADR-0019 Proposed；替代关系见决策索引 |
 
 模块间禁止直接绕过业务接口修改其他模块表。模块化单体内部边界和依赖方向需在 P0 代码结构中验证。
 
@@ -266,6 +269,7 @@ flowchart TD
 - 禁止以 Redis、pgvector、客户端 SQLite 或模型输出作为业务事实来源。
 - 禁止在多个客户端手工复制契约类型；必须从同一 OpenAPI/JSON Schema 生成或验证。
 - 禁止业务模块直接依赖某一 AI 厂商响应；必须通过 Provider Adapter 和 Tutor Policy。
+- 禁止本地模型开关打开时存在隐式云端回退或业务模块绕过统一 Provider 路由；本地模型服务不得发布宿主/LAN 推理端口。
 - 禁止将 Capture 原图、MinIO URL、对象键或敏感 OCR 文本发送到云端；禁止未确认/低置信度脱敏副本外发，禁止把同一图片自动广播给多个 Provider。教材页派生图只能按 ADR-0023 的无个人信息声明、单 Provider、4 页批次和输入上限外发。
 - 禁止把本地 OCR 输出当作最终题目结构，或让 Tutor 直接消费图片/未确认的 `QuestionExtraction`。
 - 禁止“最后写入覆盖”离线学习历史；Attempt/AuditEvent 追加写，状态冲突显式处理。

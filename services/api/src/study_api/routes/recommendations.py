@@ -122,7 +122,7 @@ def generate_recommendations(
             plan,
             sources,
             today=date.today(),
-            provider="newapi",
+            provider=provider_config.provider_name,
             model=provider_config.vision_model,
         )
     except (NewApiProviderError, ValueError) as error:

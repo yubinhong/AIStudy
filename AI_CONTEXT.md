@@ -8,9 +8,9 @@
 - 一句话目标：复用家庭现有设备，以数学错题闭环为主线，并通过显式多学科核心逐步增加语文确定性练习。
 - 当前阶段：`P1 MULTISUBJECT FOUNDATION / CHINESE MVP / GATED ENGLISH LAST`
 - 主要用户：小学阶段孩子与家长/监护人；辅助角色为家庭内容维护者和项目维护者。
-- 生产状态：`SELF_HOSTED_DEPLOYED`（Ubuntu 自用 Compose 运行 API/OpenAPI `0.17.0`/`0036_task_session_progress`；API/Web、迁移和四个常驻 worker 健康；不等同于公网/商业生产批准）
+- 生产状态：`SELF_HOSTED_DEPLOYED`（Ubuntu 自用 Compose 运行 API/OpenAPI `0.17.0`/`0036_task_session_progress` 和内部 Qwen3.5-4B Q4_K_M；API/Web、模型、迁移和四个常驻 worker 健康；视觉质量门禁未通过，不等同于公网/商业生产批准）
 - 当前版本：本地和 Ubuntu API/OpenAPI 均为 `0.17.0`、迁移头 `0036_task_session_progress`；Ubuntu 于 2026-08-23 完成部署，当前可追溯标签为 `v0.17.0`。
-- 最近更新：`2026-08-23`
+- 最近更新：`2026-08-24`
 
 ## 2. 当前工作状态
 
@@ -19,10 +19,10 @@
 - 活动计划：`TASK-0012` / `PLAN-0031` 的隔离 Chromium 登录态 E2E 已完成，覆盖首次改密、Cookie/CSRF/撤销、跨家庭角色和双孩子学科/切换，并加入 CI；`PLAN-0030` 多学科/语文切片和 Ubuntu `0.17.0/0036` 已发布，本机 PostgreSQL 语文并发 Attempt/Review 合并、导出和级联清理已通过。`PLAN-0032`/`PLAN-0033` 的本地代码已扩展到语文到期复习、技能报告、古诗抽查和看图写话，历史原创演示已在 `0033` 退役，但正式教研/版权签核仍未完成。英语保持供应商中立锁定框架并排最后。语文真实 Provider/PDF、Ubuntu 真实账号浏览器和设备 E2E 待完成。
 - 任务状态：ADR-0018/PLAN-0012 已完成本地与 Ubuntu API/Flutter/Compose/契约迁移；Ubuntu 不再依赖预签名直传，MinIO `9000` 未向宿主/LAN 暴露。最终真机仍未回归。
 - 当前分支：`master`；本地 API/OpenAPI `0.17.0` 和 `0036_task_session_progress` 已完成代码与本机验证，并已部署 Ubuntu、提交、推送和打 tag `v0.17.0`。
-- 当前重点：完成正式语文内容具名教研/版权签核、真实 Provider/PDF 质量与成本评测、Ubuntu 真实账号浏览器和设备 E2E。本轮按约定不连接手机或平板，设备回归留到代码完成后。英语继续排最后。既有数学教材原页/知识审核、推荐详情和学习记录继续按已部署合同运行。
+- 当前重点：完成正式语文内容具名教研/版权签核、真实 Provider/PDF 质量与成本评测、Ubuntu 真实账号浏览器和设备 E2E；`PLAN-0034/ADR-0028` 已在 12 GB/4 核 Ubuntu 启用本地 Qwen，health/models、文本 JSON、路由、内存和私有端口通过，但 `question-extraction.v1` synthetic 大图在 600 秒内不收敛，视觉质量门禁未通过。本轮未连接手机或平板。英语继续排最后。既有数学教材原页/知识审核、推荐详情和学习记录继续按已部署合同运行。
 - 已完成：本地与 Ubuntu 已部署的既有 OpenAPI/迁移、视觉四态候选与确认、可信 VerifiedQuestion → 云端递进 L1/L2 → 完整步骤/答案/验算、Mistake/Review closeout、语文确定性 Content/Attempt/Review、古诗抽查和看图写话引导，以及 PDF 私有原页、分批多模态教材理解、全书知识图谱、家长批准、“批准知识点 + 全部开放错题”的来源受限推荐和 180 天详细学习历史策略；本地新增任务会话位置、容量/未来日期/撤销保护。
 - 2026-08-16 语文 `v0.16.0` 已部署：`0033` 退役六项语文演示并从已审核教材逐行古诗生成抽查；`0034` 增加独立 `picture_writing_guides` 与 `picture-writing-guide.v1`。看图写话只消耗用户确认的脱敏派生图，Provider 只返回观察/提问/句式支架，绝不走数学抽题、生成范文或评分。Ubuntu 对无人物、无文字的合成花园图完成一次真实 Provider Schema 冒烟；不代表儿童图片、质量、成本或完整设备验收。
-- 当前未完成：真实 118 页 PDF 多模态知识质量/费用/重试验收、Ubuntu 真实账号/PostgreSQL 浏览器链路、实际相机四态闭环、教材个人信息自动门禁、自动视觉检测器、四设备回归、正式依赖/镜像安全扫描、监控告警和已批准的 RPO/RTO。NewAPI 合成完整解答和隔离登录态浏览器 E2E 已通过；云端教材分析、L1/L2 和推荐 planner 尚未进行真实 Provider 质量/成本验收。PLAN-0032 本地实现已补齐语文到期复习、家长技能汇总及 `chinese-curriculum-*.v2` 独立 Schema/Prompt/短边界证据；内容仍为待具名教研和版权签核的原创演示包，不能作为正式课程或部署验收。
+- 当前未完成：真实 118 页 PDF 多模态知识质量/费用/重试验收、Ubuntu 真实账号/PostgreSQL 浏览器链路、实际相机四态闭环、教材个人信息自动门禁、自动视觉检测器、四设备回归、正式依赖/镜像安全扫描、监控告警和已批准的 RPO/RTO；本地 Qwen 的 GGUF/镜像来源最终核对、视觉 chat template/Schema 收敛、固定质量评测和真实设备回归仍未完成。NewAPI 合成完整解答和隔离登录态浏览器 E2E 已通过；云端教材分析、L1/L2 和推荐 planner 尚未进行真实 Provider 质量/成本验收。PLAN-0032 本地实现已补齐语文到期复习、家长技能汇总及 `chinese-curriculum-*.v2` 独立 Schema/Prompt/短边界证据；内容仍为待具名教研和版权签核的原创演示包，不能作为正式课程或部署验收。
 - 新产品主线已完成代码收口：ADR-0020/PLAN-0014 的错题、复习、教材和 Tutor 关键事实链已接通；PLAN-0016 进入设备/E2E/发布验收阶段，ADR-0021 已接受。
 - Web 多孩子/多家庭现状：账号与档案已由孩子管理聚合 API/Web 统一创建、列表和删除；全局顶栏通过 `?child=` 切换并保持当前孩子作用域。`0028` 已将最早 `parent_admin` 收敛为唯一 `super_admin`，其可创建新家庭的普通家长；普通家长只管理自己创建的孩子，当前不支持匿名注册、邀请或账号跨家庭切换。家长显式声明的国家公开 PDF 可按完整内容指纹复用已审核的私有 PDF/页图/知识图谱草稿，目标家庭仍须审核发布；儿童数据和学习事实不共享。2026-07-28 已在 Ubuntu PostgreSQL 前滚并完成 API/Web 健康、角色/孩子归属和备份恢复验证；跨家庭浏览器流程与真机验收仍待执行。
 - 2026-07-28 Web 收口（已部署 Ubuntu）：家长首页不再展示今日学习任务或本周任务目标；教材页不再提供手工小节和任务推荐；孩子管理只管理孩子。超级管理员左侧导航新增“家庭权限”，可开通新家庭及首个普通家长、列出家长，并只删除没有所属孩子的普通家长，删除需重新验证超级管理员密码。任务/推荐后端记录与孩子端错题、复习闭环均未删除。API/Web/四个 worker 健康，未认证访问家长权限 API 返回 `401`；浏览器角色流程仍待人工验收。
@@ -64,7 +64,7 @@
 - 后端：Python 3.12 + FastAPI 模块化单体 + 异步 Worker。
 - 数据：PostgreSQL 为业务事实源；pgvector 做检索；Redis 做缓存/队列；私有 S3/MinIO 存图片。新链路仅由 API/worker 通过内部网络访问；Ubuntu `0.17.0` 已完成流式上传、教材解析、私有原页、知识图谱、学习历史保留、语文 Content/Attempt/Review、古诗抽查、看图写话引导和私有 MinIO 成对迁移。
 - 契约：`packages/contracts` 本地和 Ubuntu OpenAPI 均为 `0.17.0`，新增 `math/chinese` 档案/教材学科、语文内容与 Attempt、古诗和看图写话路径、任务会话下一题号和家长撤销路径；孩子合同不包含 AnswerSpec。SDK 生成器尚未选择。
-- AI：本地 PrivacySanitizer、固定 OCR/脱敏/Tutor eval、NewAPI Adapter、ImageAnalysis/CurriculumAnalysis worker、QuestionExtraction/VerifiedQuestion 和服务端可信 TutorTurn 已实现；教材页图有界分批后形成待家长批准的知识图谱，L1/L2 使用已确认文字和最小已批准教材片段，推荐由 NewAPI 在本地来源候选上规划。孩子英语只保留供应商中立接口、`disabled` 和测试注入的 `fake`，没有真实语音 Provider；教材个人信息自动门禁、自动视觉检测器和云端教材/提示/推荐真实质量验收仍未完成。
+- AI：本地 PrivacySanitizer、固定 OCR/脱敏/Tutor eval、Provider Adapter、ImageAnalysis/CurriculumAnalysis worker、QuestionExtraction/VerifiedQuestion 和服务端可信 TutorTurn 已实现；`STUDY_LOCAL_MODEL_ENABLED=true` 时统一路由到 Compose 内部 llama.cpp 的 Qwen3.5-4B Q4_K_M，关闭时选择现有 NewAPI 云端配置，不自动跨 Provider 回退。教材页图有界分批后形成待家长批准的知识图谱，L1/L2 使用已确认文字和最小已批准教材片段，推荐由当前选定 Provider 在本地来源候选上规划。孩子英语只保留供应商中立接口、`disabled` 和测试注入的 `fake`，没有真实语音 Provider；本地 Qwen/云端教材、提示和推荐的真实质量/成本验收仍未完成。
 - 交付：Ubuntu 自用 Compose 已部署并完成迁移、健康、NewAPI synthetic 和 PostgreSQL/MinIO 恢复验收；OpenTelemetry、正式告警和公网发布未实现。
 - 认证：ADR-0017 已实现代码目标：同一 Household 内家长/孩子账号密码 + 可撤销不透明会话；Web 用 HttpOnly Cookie/CSRF，Flutter 用平台安全存储；不接入短信、邮箱、社交登录、OIDC 或 MFA，也不保留 HMAC/Demo 兼容。
 - 学习主线：ADR-0020/0023 已批准 CurriculumAssignment/Material/Snapshot → 私有原页/KnowledgeMap 批准 → VerifiedQuestion+已确认 AttemptEvidence（`worked` 或确认空白）→ 分模式 Tutor → MistakeRecord/ReviewSchedule → TaskRecommendation；本地代码已接通拍题 closeout、证据化复习、多模态教材知识/grounding、L1/L2 递进和来源原页，当前剩余真实部署、Provider/设备和发布门槛验收。
@@ -78,8 +78,8 @@
 | `services/api` | FastAPI 模块化单体和 Worker | 本地和 Ubuntu `0036` 已部署 subject-aware 教材及语文 Content/Attempt/Review；本机 PostgreSQL 并发/导出集成通过，正式内容与 Ubuntu 真实账号浏览器验收待完成 |
 | `packages/contracts` | OpenAPI、JSON Schema、生成 SDK | 本地和 Ubuntu `0.17.0`，SDK 生成器尚未固定 |
 | `evals` | 固定 AI 质量/安全/成本评测 | 既有数学/隐私 eval 增加 7-case 英语安全 Policy；真实英语 Provider 质量、延迟、成本和儿童安全 eval 待批准后执行 |
-| `infra/compose` | PostgreSQL/Redis/MinIO/API/Web/迁移/worker 编排 | Ubuntu 当前 `0.17.0`/`0036`，英语运行态为 `disabled`，发布前恢复验证备份已保留 |
-| `docs/adr` | 架构决策 | ADR-0027 多学科/语文、ADR-0026 学习记录保留、ADR-0025 英语及 ADR-0020～0023 数学主线 Accepted |
+| `infra/compose` | PostgreSQL/Redis/MinIO/API/Web/迁移/worker/可切换本地模型编排 | Ubuntu 当前 `0.17.0`/`0036`，本地模型默认关闭，英语运行态为 `disabled`，发布前恢复验证备份已保留 |
+| `docs/adr` | 架构决策 | ADR-0028 本地 Qwen 路由、ADR-0027 多学科/语文、ADR-0026 学习记录保留、ADR-0025 英语及 ADR-0020～0023 数学主线 Accepted |
 | `prompts` | Codex 工作流启动器 | 已存在 |
 
 ## 7. 不可违反的约束

@@ -97,7 +97,7 @@
 | 孩子/移动端 | Flutter（iOS/Android） | Flutter stable `3.44.6`（`ADR-0007` Accepted）；`image_picker 1.2.3`、`crypto 3.0.7`、`flutter_secure_storage 9.2.4`、`sqflite 2.4.3` | iPad 为孩子主端；任务/拍题/提示、安全会话、数学三入口、视觉四态自动候选与人工校正、长文本确认、上传进度、完整解答和账号切换已实现；实际相机闭环与设备回归待完成 |
 | Web/PWA | Next.js + TypeScript | Next.js `16.2.10`（`ADR-0007` Accepted） | 家长后台和 Windows 首版入口；登录/任务/周报已实现。目标增加统一孩子管理、每孩子课程范围、教材导入审核发布和任务建议审批 |
 | API/Worker | Python + FastAPI + 异步 Worker | Python `3.12.x`、FastAPI `0.136.3`、boto3 `1.43.46`、Pillow `12.3.0`、pdfplumber `0.11.7`、pypdfium2 `5.11.0`、PaddleOCR `3.7.0`、PaddlePaddle CPU `3.3.1` | 模块化单体；PDF 文本辅助解析、私有页图渲染、多模态教材知识图谱、Tutor、Mistake/Review/Recommendation worker 已有本地实现 |
-| 云端视觉/推理 | Provider Adapter + 固定 JSON Schema / Tutor Policy | 自用 NewAPI URL/key/model 通过环境注入 | 图片解析与 Tutor 分离；NewAPI synthetic 大图已完成真实实例联调，服务端只保存未确认 Extraction，人工确认后才生成 VerifiedQuestion；Tutor 仅按服务端 ID 读取并追加 TutorTurn，英语真实 Provider 未接入 |
+| 视觉/推理 Provider | Provider Adapter + 固定 JSON Schema / Tutor Policy | `STUDY_LOCAL_MODEL_ENABLED=true` 时使用 Compose 内部 Qwen3.5-4B Q4_K_M；否则使用自用 NewAPI URL/key/model | 图片解析与 Tutor 分离；本地/云端由同一 `NewApiConfig` 选择且不自动跨 Provider 回退；服务端只保存未确认 Extraction，人工确认后才生成 VerifiedQuestion；英语真实 Provider 未接入 |
 | 业务数据 | PostgreSQL + pgvector | PostgreSQL `16.10`（Compose） | PostgreSQL 是业务事实来源；现有保存 Profile/Learning/Capture/Identity/Tutor/Report/Mistake/Review。目标继续增加 CurriculumSnapshot、来源证据和 TaskRecommendation；pgvector 只做已发布知识检索，不替代关系/审批事实 |
 | 缓存/队列 | Redis | `TBD（P0 锁定）` | 不作为长期业务事实来源 |
 | 文件 | 本地 MinIO / S3 兼容 Adapter | MinIO `RELEASE.2025-09-07T16-13-09Z`；boto3 `1.43.46` | 私有 Bucket；API/worker 由内部地址有界流式写入且 MinIO 不暴露 LAN，见 ADR-0018/0011。Ubuntu 已完成成对迁移 |
@@ -108,7 +108,7 @@
 
 | 环境 | 用途 | 访问方式 | 数据级别 | 部署来源 |
 | --- | --- | --- | --- | --- |
-| local | 本地开发、离线与多端联调 | `infra/compose/compose.yml` 编排 PostgreSQL、Redis、MinIO、API、家长 Web、迁移和默认 ImageAnalysis worker；配置展开、amd64 发布镜像、ARM64 调试镜像和 Web standalone 镜像已验证 | synthetic / 自用 restricted（需显式启用并自行承担生命周期） | 本地工作区 |
+| local | 本地开发、离线与多端联调 | `infra/compose/compose.yml` 编排 PostgreSQL、Redis、MinIO、API、家长 Web、迁移、worker 和可切换的 llama.cpp/Qwen 本地模型服务；模型仅在 `STUDY_LOCAL_MODEL_ENABLED=true` 时加载 | synthetic / 自用 restricted（需显式启用并自行承担生命周期） | 本地工作区 |
 | staging | 集成、设备、AI 评测和迁移/恢复验证 | `TBD（P0/P1 建立）` | sanitized/synthetic | CI 产物，禁止从个人工作区直接发布 |
 | production | 家庭正式使用 | `TBD（发布方案和 RUNBOOK 批准后建立）` | restricted | 仅允许已通过发布门槛的版本化产物 |
 

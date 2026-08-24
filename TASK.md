@@ -6,7 +6,17 @@
 - 类型：`FEATURE / AUTH / BROWSER E2E / CHILD UI`
 - 优先级：`P0`
 - Owner：Codex（执行）；项目 Owner（2026-08-15 明确要求先多学科、再语文、英语最后）
-- 关联：`PLAN-0031`、`PLAN-0030`、`PLAN-0007`、`ADR-0017`、`ADR-0027`、`docs/deep-research-report.md`
+- 关联：`PLAN-0034`、`PLAN-0031`、`PLAN-0030`、`PLAN-0007`、`ADR-0017`、`ADR-0027`、`ADR-0028`、`docs/deep-research-report.md`
+
+## 2026-08-24 本地 Qwen 模型路由与 Ubuntu 部署记录
+
+- [x] Compose 增加可切换的 llama.cpp `local-model` 服务，默认加载 Qwen3.5-4B Q4_K_M GGUF 及视觉 projector；本地服务不发布宿主/LAN 推理端口并持久化模型缓存。
+- [x] `STUDY_LOCAL_MODEL_ENABLED=true` 时 API、ImageAnalysis worker、CurriculumAnalysis worker 统一选择 `local_qwen` 配置并忽略云端 NewAPI；关闭时保持现有 NewAPI 路径，不自动跨 Provider 回退。
+- [x] Provider/model 记录、环境样例、ADR-0028、Compose/运维/安全说明和本地/云端路由单元测试已补齐；Provider 定向测试 `24 passed`，非集成 API `249 passed, 32 deselected`，Ruff/Mypy 和远端 Compose 展开通过。
+- [x] 本机 Linux ARM64 已实际拉取 llama.cpp 镜像和 Q4_K_M 权重/vision projector；`local-model` health、`/v1/models`、synthetic text 和 vision/schema 请求通过，且 Qwen 结构化请求关闭 reasoning。
+- [x] 12 GB/4 核 Ubuntu 已启用本地模型；发布前备份 `/home/syin/study-backups/20260824T024445Z` 已隔离恢复为 39 张 PostgreSQL public 表和 353 个 MinIO 文件。模型/API/Web/四个 worker 健康，路由为 `local_qwen`，文本 JSON smoke 通过，模型/MinIO 均无宿主端口，模型空闲常驻约 3.8 GiB、推理约 4.6 GiB。
+- [x] 目标硬件暴露的失败已设为有界：本地专用超时 600 秒、最多 2048 输出 token、超时/网络错误不自动重复推理，且永不自动切换云端。
+- [ ] Ubuntu `question-extraction.v1` synthetic 大图在 600 秒内生成超过合理 Schema 长度仍未收敛，视觉质量门禁未通过；真实 PDF、真实设备和儿童数据均未执行。文本路由可用不代表视觉/Tutor/教材质量验收通过。
 
 ## 2026-08-22 继续实现记录
 

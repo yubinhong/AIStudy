@@ -49,6 +49,71 @@ services:
       timeout: 5s
       retries: 10
 
+  local-model:
+    # The container stays idle when local inference is disabled. This keeps a
+    # single Compose file usable for both cloud and local routing without
+    # requiring a second deployment topology.
+    image: ${STUDY_LOCAL_MODEL_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-b9603}
+    environment:
+      LLAMA_CACHE: /models-cache
+      STUDY_LOCAL_MODEL_ENABLED: ${STUDY_LOCAL_MODEL_ENABLED:-false}
+      STUDY_LOCAL_MODEL_HF_REPO: ${STUDY_LOCAL_MODEL_HF_REPO:-bjivanovich/Qwen3.5-4B-Vision-GGUF}
+      STUDY_LOCAL_MODEL_MODEL_FILE: ${STUDY_LOCAL_MODEL_MODEL_FILE:-Qwen3.5-4B.Q4_K_M.gguf}
+      STUDY_LOCAL_MODEL_MMPROJ_FILE: ${STUDY_LOCAL_MODEL_MMPROJ_FILE:-Qwen3.5-4B.BF16-mmproj.gguf}
+      STUDY_LOCAL_MODEL_ALIAS: ${STUDY_LOCAL_MODEL_NAME:-Qwen3.5-4B-Q4_K_M}
+      STUDY_LOCAL_MODEL_CONTEXT_SIZE: ${STUDY_LOCAL_MODEL_CONTEXT_SIZE:-8192}
+      STUDY_LOCAL_MODEL_PARALLEL: ${STUDY_LOCAL_MODEL_PARALLEL:-1}
+      HTTP_PROXY: ${STUDY_LOCAL_MODEL_PROXY_URL:-}
+      HTTPS_PROXY: ${STUDY_LOCAL_MODEL_PROXY_URL:-}
+      ALL_PROXY: ${STUDY_LOCAL_MODEL_PROXY_URL:-}
+      NO_PROXY: 127.0.0.1,localhost,local-model
+      http_proxy: ${STUDY_LOCAL_MODEL_PROXY_URL:-}
+      https_proxy: ${STUDY_LOCAL_MODEL_PROXY_URL:-}
+      all_proxy: ${STUDY_LOCAL_MODEL_PROXY_URL:-}
+      no_proxy: 127.0.0.1,localhost,local-model
+    command:
+      - |
+        if [ "$${STUDY_LOCAL_MODEL_ENABLED}" != "true" ]; then
+          echo "local model disabled; keeping llama.cpp idle"
+          exec sleep infinity
+        fi
+        download_model_file() {
+          file_name="$$1"
+          target="/models-cache/$$file_name"
+          if [ -s "$$target" ]; then
+            return
+          fi
+          echo "downloading local model asset: $$file_name"
+          curl --fail --location --retry 5 --retry-all-errors --continue-at - \
+            --output "$$target.part" \
+            "https://huggingface.co/$${STUDY_LOCAL_MODEL_HF_REPO}/resolve/main/$$file_name?download=true"
+          mv "$$target.part" "$$target"
+        }
+        download_model_file "$${STUDY_LOCAL_MODEL_MODEL_FILE}"
+        download_model_file "$${STUDY_LOCAL_MODEL_MMPROJ_FILE}"
+        exec /app/llama-server \
+          --model "/models-cache/$${STUDY_LOCAL_MODEL_MODEL_FILE}" \
+          --mmproj "/models-cache/$${STUDY_LOCAL_MODEL_MMPROJ_FILE}" \
+          --alias "$${STUDY_LOCAL_MODEL_ALIAS}" \
+          --ctx-size "$${STUDY_LOCAL_MODEL_CONTEXT_SIZE}" \
+          --parallel "$${STUDY_LOCAL_MODEL_PARALLEL}" \
+          --jinja \
+          --host 0.0.0.0 \
+          --port 8080
+    entrypoint: ["/bin/sh", "-c"]
+    volumes:
+      - local-model-cache:/models-cache
+    networks:
+      - default
+    healthcheck:
+      test:
+        ["CMD-SHELL", "if [ \"$${STUDY_LOCAL_MODEL_ENABLED}\" != \"true\" ]; then exit 0; fi; curl -fsS http://127.0.0.1:8080/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 15m
+    restart: unless-stopped
+
   migrate:
     build:
       context: ../../services/api
@@ -83,6 +148,7 @@ services:
       STUDY_ENGLISH_LIVE_ENABLED: ${STUDY_ENGLISH_LIVE_ENABLED:-false}
       STUDY_ENGLISH_LIVE_PROVIDER: ${STUDY_ENGLISH_LIVE_PROVIDER:-disabled}
       STUDY_ENGLISH_LIVE_CONSENT_VERSION: ${STUDY_ENGLISH_LIVE_CONSENT_VERSION:-english-audio-consent.v1}
+      STUDY_LOCAL_MODEL_ENABLED: ${STUDY_LOCAL_MODEL_ENABLED:-false}
       STUDY_CAPTURE_UPLOAD_CONCURRENCY: ${STUDY_CAPTURE_UPLOAD_CONCURRENCY:-4}
       STUDY_CAPTURE_UPLOAD_TIMEOUT_SECONDS: ${STUDY_CAPTURE_UPLOAD_TIMEOUT_SECONDS:-120}
       PADDLE_MODEL_ROOT: /opt/study/models
@@ -94,6 +160,8 @@ services:
       migrate:
         condition: service_completed_successfully
       minio:
+        condition: service_healthy
+      local-model:
         condition: service_healthy
     networks:
       - default
@@ -143,6 +211,8 @@ services:
         condition: service_completed_successfully
       minio:
         condition: service_healthy
+      local-model:
+        condition: service_healthy
     restart: unless-stopped
 
   material-parse-worker:
@@ -181,6 +251,8 @@ services:
         condition: service_completed_successfully
       minio:
         condition: service_healthy
+      local-model:
+        condition: service_healthy
     networks:
       - default
       - parser-backend
@@ -208,6 +280,7 @@ volumes:
   postgres-data:
   redis-data:
   minio-data:
+  local-model-cache:
 
 networks:
   parser-backend:

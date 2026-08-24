@@ -129,24 +129,26 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | Web E2E | `cd apps/web && pnpm e2e` | 用户流程变更/P1 门槛 | 不可运行 |
 | Web 构建 | `cd apps/web && pnpm build` | 合并前 | 通过（2026-07-30；Next 16.2.10 production build包含动态 `/learning`；本机 Node 20.17/pnpm 9.10 产生 engine warning，锁定容器仍使用 Node 24.18/pnpm 11.7） |
 | API 安装 | `cd services/api && uv sync --locked` | 锁文件变化/干净环境 | 通过（2026-07-15；ARM 镜像内 `uv sync --locked --no-dev` 解析 124 个锁定包并安装 35 个适用包；macOS ARM64/Linux x86_64 保留 PaddleOCR 3.7.0、PaddlePaddle 3.3.1，Linux ARM64 按 marker 排除 Paddle；模型只在 amd64 镜像构建阶段下载） |
-| API 格式 | `cd services/api && uv run ruff format --check .` | 每次 API 变更 | 本轮 13 个教材知识图谱相关文件通过；全仓仍有此前 4 个迁移文件需统一格式化，不在本轮顺手修改 |
-| API Lint | `cd services/api && uv run ruff check .` | 每次 API 变更 | `src tests scripts` 与 `0025` 迁移通过（2026-07-23）；全仓命令仍报告 `0018/0020/0021/0023` 历史行宽/导入格式问题 |
-| API 类型 | `cd services/api && uv run mypy src` | 每次 API 变更 | 通过（2026-07-30；58 source files） |
-| API 单元 | `cd services/api && uv run pytest -m "not integration"` | 每次 API 变更 | 通过（2026-08-23：`244 passed, 32 deselected`；保留 Starlette/httpx deprecation warning） |
-| Compose 配置 | `docker compose -f infra/compose/compose.yml config` | Compose 变更 | 通过（2026-07-31，Ubuntu 实际 `infra/compose/.env` 展开无错误；权限保持 600） |
-| Compose 完整启动 | `docker compose -f infra/compose/compose.yml up -d --build` | API/数据/跨模块变更 | 通过（2026-08-15，Ubuntu 24.04 x86_64；API `0.14.0`、Web、ImageAnalysis/DataLifecycle/MaterialParse/CurriculumAnalysis worker 重建运行，迁移 `0031`，API/Web healthcheck 通过；PostgreSQL/MinIO/Redis 数据卷保留） |
+| API 格式 | `cd services/api && uv run ruff format --check .` | 每次 API 变更 | 通过（2026-08-24；全仓 158 files） |
+| API Lint | `cd services/api && uv run ruff check .` | 每次 API 变更 | 通过（2026-08-24；全仓） |
+| API 类型 | `cd services/api && uv run mypy src` | 每次 API 变更 | 通过（2026-08-24；62 source files） |
+| API 单元 | `cd services/api && uv run pytest -m "not integration"` | 每次 API 变更 | 通过（2026-08-24：`249 passed, 32 deselected`；保留 Starlette/httpx deprecation warning） |
+| Compose 配置 | `docker compose -f infra/compose/compose.yml config` | Compose 变更 | 通过（2026-08-23：用隔离临时目录中的脱敏 `.env` 展开，`STUDY_LOCAL_MODEL_ENABLED=true` 下 `local-model`、健康检查、依赖和模型参数均有效；仓库实际 `.env` 按规则不提交） |
+| 本地模型路由 | `cd services/api && uv run pytest tests/test_newapi_provider.py -q` | Provider、模型或环境路由变更 | 通过（2026-08-24：`24 passed`；覆盖本地/云端互斥、Qwen 关闭 reasoning、2048 输出上限、600 秒本地上限和本地失败不重试） |
+| 本地 Qwen Compose smoke | `docker compose -f infra/compose/compose.yml up -d local-model api image-analysis-worker curriculum-analysis-worker`；检查 `local-model /health`、`/v1/models` 和 synthetic text/vision/schema 请求 | `STUDY_LOCAL_MODEL_ENABLED=true` 或 llama.cpp/GGUF/硬件变更 | 部分通过（2026-08-24，Ubuntu 12 GB/4 核）：镜像、Q4_K_M 权重和 BF16 projector 下载/加载，health、alias、multimodal、`local_qwen` 选择、文本 JSON、3.8–4.6 GiB 模型内存和私有端口通过；`question-extraction.v1` synthetic 大图 600 秒内不收敛，视觉 Schema 失败。未使用真实儿童数据 |
+| Compose 完整启动 | `docker compose -f infra/compose/compose.yml up -d --build` | API/数据/跨模块变更 | 通过（2026-08-24，Ubuntu 24.04 x86_64；API `0.17.0`、Web、本地 Qwen、四个 worker 运行，迁移 `0036`，API/Web/model health 通过；PostgreSQL/MinIO/Redis 数据卷保留） |
 | Web 镜像 | `cd apps/web && docker buildx build --platform=linux/arm64 --load -t study-web:arm64-debug .` | Web/Compose 变更 | 通过（2026-07-15；Next.js standalone 镜像使用 Node 24.18.0、pnpm 11.7.0，包含 `/healthz`；2026-07-20 Ubuntu 重建验证教材上传幂等键兼容修复） |
 | Web 登录态 E2E | `cd apps/web && pnpm test:e2e:install && pnpm test:e2e` | 认证、Cookie/CSRF、多家庭/多孩子或 Web 路由变更 | 通过（2026-08-16；Chromium `1 passed`，隔离内存 API，不读取 Ubuntu 数据；本机 Node 22.23 低于锁定 Node 24.18，仅产生 engines warning） |
 | 集成环境 | `docker compose -f infra/compose/compose.yml up -d postgres minio` | API/数据/跨模块变更 | 当前通过（2026-07-13；旧配置发布 5432/9000）。PLAN-0012 目标要求 MinIO 仅在 Compose 内部网络可达，并增加宿主/LAN `9000` 不开放的断言 |
 | API 集成 | `cd services/api && uv run pytest -m integration` | 跨模块/数据变更 | 本轮相关通过（2026-08-16：语文并发/导出 `1 passed`，随机 synthetic Household/账号/Child 全部清理；2026-07-30 生命周期 1 项；未运行其余集成套件） |
 | API 镜像 | `cd services/api && docker buildx build --platform=linux/arm64 --load -t study-api:arm64-debug .`；发布仍构建 `linux/amd64` | 合并/发布前 | ARM 本地通过（2026-07-15）；amd64 Ubuntu 远端通过（2026-07-16，构建期模型目录 26 文件/清单标记、Paddle 3.3.1 + PaddleOCR 3.7.0、容器预检 ready、内存 synthetic OCR 4/4）；运行时无模型下载 |
-| AI eval | `cd services/api && ./.venv/bin/python ../../evals/run_ocr_eval.py`；`./.venv/bin/python ../../evals/run_privacy_sanitizer_eval.py`；`./.venv/bin/python ../../evals/run_tutor_policy_eval.py` | OCR/脱敏/Provider/模型路由/Tutor Policy 变更 | Tutor 通过（2026-07-23；offline Tutor Policy 5 cases，新增同时经过时间 L1/L2，固定输入不含真实数据）；OCR/PrivacySanitizer 最近结果仍为 2026-07-17 |
+| AI eval | `cd services/api && ./.venv/bin/python ../../evals/run_ocr_eval.py`；`./.venv/bin/python ../../evals/run_privacy_sanitizer_eval.py`；`./.venv/bin/python ../../evals/run_tutor_policy_eval.py` | OCR/脱敏/Provider/模型路由/Tutor Policy 变更 | Tutor 通过（2026-07-23；offline Tutor Policy 5 cases）；本地 Qwen 文本 JSON smoke 通过，Ubuntu 视觉 Schema eval 失败；固定视觉/Tutor/教材质量评测仍待修复后执行 |
 | PrivacySanitizer / Tutor eval | `cd services/api && ./.venv/bin/python ../../evals/run_privacy_sanitizer_eval.py && ./.venv/bin/python ../../evals/run_tutor_policy_eval.py` | 脱敏规则/OCR/视觉检测、图片外发、Tutor Policy/Provider/Schema/路由变更 | 通过（2026-07-17）；NewAPI Adapter/live synthetic 已验证，真实自动视觉检测器仍未实现，外发继续要求手动确认 |
 | 英语口语安全 eval | `services/api/.venv/bin/python evals/run_english_conversation_safety_eval.py` | 英语 Policy、Provider 或控制合同变更 | 通过（2026-07-29；7/7，个人信息、成人/危险话题、中文兜底和回答长度；真实 Provider 质量/成本另行评测） |
 | OCR 真实运行时预检 | `cd services/api && ./.venv/bin/python scripts/check_ocr_runtime.py` | Ubuntu/模型镜像或 Paddle 版本变更 | 宿主 Ubuntu 24.04/x86_64 已确认；预检新增显式 `STUDY_OCR_CONTAINER_RUNTIME=true`，仅接受锁定 Debian 13 amd64 容器层，不放宽其他门禁；对应单元测试通过 |
 | OCR 锁定模型 synthetic smoke | `cd services/api && ./.venv/bin/python ../../evals/run_ocr_model_eval.py` | Ubuntu/模型/Provider 变更 | 通过（2026-07-16，远端 x86_64 Debian 13 锁定容器，4/4 cases：普通文本 3、公式 1，CPU；只使用内存 synthetic 图片，无外部 Provider）；真实题型评测仍待执行 |
 | NewAPI synthetic live eval | `docker compose -f infra/compose/compose.yml exec -T api python scripts/run_newapi_live_eval.py` | NewAPI key/model/网络或 worker 变更 | 通过（2026-07-20，Ubuntu x86_64）：纯合成题仅传确认文字，返回 3 个完整步骤、答案 17 只和独立验算；实际拍题四态仍待设备人工验收 |
-| 备份/恢复 | `infra/compose/scripts/backup.sh`；`verify-restore.sh <backup-dir>` | 数据/迁移/发布变更 | 通过（2026-07-17，Ubuntu；PostgreSQL custom dump + MinIO 快照 + SHA-256 清单，隔离 PostgreSQL 16.10 恢复完成，18 个 public tables，MinIO 快照 36 个文件） |
+| 备份/恢复 | `infra/compose/scripts/backup.sh`；`verify-restore.sh <backup-dir>` | 数据/迁移/发布变更 | 通过（2026-08-24，Ubuntu；`/home/syin/study-backups/20260824T024445Z` 的 PostgreSQL custom dump + MinIO 快照 + SHA-256 清单已隔离恢复，39 个 public tables、353 个 MinIO 文件） |
 | 契约结构/差异 | 结构化解析 `openapi.yaml` 与 `schemas/*.json` 并闭合本地引用 | OpenAPI/Schema 变更 | 通过（2026-07-30；OpenAPI `0.13.0` 可解析，学习详情时间参数与 180 天描述已同步；SDK 生成器仍未决定） |
 | 安全扫描 | `TBD（按 Flutter/pnpm/uv/镜像工具链建立）` | 合并/发布前 | 阻塞：无依赖/镜像 |
 

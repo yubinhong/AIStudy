@@ -1,4 +1,4 @@
-"""Provider-neutral OpenAI-compatible adapter for a self-hosted NewAPI gateway.
+"""Provider-neutral adapter for OpenAI-compatible local and cloud gateways.
 
 The adapter is disabled unless explicitly configured. It accepts only the
 already-confirmed sanitized derivative for vision analysis and validates the
@@ -311,20 +311,43 @@ class NewApiConfig:
     max_response_bytes: int
     user_agent: str = "study-api/0.5"
     max_image_bytes: int = 600_000
+    provider_name: str = "newapi"
+    max_output_tokens: int = 2_048
 
     @classmethod
     def from_environment(cls) -> "NewApiConfig":
-        enabled = os.environ.get("STUDY_NEWAPI_ENABLED", "false").lower() == "true"
-        config = cls(
-            enabled=enabled,
-            base_url=os.environ.get("STUDY_NEWAPI_BASE_URL", "").rstrip("/"),
-            api_key=os.environ.get("STUDY_NEWAPI_API_KEY", ""),
-            vision_model=os.environ.get("STUDY_NEWAPI_VISION_MODEL", ""),
-            timeout_seconds=float(os.environ.get("STUDY_NEWAPI_TIMEOUT_SECONDS", "30")),
-            max_response_bytes=int(os.environ.get("STUDY_NEWAPI_MAX_RESPONSE_BYTES", "262144")),
-            user_agent=os.environ.get("STUDY_NEWAPI_USER_AGENT", "study-api/0.5"),
-            max_image_bytes=int(os.environ.get("STUDY_NEWAPI_MAX_IMAGE_BYTES", "600000")),
-        )
+        local_enabled = os.environ.get("STUDY_LOCAL_MODEL_ENABLED", "false").lower() == "true"
+        if local_enabled:
+            config = cls(
+                enabled=True,
+                base_url=os.environ.get(
+                    "STUDY_LOCAL_MODEL_BASE_URL", "http://local-model:8080/v1"
+                ).rstrip("/"),
+                api_key=os.environ.get("STUDY_LOCAL_MODEL_API_KEY", "study-local-model"),
+                vision_model=os.environ.get("STUDY_LOCAL_MODEL_NAME", "Qwen3.5-4B-Q4_K_M"),
+                timeout_seconds=float(os.environ.get("STUDY_LOCAL_MODEL_TIMEOUT_SECONDS", "600")),
+                max_response_bytes=int(
+                    os.environ.get("STUDY_LOCAL_MODEL_MAX_RESPONSE_BYTES", "262144")
+                ),
+                user_agent=os.environ.get("STUDY_LOCAL_MODEL_USER_AGENT", "study-api/0.5"),
+                max_image_bytes=int(os.environ.get("STUDY_LOCAL_MODEL_MAX_IMAGE_BYTES", "600000")),
+                provider_name="local_qwen",
+                max_output_tokens=int(
+                    os.environ.get("STUDY_LOCAL_MODEL_MAX_OUTPUT_TOKENS", "2048")
+                ),
+            )
+        else:
+            enabled = os.environ.get("STUDY_NEWAPI_ENABLED", "false").lower() == "true"
+            config = cls(
+                enabled=enabled,
+                base_url=os.environ.get("STUDY_NEWAPI_BASE_URL", "").rstrip("/"),
+                api_key=os.environ.get("STUDY_NEWAPI_API_KEY", ""),
+                vision_model=os.environ.get("STUDY_NEWAPI_VISION_MODEL", ""),
+                timeout_seconds=float(os.environ.get("STUDY_NEWAPI_TIMEOUT_SECONDS", "30")),
+                max_response_bytes=int(os.environ.get("STUDY_NEWAPI_MAX_RESPONSE_BYTES", "262144")),
+                user_agent=os.environ.get("STUDY_NEWAPI_USER_AGENT", "study-api/0.5"),
+                max_image_bytes=int(os.environ.get("STUDY_NEWAPI_MAX_IMAGE_BYTES", "600000")),
+            )
         if config.enabled:
             config.validate()
         return config
@@ -338,8 +361,11 @@ class NewApiConfig:
             )
         if not self.vision_model or len(self.vision_model) > 160:
             raise NewApiConfigurationError("STUDY_NEWAPI_VISION_MODEL is required")
-        if not 1 <= self.timeout_seconds <= 120:
-            raise NewApiConfigurationError("STUDY_NEWAPI_TIMEOUT_SECONDS must be between 1 and 120")
+        timeout_limit = 600 if self.provider_name == "local_qwen" else 120
+        if not 1 <= self.timeout_seconds <= timeout_limit:
+            raise NewApiConfigurationError(
+                f"Provider timeout must be between 1 and {timeout_limit} seconds"
+            )
         if not 4_096 <= self.max_response_bytes <= 4_000_000:
             raise NewApiConfigurationError(
                 "STUDY_NEWAPI_MAX_RESPONSE_BYTES is outside the safe range"
@@ -354,6 +380,8 @@ class NewApiConfig:
             raise NewApiConfigurationError(
                 "STUDY_NEWAPI_MAX_IMAGE_BYTES must be between 100000 and 3000000"
             )
+        if not 64 <= self.max_output_tokens <= 8_192:
+            raise NewApiConfigurationError("Provider max output tokens must be between 64 and 8192")
 
 
 class NewApiVisionProvider:
@@ -367,6 +395,14 @@ class NewApiVisionProvider:
     @property
     def last_call_metrics(self) -> ProviderCallMetrics | None:
         return self._last_call_metrics
+
+    @property
+    def provider_name(self) -> str:
+        return self._config.provider_name
+
+    @property
+    def model_name(self) -> str:
+        return self._config.vision_model
 
     def analyze_sanitized_image(
         self, image_bytes: bytes, media_type: str, *, sanitization_schema: str
@@ -835,21 +871,31 @@ class NewApiVisionProvider:
     def _post_json(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         """Send one bounded request, retrying only transient gateway failures."""
 
-        for attempt in range(1, MAX_TRANSIENT_PROVIDER_ATTEMPTS + 1):
+        request_payload = payload
+        if self._config.provider_name == "local_qwen":
+            request_payload = {
+                **payload,
+                "chat_template_kwargs": {"enable_thinking": False},
+                "max_tokens": min(
+                    int(payload.get("max_tokens", self._config.max_output_tokens)),
+                    self._config.max_output_tokens,
+                ),
+            }
+        max_attempts = (
+            1 if self._config.provider_name == "local_qwen" else MAX_TRANSIENT_PROVIDER_ATTEMPTS
+        )
+        for attempt in range(1, max_attempts + 1):
             try:
-                return self._post_json_once(payload)
+                return self._post_json_once(request_payload)
             except NewApiProviderError as error:
-                if (
-                    error.code not in _TRANSIENT_PROVIDER_CODES
-                    or attempt == MAX_TRANSIENT_PROVIDER_ATTEMPTS
-                ):
+                if error.code not in _TRANSIENT_PROVIDER_CODES or attempt == max_attempts:
                     raise
                 delay_seconds = 2 ** (attempt - 1)
                 LOGGER.warning(
                     "provider_transient_retry code=%s attempt=%d max_attempts=%d delay_seconds=%d",
                     error.code,
                     attempt,
-                    MAX_TRANSIENT_PROVIDER_ATTEMPTS,
+                    max_attempts,
                     delay_seconds,
                 )
                 sleep(delay_seconds)

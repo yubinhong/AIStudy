@@ -1,6 +1,6 @@
 # Docker Compose 自托管部署
 
-这套 Compose 适合单家庭、自用部署，包含 PostgreSQL、Redis、私有 MinIO、FastAPI API、家长 Web、数据库迁移一次性服务、NewAPI 图片分析 worker 和数据生命周期 worker。Compose 会从同目录的 `.env` 注入服务变量，不需要在启动命令中传入 `--env-file`。它不会部署 NewAPI；NewAPI 由部署者单独提供，API 通过 OpenAI-compatible `/v1/chat/completions` 访问。
+这套 Compose 适合单家庭、自用部署，包含 PostgreSQL、Redis、私有 MinIO、FastAPI API、家长 Web、数据库迁移一次性服务、AI worker、可切换的 llama.cpp 本地模型服务和数据生命周期 worker。Compose 会从同目录的 `.env` 注入服务变量，不需要在启动命令中传入 `--env-file`。云端 NewAPI 仍由部署者单独提供；API 通过 OpenAI-compatible `/v1/chat/completions` 访问。
 
 当前本地和 Ubuntu 服务端状态：API `0.17.0`、迁移头 `0036_task_session_progress`；本次 Ubuntu 发布先来自未提交工作区，现已由 `v0.17.0` 提交/tag 固化，详细备份和验收记录见根目录 `RUNBOOK.md`。账号密码/可撤销会话、PostgreSQL 业务事实、MinIO、ImageAnalysis/VerifiedQuestion/TutorTurn、独立 `picture_writing_guides`、周报/导出、家长 Web、worker 和备份恢复脚本已实现。真实自动视觉检测器、正式监控和四设备回归仍未完成，因此本文件提供的是自用部署说明，不是公网或商业生产发布证明。
 
@@ -32,6 +32,12 @@ openssl rand -hex 32
 - 初次部署保持 `STUDY_NEWAPI_ENABLED=false`。确认 NewAPI 视觉模型、key 和响应契约后，再改为 `true`。
 - Adapter 默认以 `study-api/0.5` 作为 `User-Agent`，避免部分 Cloudflare 规则拦截 Python `urllib` 的默认特征；如前置网关要求其他值，可设置 `STUDY_NEWAPI_USER_AGENT`，但只允许 1–256 个可打印 ASCII 字符，不能包含换行或其他控制字符。
 - `STUDY_NEWAPI_MAX_IMAGE_BYTES` 默认 `600000`。更大的已确认脱敏图会在 worker 内存中去元数据、等比缩放并重编码为 JPEG 后再 base64 传输，用于避开 NewAPI/反向代理请求体上限；不要把该值调高到网关限制以上。
+- `STUDY_LOCAL_MODEL_ENABLED=true` 会让 API、ImageAnalysis worker 和 CurriculumAnalysis worker 统一使用 Compose 内部 `local-model` 的 Qwen3.5-4B Q4_K_M；云端 NewAPI 配置会被忽略，不存在自动云端回退。`false` 时本地容器空闲，路由回到 `STUDY_NEWAPI_*`。
+- 本地模型默认使用 `ghcr.io/ggml-org/llama.cpp:server-b9603`、`Qwen3.5-4B.Q4_K_M.gguf` 和 `Qwen3.5-4B.BF16-mmproj.gguf`，会从 `bjivanovich/Qwen3.5-4B-Vision-GGUF` 显式下载到 `local-model-cache`。未完成的 `.part` 文件会在容器重启后断点续传，完整文件不会重复下载。首次启动需要网络和数 GB 磁盘；正式家庭数据前应固定镜像摘要、核对模型文件来源/许可证并完成目标硬件质量评测。
+- 本地模型不发布宿主端口；API 通过 `http://local-model:8080/v1` 访问。只有模型缓存持久化，推理请求不进入云端；不要把 `STUDY_LOCAL_MODEL_API_KEY` 当作云端密钥或写入日志。
+- 如果 Docker 守护进程可以拉取镜像、但容器不能直接访问 Hugging Face，可只为模型服务设置 `STUDY_LOCAL_MODEL_PROXY_URL`。该值映射到 `local-model` 的标准代理环境变量，不会传给 API 或 worker；可直连时保持为空。
+- 本地 CPU 视觉推理默认超时为 `600` 秒；云端 NewAPI 上限仍为 `120` 秒。当前 4 核 Ubuntu 的大图结构化视觉请求可能需要数分钟，不适合低延迟交互。不要用增加超时掩盖持续卡死，调整前先记录目标硬件的 synthetic 延迟和内存。
+- 本地输出固定受 `STUDY_LOCAL_MODEL_MAX_OUTPUT_TOKENS` 约束（默认 `2048`），且本地超时/网络失败不自动重复推理；云端仍使用既有的最多三次瞬时重试。这样模型不收敛时会返回可见失败，而不是长时间占满 CPU 或切换 Provider。
 - DataLifecycle worker 固定删除超过 180 天、且不再被开放错题引用的详细题目/讲解和已结束复习链路。紧急调查时可设置 `LEARNING_HISTORY_CLEANUP_ENABLED=false` 暂停后续清理；不要改变代码中的 180 天策略或手工删除开放错题。
 
 不要把 `infra/compose/.env`、真实 API key、儿童图片或真实题目写入仓库。
@@ -63,7 +69,40 @@ Web 日志：
 docker compose -f infra/compose/compose.yml logs --tail=100 web
 ```
 
-## 4. 启用 NewAPI 图片分析
+## 4. 启用本地 Qwen 模型
+
+在 `infra/compose/.env` 设置：
+
+```dotenv
+STUDY_LOCAL_MODEL_ENABLED=true
+STUDY_LOCAL_MODEL_NAME=Qwen3.5-4B-Q4_K_M
+STUDY_LOCAL_MODEL_HF_REPO=bjivanovich/Qwen3.5-4B-Vision-GGUF
+STUDY_LOCAL_MODEL_MODEL_FILE=Qwen3.5-4B.Q4_K_M.gguf
+STUDY_LOCAL_MODEL_MMPROJ_FILE=Qwen3.5-4B.BF16-mmproj.gguf
+STUDY_LOCAL_MODEL_BASE_URL=http://local-model:8080/v1
+# 仅在模型容器不能直连 Hugging Face 时设置：
+STUDY_LOCAL_MODEL_PROXY_URL=
+```
+
+然后重启本地模型和所有会调用 AI 的服务：
+
+```bash
+docker compose -f infra/compose/compose.yml up -d local-model api image-analysis-worker curriculum-analysis-worker
+docker compose -f infra/compose/compose.yml ps local-model api image-analysis-worker curriculum-analysis-worker
+docker compose -f infra/compose/compose.yml logs --tail=100 local-model
+```
+
+`local-model` 首次启动会下载 Q4_K_M 权重和视觉 projector，`health` 变为 `200` 后 API/worker 才会继续启动。验证只使用不含儿童数据的 synthetic 请求；模型输出仍必须通过现有 Schema、人工确认、Tutor Policy 和教材审核门禁。
+
+关闭本地模型并恢复云端路径：
+
+```bash
+STUDY_LOCAL_MODEL_ENABLED=false docker compose -f infra/compose/compose.yml up -d api image-analysis-worker curriculum-analysis-worker
+```
+
+Shell 中的临时变量不会修改 `.env`；要持久切换，请编辑 `infra/compose/.env` 后执行同一重启命令。关闭本地模型不会删除缓存、学习记录或数据库事实。
+
+## 5. 启用 NewAPI 图片分析
 
 在 `infra/compose/.env` 设置：
 
@@ -75,7 +114,7 @@ STUDY_NEWAPI_VISION_MODEL=your_vision_model
 STUDY_NEWAPI_USER_AGENT=study-api/0.5
 ```
 
-然后仅重建/重启 API 和已在默认 profile 中的 worker：
+然后仅重建/重启 API 和已在默认 profile 中的 worker（且 `STUDY_LOCAL_MODEL_ENABLED=false`）：
 
 ```bash
 docker compose -f infra/compose/compose.yml \
@@ -86,7 +125,7 @@ docker compose -f infra/compose/compose.yml \
 
 首次启动后，在服务器本机访问家长 Web，使用一次性 `admin/admin123456` 登录并完成首次改密；改密前 API 会阻断家庭数据接口。改密成功后，家长可以在“孩子账号”页面创建、停用、启用和重置孩子账号。Flutter 孩子端在登录页先填写对 iPad/Android 可达的 API 地址（例如 `http://192.168.1.4:8000`），再使用孩子账号密码登录。地址和会话由系统安全存储持久化，更换地址会先清除旧会话。
 
-## 5. 停止、升级和回滚
+## 6. 停止、升级和回滚
 
 ```bash
 # 停止容器但保留 PostgreSQL/MinIO/Redis 数据卷
@@ -111,7 +150,7 @@ infra/compose/scripts/verify-restore.sh /srv/study-backups/<UTC_TIMESTAMP>
 
 当前未提供定时备份调度或生产级监控；不要把 `down -v` 当作清理儿童数据的正式删除流程，也不要把本 Compose 暴露到公网。
 
-## 6. 最小验收
+## 7. 最小验收
 
 ```bash
 docker compose -f infra/compose/compose.yml ps

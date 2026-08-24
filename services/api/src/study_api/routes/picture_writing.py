@@ -114,7 +114,7 @@ def create_picture_writing_guide(
             child_id,
             idempotency_key,
             guide,
-            provider="newapi",
+            provider=config.provider_name,
             model=config.vision_model,
         )
     except NewApiProviderError as error:

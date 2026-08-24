@@ -1,3 +1,31 @@
+# PLANS.md — PLAN-0034 本地 Qwen 模型部署与 Provider 路由
+
+## 计划元数据
+
+- 计划 ID：`PLAN-0034`
+- 关联：`TASK-0012`、`ADR-0004`、`ADR-0015`、`ADR-0028`
+- 状态：`COMPLETE（本地路由与 Ubuntu 部署完成；视觉质量门禁未通过，继续作为发布后风险跟踪）`
+- 优先级：`P0 / LOCAL AI / DEPLOYMENT`
+- Owner：Codex（实现）；项目 Owner（本地模型来源、硬件质量和启用验收）
+- 创建：`2026-08-23`
+
+## 目标、边界与里程碑
+
+在现有 Provider Adapter 和 Compose 内增加 Qwen3.5-4B Q4_K_M 本地多模态服务。`STUDY_LOCAL_MODEL_ENABLED=true` 时 API、ImageAnalysis worker 和 CurriculumAnalysis worker 只能访问本地模型；关闭时继续读取现有 NewAPI 云端配置。保持题目确认、教材审核、Tutor Policy、固定 Schema 和单 Provider 约束；本计划包含项目 Owner 于 2026-08-24 明确授权的 Ubuntu 自用部署，不包含真实儿童数据验收。
+
+- [x] M1 — 核对 NewAPI Adapter 的全部文本/视觉调用入口，确认统一配置可覆盖 API、ImageAnalysis worker、CurriculumAnalysis worker。
+- [x] M2 — 增加 Compose `local-model`、Q4_K_M GGUF/视觉 projector 配置、内部健康检查和持久模型缓存；关闭时容器空闲。
+- [x] M3 — 增加本地开关优先级、实际 provider/model 记录和本地/云端路由回归测试。
+- [x] M4 — 完成 Compose 配置校验、API 定向测试、静态质量门槛和差异审查；本机 Linux ARM64 已完成模型下载与 synthetic text/vision/schema smoke，目标 Ubuntu 硬件质量评测仍需部署者执行。
+- [x] M5 — 在 12 GB/4 核 Ubuntu 完成发布前备份与隔离恢复、白名单同步、模型下载、迁移、health/models、文本 JSON smoke、Provider 选择、私有端口和常驻内存核验。
+- [ ] M6 — Ubuntu `question-extraction.v1` synthetic 大图评测在 600 秒内未收敛，视觉质量门禁未通过；真实 PDF、真实设备和儿童数据均未测试。
+
+## 回滚与风险
+
+设置 `STUDY_LOCAL_MODEL_ENABLED=false` 并重启 API、ImageAnalysis worker 和 CurriculumAnalysis worker 即可恢复云端路径；不自动回退、不删除模型缓存、学习事实或数据库。本地请求有 600 秒、2048 输出 token 和单次尝试上限，失败保持可见。默认 GGUF/镜像来自外部仓库，首次下载和质量/许可证/供应链验证不得被本地代码测试替代。
+
+---
+
 # PLANS.md — PLAN-0033 古诗抽查与看图写话
 
 ## 计划元数据

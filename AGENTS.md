@@ -19,6 +19,7 @@
 ## 2. 当前仓库阶段
 
 - 当前 P0/P1 基础脚手架已存在：`apps/`、`services/`、`packages/`、`evals/`、`infra/compose/`、三类锁文件、CI 与隔离 Chromium 登录态 E2E；本地和 Ubuntu 当前均为 API/OpenAPI `0.17.0`、迁移头 `0036_task_session_progress`，Ubuntu 已由 2026-08-23 的部署验证并固化为 `v0.17.0`。Profile/Learning/Capture/Identity/VerifiedQuestion/Tutor/Report/Export/Mistake/Review 和 Ubuntu 自用 Compose 均有实现/验收记录；显式 `math/chinese`、subject-aware 教材及语文确定性 Content/Attempt/Review 首个纵向切片已部署 Ubuntu，本机数学任务恢复、语文古诗/看图写话和 PostgreSQL 集成已通过；正式内容签核、Ubuntu 真实账号浏览器和最终设备回归仍未完成。PLAN-0018 的私有原页预览、分批多模态教材分析、整本知识图谱、家长审核和已审核知识点/具体练习推荐已部署，真实 Provider/PDF/设备质量验收仍待完成。
+- 2026-08-24 已在 12 GB/4 核 Ubuntu 启用 ADR-0028 的 Qwen3.5-4B Q4_K_M 本地路由；模型/API/Web/worker、文本 JSON、内存和私有端口通过，但视觉 `question-extraction.v1` synthetic 大图未在 600 秒内收敛。视觉、Tutor 或教材质量不得描述为验收通过，且失败不得自动回退云端。
 - ADR-0017 已接受以账号密码和可撤销会话替换 HMAC/PIN；TASK-0007 进一步删除 HMAC、Demo Header 和 Web 免登录旁路。API/Web/Flutter/Compose 运行时只允许用户名密码登录后的 Cookie/Bearer Session；Flutter 在登录前配置服务端地址，地址变更必须清理旧会话。隔离 synthetic Chromium 已覆盖 Cookie/CSRF、会话撤销和跨家庭角色；真实 PostgreSQL/Ubuntu 账号浏览器和设备生命周期仍需验收。
 - ADR-0018 已接受以“App 携带 Session → API 有界流式校验/转发 → 私有 MinIO”替代 ADR-0010/0014 的预签名直传。目标 OpenAPI 不返回对象存储 URL，MinIO `9000` 不向宿主/LAN 暴露，且删除 `OBJECT_STORAGE_PUBLIC_ENDPOINT_URL`；本地与 Ubuntu `0.17.0` 均保持新链路，最终设备回归仍待完成。
 - PLAN-0013/Proposed ADR-0019 已实现 Web 将孩子档案与唯一登录账号作为一个管理聚合并支持首页当前孩子选择；`Account`/`ChildProfile` 仍安全分表，聚合创建使用事务和 `0016` 唯一约束。隔离 Chromium 双孩子创建/学科差异/切换已通过，真实 PostgreSQL/设备回归仍待完成。

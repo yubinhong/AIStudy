@@ -1,6 +1,6 @@
 # DECISIONS.md
 
-> 决策索引。完整决策使用 `docs/adr/NNNN-title.md`；项目 Owner（用户）已于 2026-07-13 批准 ADR-0001～0012、于 2026-07-14 批准 ADR-0013～0014、于 2026-07-15 批准 ADR-0015～0017、于 2026-07-17 批准 ADR-0018、于 2026-07-18 批准 ADR-0020、于 2026-07-23 批准 ADR-0021～0023、于 2026-07-28 批准 ADR-0024、于 2026-07-29 批准 ADR-0025、于 2026-07-30 批准 ADR-0026；ADR-0019 仍为 Proposed。ADR-0012 的默认本地完整 OCR 路线已被 ADR-0015 替代；ADR-0017 替代 ADR-0005 的 PIN/设备凭证默认认证方式和 ADR-0016 的 HMAC 家庭认证部分；ADR-0018 替代 ADR-0010/0014 的客户端预签名直传路线并继承其私有 MinIO/S3 Adapter 边界。
+> 决策索引。完整决策使用 `docs/adr/NNNN-title.md`；项目 Owner（用户）已于 2026-07-13 批准 ADR-0001～0012、于 2026-07-14 批准 ADR-0013～0014、于 2026-07-15 批准 ADR-0015～0017、于 2026-07-17 批准 ADR-0018、于 2026-07-18 批准 ADR-0020、于 2026-07-23 批准 ADR-0021～0023、于 2026-07-28 批准 ADR-0024、于 2026-07-29 批准 ADR-0025、于 2026-07-30 批准 ADR-0026、于 2026-08-23 批准 ADR-0028；ADR-0019 仍为 Proposed。ADR-0012 的默认本地完整 OCR 路线已被 ADR-0015 替代；ADR-0017 替代 ADR-0005 的 PIN/设备凭证默认认证方式和 ADR-0016 的 HMAC 家庭认证部分；ADR-0018 替代 ADR-0010/0014 的客户端预签名直传路线并继承其私有 MinIO/S3 Adapter 边界。
 
 ## 决策原则
 
@@ -41,6 +41,7 @@
 | [ADR-0025](docs/adr/0025-provider-neutral-child-english-speaking-practice.md) | 数学/英语学科首页与供应商中立的有界儿童英语口语插件 | 不接入 Gemini；真实 Provider 合规批准前入口锁定，音频/转写不持久化，数学任务模型不变 |
 | [ADR-0026](docs/adr/0026-learning-history-query-and-retention.md) | 家长学习记录独立查询与详细历史 180 天保留 | 默认近 30 个上海自然日、可选单日；开放错题受保护，Attempt/AuditEvent 等其他事实不在本次清理范围 |
 | [ADR-0027](docs/adr/0027-multisubject-core-and-chinese-content.md) | 通用学习生命周期 subject-aware，语文采用版本化内容与确定性评分层 | 旧数据回填数学；语文 AnswerSpec 不下发孩子；教材按学科隔离；英语保持 ADR-0025 独立禁用门禁并排在后续 |
+| [ADR-0028](docs/adr/0028-local-qwen-model-routing.md) | 通过 `STUDY_LOCAL_MODEL_ENABLED` 在单一 Provider Adapter 内切换本地 Qwen3.5-4B Q4_K_M 与现有 NewAPI 云端路径 | 本地 llama.cpp 服务只在家庭 Compose 内部可达；关闭开关时不自动回退；Schema、人工确认、Tutor Policy、教材审核和单 Provider 边界继续有效 |
 
 2026-08-10：未部署的 ADR-0027 成人英语增量已由项目 Owner 撤回，相关文件、代码、配置和测试删除；现行英语边界继续以 ADR-0025 为准。
 

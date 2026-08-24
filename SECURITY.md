@@ -19,13 +19,13 @@
 
 ### 自用部署修订（2026-07-15）
 
-本产品当前按多个独立家庭的自托管方式推进；地区、商业化、第三方 IdP、公开注册和复杂监护人流程暂不作为本轮实现门槛。Compose 只使用账号密码和可撤销会话；HMAC、Demo Header、静态 Web Token 和认证模式开关已删除。NewAPI/OpenAI-compatible Adapter 仅在显式配置时启用。Ubuntu 24.04 x86_64 栈已完成既有单家庭健康、迁移、登录/首次改密、真实 NewAPI synthetic 大图和 PostgreSQL/MinIO 隔离恢复验证；2026-08-16 隔离 Chromium E2E 已覆盖 Cookie/CSRF、会话轮换/撤销、跨家庭角色与双孩子作用域。Ubuntu 真实账号/PostgreSQL 浏览器、设备和完整授权回归仍待执行。
+本产品当前按多个独立家庭的自托管方式推进；地区、商业化、第三方 IdP、公开注册和复杂监护人流程暂不作为本轮实现门槛。Compose 只使用账号密码和可撤销会话；HMAC、Demo Header、静态 Web Token 和认证模式开关已删除。AI 请求通过单一 Provider Adapter 统一路由：`STUDY_LOCAL_MODEL_ENABLED=true` 时仅访问 Compose 内部的 llama.cpp/Qwen3.5-4B Q4_K_M，关闭时才读取显式配置的 NewAPI/OpenAI-compatible 云端路径；两种模式都不自动跨 Provider 回退。Ubuntu 24.04 x86_64 栈已完成既有单家庭健康、迁移、登录/首次改密、真实 NewAPI synthetic 大图和 PostgreSQL/MinIO 隔离恢复验证；2026-08-16 隔离 Chromium E2E 已覆盖 Cookie/CSRF、会话轮换/撤销、跨家庭角色与双孩子作用域。Ubuntu 真实账号/PostgreSQL 浏览器、设备和完整授权回归仍待执行。
 
 2026-07-17 网络运行边界：远端 VM 已关闭 IPv6，Docker daemon 通过用户提供的 SOCKS5 出网代理拉取镜像；项目 `.env` 仅存在远端、权限为 600，未进入仓库。NewAPI key 只通过远端环境注入；联调只发送运行时生成的 synthetic 图片，没有发送真实儿童图片或把密钥写入输出。
 
 账号密码目标保留自用的简单边界：不接入短信、邮箱、社交登录、OIDC 或 MFA。项目 Owner 已授权 LAN 首次引导，因此安全性由“仅空库初始化一次 + 首次登录强制改密 + 改密前阻断全部家庭数据 + 登录限速/锁定 + 可撤销会话 + Household/角色授权”提供。`admin/admin123456` 不是长期凭据；仅用于首次改密，改密后立即失效，且不得暴露到公网。
 
-当前可运行边界是：`ImageAnalysis` 回执经安全校验后进入 queued，worker 读取私有对象、调用已配置的单一 NewAPI，并只保存 Schema 校验后的未确认 `QuestionExtraction`；人工确认生成 `VerifiedQuestion`，Tutor 只按服务端 ID 读取并追加写 `TutorTurn`，派生对象在成功/失败后清理。真实 NewAPI synthetic 和备份恢复已完成；真实自动视觉检测器和生产监控仍未完成，不得把规则/手工遮挡描述为绝对匿名。
+当前可运行边界是：`ImageAnalysis` 回执经安全校验后进入 queued，worker 读取私有对象、调用统一路由选择的单一 Provider，并只保存 Schema 校验后的未确认 `QuestionExtraction`；人工确认生成 `VerifiedQuestion`，Tutor 只按服务端 ID 读取并追加写 `TutorTurn`，派生对象在成功/失败后清理。真实 NewAPI synthetic、本机 Linux ARM64 Qwen health/models/text/vision/schema smoke 和备份恢复已完成；本地 Qwen 目标硬件质量/延迟和固定 eval、真实自动视觉检测器和生产监控仍未完成，不得把规则/手工遮挡描述为绝对匿名。
 
 Apple Silicon 的默认 Compose 镜像是 Linux ARM64 调试运行时；由于锁定的 PaddlePaddle 3.3.1 只提供 macOS ARM64 和 Linux x86_64 wheel，该镜像不含 Paddle OCR。不得把规则/手工遮挡或“ARM 镜像可以启动”解释成完整 PrivacySanitizer 已通过；启用图片外发前仍必须在具备获批本地检测器的运行时完成固定脱敏评测和用户确认门禁。
 
@@ -66,7 +66,7 @@ ADR-0020/0023 与 PLAN-0017/0018 已进入实现：`0020` 把视觉四态候选�
 | Confidential | 家庭关系、孩子档案、学习记录、错题、周报、家庭导入内容、去标识 AI 摘要 | 仅批准的业务库/设备安全存储 | 仅去标识/不可逆标识和最小字段 | 传输和静态均必须加密 | VerifiedQuestion/TutorTurn 和已结束复习链路 180 天；开放错题例外；其他数据仍为 `TBD` |
 | Restricted | 原始题目/作答图片、临时脱敏副本、密码哈希、会话原值/摘要、设备凭据、密钥、原始 AI 输入输出中的儿童信息、生产转储/备份 | 批准的密钥管理器、对象存储、业务库或设备安全区；脱敏副本只在受控临时存储/内存；会话原值只到客户端安全存储 | 永不记录原值 | 传输和静态必须加密，访问最小化 | 最短必要；脱敏副本成功后立即删除、失败最多 24 小时；会话最长 30 天并可即时撤销；其他图片/备份见批准策略 |
 
-家庭导入的教材/课程原文同时受 Confidential 与版权/授权控制：只允许家庭私有对象存储和获批解析流程，不进入公共题库、仓库、测试/评测集或普通数据导出。教材理解可将无个人信息的页级派生图和本地文字按最多 4 页一批发送给单一获批 Provider，并仅将经过 Schema/来源校验的结构化结果入库；后续 Tutor/推荐只有在来源/版本明确且当前请求确有必要时才可发送最小已批准知识片段。
+家庭导入的教材/课程原文同时受 Confidential 与版权/授权控制：只允许家庭私有对象存储和获批解析流程，不进入公共题库、仓库、测试/评测集或普通数据导出。教材理解可将无个人信息的页级派生图和本地文字按最多 4 页一批发送给单一获批 Provider，并仅将经过 Schema/来源校验的结构化结果入库；后续 Tutor/推荐只有在来源/版本明确且当前请求确有必要时才可发送最小已批准知识片段。启用本地 Qwen 时这些请求仅在家庭 Compose 网络内传输；首次下载的模型权重是部署依赖，不得把儿童数据、图片、题目或日志写入模型仓库。
 
 任何无法分类的数据按更高一级处理。把 Confidential/Restricted 数据降级必须有文档化评审。
 

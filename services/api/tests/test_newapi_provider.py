@@ -25,6 +25,125 @@ def _config() -> NewApiConfig:
     return NewApiConfig(True, "http://newapi.local", "key", "vision-model", 5, 100_000)
 
 
+def test_local_model_flag_routes_provider_configuration_away_from_cloud(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("STUDY_LOCAL_MODEL_ENABLED", "true")
+    monkeypatch.setenv("STUDY_LOCAL_MODEL_BASE_URL", "http://local-model:8080/v1")
+    monkeypatch.setenv("STUDY_LOCAL_MODEL_API_KEY", "study-local-model")
+    monkeypatch.setenv("STUDY_LOCAL_MODEL_NAME", "Qwen3.5-4B-Q4_K_M")
+    monkeypatch.setenv("STUDY_NEWAPI_ENABLED", "true")
+    monkeypatch.setenv("STUDY_NEWAPI_BASE_URL", "https://cloud.example.invalid")
+    monkeypatch.setenv("STUDY_NEWAPI_API_KEY", "cloud-key")
+    monkeypatch.setenv("STUDY_NEWAPI_VISION_MODEL", "cloud-model")
+
+    config = NewApiConfig.from_environment()
+
+    assert config.enabled is True
+    assert config.provider_name == "local_qwen"
+    assert config.base_url == "http://local-model:8080/v1"
+    assert config.api_key == "study-local-model"
+    assert config.vision_model == "Qwen3.5-4B-Q4_K_M"
+
+
+def test_cloud_configuration_remains_selected_when_local_model_is_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("STUDY_LOCAL_MODEL_ENABLED", "false")
+    monkeypatch.setenv("STUDY_NEWAPI_ENABLED", "true")
+    monkeypatch.setenv("STUDY_NEWAPI_BASE_URL", "https://cloud.example.invalid")
+    monkeypatch.setenv("STUDY_NEWAPI_API_KEY", "cloud-key")
+    monkeypatch.setenv("STUDY_NEWAPI_VISION_MODEL", "cloud-model")
+
+    config = NewApiConfig.from_environment()
+
+    assert config.provider_name == "newapi"
+    assert config.base_url == "https://cloud.example.invalid"
+    assert config.vision_model == "cloud-model"
+
+
+def test_local_model_disables_reasoning_for_structured_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = NewApiVisionProvider(
+        NewApiConfig(
+            True,
+            "http://local-model:8080/v1",
+            "study-local-model",
+            "Qwen3.5-4B-Q4_K_M",
+            120,
+            262_144,
+            provider_name="local_qwen",
+        )
+    )
+    captured: dict[str, Any] = {}
+
+    def fake_post(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        captured.update(payload)
+        return {"choices": [{"message": {"content": "{}"}}]}
+
+    monkeypatch.setattr(provider, "_post_json_once", fake_post)
+
+    provider._post_json({"model": "Qwen3.5-4B-Q4_K_M", "messages": []})
+
+    assert captured["chat_template_kwargs"] == {"enable_thinking": False}
+    assert captured["max_tokens"] == 2048
+
+
+def test_local_model_allows_target_hardware_timeout_without_relaxing_cloud_limit() -> None:
+    NewApiVisionProvider(
+        NewApiConfig(
+            True,
+            "http://local-model:8080/v1",
+            "study-local-model",
+            "Qwen3.5-4B-Q4_K_M",
+            600,
+            262_144,
+            provider_name="local_qwen",
+        )
+    )
+
+    with pytest.raises(NewApiConfigurationError, match="between 1 and 120"):
+        NewApiVisionProvider(
+            NewApiConfig(
+                True,
+                "https://cloud.example.invalid",
+                "cloud-key",
+                "cloud-model",
+                600,
+                262_144,
+            )
+        )
+
+
+def test_local_model_does_not_repeat_a_bounded_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = NewApiVisionProvider(
+        NewApiConfig(
+            True,
+            "http://local-model:8080/v1",
+            "study-local-model",
+            "Qwen3.5-4B-Q4_K_M",
+            600,
+            262_144,
+            provider_name="local_qwen",
+        )
+    )
+    calls = 0
+
+    def fake_post_once(_payload: Mapping[str, Any]) -> Mapping[str, Any]:
+        nonlocal calls
+        calls += 1
+        raise NewApiProviderError("local timeout", code="provider_timeout")
+
+    monkeypatch.setattr(provider, "_post_json_once", fake_post_once)
+
+    with pytest.raises(NewApiProviderError, match="local timeout"):
+        provider._post_json({"model": "Qwen3.5-4B-Q4_K_M"})
+    assert calls == 1
+
+
 def test_newapi_provider_validates_structured_question_without_network() -> None:
     provider = NewApiVisionProvider(_config())
     captured: dict[str, Any] = {}

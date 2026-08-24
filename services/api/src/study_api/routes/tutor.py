@@ -257,8 +257,12 @@ def create_tutor_hint(
         else:
             content = content.model_copy(
                 update={
-                    "policy_version": "cloud-tutor-policy.v1",
-                    "provider": "newapi",
+                    "policy_version": (
+                        "cloud-tutor-policy.v1"
+                        if provider_config.provider_name == "newapi"
+                        else "local-qwen-tutor-policy.v1"
+                    ),
+                    "provider": provider_config.provider_name,
                     "model": provider_config.vision_model,
                     "prompt": generated.prompt,
                     "next_step": generated.next_step,
@@ -306,7 +310,7 @@ def create_tutor_hint(
                     if provider_scope is not None
                     else "general-solution-policy.v1"
                 ),
-                "provider": "newapi",
+                "provider": provider_config.provider_name,
                 "model": provider_config.vision_model,
                 "prompt": (
                     "下面给出完整解答，请逐步对照题目和自己的作答。"
