@@ -39,7 +39,7 @@ GitHub Actions Android APK 构建、稳定签名 Secret、Artifact 校验/安装
 ### 当前环境
 
 - local：`infra/compose/compose.yml` 已编排 PostgreSQL、Redis、MinIO、API、家长 Web、一次性 Alembic migration、AI worker 和可切换的 llama.cpp/Qwen 本地模型服务；Apple Silicon `linux/arm64` 调试镜像构建成功。`STUDY_LOCAL_MODEL_ENABLED=false` 时本地模型容器保持空闲，路由读取 NewAPI；设置为 `true` 时所有当前 AI 请求只走 Compose 内部本地模型，模型缓存写入独立持久卷且不发布推理端口。
-- Ubuntu 自用验收：宿主为 Ubuntu 24.04/x86_64、12 GB 内存/4 核，远端 `infra/compose/.env` 权限 600。2026-08-24 备份 `/home/syin/study-backups/20260824T024445Z` 已隔离恢复验证 39 张 PostgreSQL public 表和 353 个 MinIO 文件；API/OpenAPI `0.17.0`、迁移 `0036_task_session_progress`、PostgreSQL、MinIO、Redis、Web、四个 worker 和内部 Qwen 模型健康。模型与 MinIO 均不发布宿主端口，运行态选择 `local_qwen`，文本 JSON smoke 通过；模型空闲约 3.8 GiB、推理约 4.6 GiB。视觉 `question-extraction.v1` synthetic 大图 600 秒内不收敛，质量门禁失败；真实 PDF、账号浏览器和设备未验证。
+- Ubuntu 自用验收：宿主为 Ubuntu 24.04/x86_64、12 GB 内存/4 核，远端 `infra/compose/.env` 权限 600。2026-08-24 备份 `/home/syin/study-backups/20260824T024445Z` 已隔离恢复验证 39 张 PostgreSQL public 表和 353 个 MinIO 文件；API/OpenAPI `0.17.0`、迁移 `0036_task_session_progress`、PostgreSQL、MinIO、Redis、Web、四个 worker 和内部 Qwen 模型健康。模型与 MinIO 均不发布宿主端口，运行态选择 `local_qwen`，文本 JSON smoke 通过；模型初始空闲约 3.8 GiB，长视觉评测保留 prompt cache 后约 6.4 GiB，宿主约 6.5 GiB available。视觉 `question-extraction.v1` synthetic 大图 600 秒内不收敛，质量门禁失败；真实 PDF、账号浏览器和设备未验证。
 - 真机拍题当前事实：API/Flutter/Compose/Ubuntu 已切换为 App 携带 Session 向 API 上传，且 Compose 不发布 MinIO `9000`。最新 iPad Release `Runner.app` 已安装到无线设备 `00008110-0011356E0E41801E`，但 iOS 首次启动要求用户在“设置 → 通用 → VPN 与设备管理”显式信任开发者 Team `VZ59988J63`；信任后仍需执行拍题、权限、弱网和重启验收。Provider HTTP `402` 只表示 NewAPI 余额/模型额度不可用，不应误判为上传或 MinIO 故障。
 - staging：未建立。
 - production：未建立且未获部署授权。

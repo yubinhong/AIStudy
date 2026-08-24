@@ -1,6 +1,6 @@
 # Changelog
 
-- 2026-08-24：在 12 GB/4 核 Ubuntu 自用服务器启用 Qwen3.5-4B Q4_K_M 本地路由。发布前备份 `/home/syin/study-backups/20260824T024445Z` 已隔离恢复验证（39 张 PostgreSQL public 表、353 个 MinIO 文件）；模型缓存持久化且支持断点续传，模型/API/Web/四个 worker、`0036`、health/models、`local_qwen` 运行时选择、文本 JSON smoke、内存和私有端口通过。本地失败受 600 秒、2048 输出 token、单次尝试约束且不回退云端。`question-extraction.v1` synthetic 大图在 600 秒内输出不收敛，视觉质量门禁未通过；未使用真实儿童数据、PDF、浏览器账号或设备。
+- 2026-08-24：在 12 GB/4 核 Ubuntu 自用服务器启用 Qwen3.5-4B Q4_K_M 本地路由。发布前备份 `/home/syin/study-backups/20260824T024445Z` 已隔离恢复验证（39 张 PostgreSQL public 表、353 个 MinIO 文件）；模型缓存持久化且支持断点续传，模型/API/Web/四个 worker、`0036`、health/models、`local_qwen` 运行时选择、文本 JSON smoke 和私有端口通过。模型初始空闲约 3.8 GiB，长视觉评测保留 prompt cache 后约 6.4 GiB，宿主仍约 6.5 GiB available。本地失败受 600 秒、2048 输出 token、单次尝试约束且不回退云端。`question-extraction.v1` synthetic 大图在 600 秒内输出不收敛，视觉质量门禁未通过；未使用真实儿童数据、PDF、浏览器账号或设备。
 
 - 2026-08-23：新增 `ADR-0028` 可切换本地 AI 路由。Compose 增加内部 llama.cpp `local-model` 服务，默认配置 Qwen3.5-4B Q4_K_M GGUF/视觉 projector 和持久模型缓存；`STUDY_LOCAL_MODEL_ENABLED=true` 时 API、ImageAnalysis worker、CurriculumAnalysis worker 的所有当前 NewAPI-compatible 请求只走本地，关闭时回到现有 NewAPI 配置且不自动跨 Provider 回退。Qwen 本地结构化请求关闭 reasoning；本机 Linux ARM64 已完成镜像/权重加载和 synthetic text/vision/schema smoke，目标硬件质量/延迟、真实 Provider/PDF/设备验收仍未执行。
 
