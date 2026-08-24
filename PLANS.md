@@ -18,7 +18,7 @@
 - [x] M3 — 增加本地开关优先级、实际 provider/model 记录和本地/云端路由回归测试。
 - [x] M4 — 完成 Compose 配置校验、API 定向测试、静态质量门槛和差异审查；本机 Linux ARM64 已完成模型下载与 synthetic text/vision/schema smoke，目标 Ubuntu 硬件质量评测仍需部署者执行。
 - [x] M5 — 在 12 GB/4 核 Ubuntu 完成发布前备份与隔离恢复、白名单同步、模型下载、迁移、health/models、文本 JSON smoke、Provider 选择、私有端口和常驻内存核验。
-- [ ] M6 — Ubuntu `question-extraction.v1` synthetic 大图评测在 600 秒内未收敛，视觉质量门禁未通过；真实 PDF、真实设备和儿童数据均未测试。
+- [ ] M6 — Ubuntu `question-extraction.v1` synthetic 大图在 12 GB/4 核下 600 秒内未收敛；升级到 8 核后耗时 373.128 秒，但生成到 2048 token 上限后仍因 Schema 无效失败。视觉质量门禁未通过，需按 `docs/local-qwen-evaluation-report-2026-08-24.md` 重新选型；真实 PDF、真实设备和儿童数据均未测试。
 
 ## 回滚与风险
 

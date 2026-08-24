@@ -17,6 +17,8 @@
 - [x] 12 GB/4 核 Ubuntu 已启用本地模型；发布前备份 `/home/syin/study-backups/20260824T024445Z` 已隔离恢复为 39 张 PostgreSQL public 表和 353 个 MinIO 文件。模型/API/Web/四个 worker 健康，路由为 `local_qwen`，文本 JSON smoke 通过，模型/MinIO 均无宿主端口。模型初始空闲约 3.8 GiB，长视觉评测后保留 prompt cache 时约 6.4 GiB，宿主仍有约 6.5 GiB available。
 - [x] 目标硬件暴露的失败已设为有界：本地专用超时 600 秒、最多 2048 输出 token、超时/网络错误不自动重复推理，且永不自动切换云端。
 - [ ] Ubuntu `question-extraction.v1` synthetic 大图在 600 秒内生成超过合理 Schema 长度仍未收敛，视觉质量门禁未通过；真实 PDF、真实设备和儿童数据均未执行。文本路由可用不代表视觉/Tutor/教材质量验收通过。
+- [ ] Ubuntu 升级到 12 GB/8 核后复测：模型确认使用 8 个线程，短文本 JSON 为 1.387 秒；完整 synthetic 大图耗时 373.128 秒，生成 2048 tokens 后以 `provider_response_schema_invalid` 失败。增加 CPU 改善吞吐但未解决视觉 Schema 质量，当前模型不可作为统一本地 Provider；完整证据和重新选型问题见 `docs/local-qwen-evaluation-report-2026-08-24.md`。
+- [x] 根据两轮失败结果将 Ubuntu `STUDY_LOCAL_MODEL_ENABLED` 恢复为 `false`，停止本地模型容器并保留模型缓存；API 与两个 AI worker 重新创建后运行时为 `newapi`，不含儿童数据的 synthetic 数学文本 Schema smoke 3.591 秒通过。API/Web/四个 worker 健康，停模后宿主约 10 GiB available、Swap 为 0；远端回滚前 `.env` 备份为 `infra/compose/.env.before-cloud-20260824T140816`。
 
 ## 2026-08-22 继续实现记录
 
