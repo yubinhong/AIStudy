@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import time
@@ -51,6 +52,8 @@ from study_api.object_storage import (
     ObjectStorageError,
     S3ObjectStorage,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -1061,6 +1064,41 @@ def _validate_book_coverage(
                 raise CurriculumBookReferenceError("book analysis references an unknown page")
 
 
+def _analyze_curriculum_page_batch(
+    provider: NewApiVisionProvider,
+    pages: tuple[CurriculumProviderPage, ...],
+    *,
+    subject: Subject,
+) -> tuple[
+    tuple[ProviderPageAnalysis | ChineseProviderPageAnalysis, ...],
+    tuple[ProviderCallMetrics, ...],
+]:
+    """Split an oversized page request without skipping evidence or changing Provider."""
+
+    try:
+        analyses = provider.analyze_curriculum_pages(pages, subject=subject)
+    except NewApiProviderError as error:
+        if error.code != "provider_http_413" or len(pages) == 1:
+            raise
+        midpoint = len(pages) // 2
+        LOGGER.warning(
+            "curriculum_provider_batch_split code=provider_http_413 page_count=%d "
+            "left_count=%d right_count=%d",
+            len(pages),
+            midpoint,
+            len(pages) - midpoint,
+        )
+        left_analyses, left_metrics = _analyze_curriculum_page_batch(
+            provider, pages[:midpoint], subject=subject
+        )
+        right_analyses, right_metrics = _analyze_curriculum_page_batch(
+            provider, pages[midpoint:], subject=subject
+        )
+        return left_analyses + right_analyses, left_metrics + right_metrics
+    metrics = (provider.last_call_metrics,) if provider.last_call_metrics is not None else ()
+    return analyses, metrics
+
+
 def run_once(
     repository: PostgresCurriculumKnowledgeRepository,
     storage: S3ObjectStorage,
@@ -1101,16 +1139,18 @@ def run_once(
                 )
             )
             if len(batch) == 4:
-                analyses.extend(
-                    provider.analyze_curriculum_pages(tuple(batch), subject=job.subject)
+                batch_analyses, batch_metrics = _analyze_curriculum_page_batch(
+                    provider, tuple(batch), subject=job.subject
                 )
-                if provider.last_call_metrics is not None:
-                    provider_metrics.append(provider.last_call_metrics)
+                analyses.extend(batch_analyses)
+                provider_metrics.extend(batch_metrics)
                 batch.clear()
         if batch:
-            analyses.extend(provider.analyze_curriculum_pages(tuple(batch), subject=job.subject))
-            if provider.last_call_metrics is not None:
-                provider_metrics.append(provider.last_call_metrics)
+            batch_analyses, batch_metrics = _analyze_curriculum_page_batch(
+                provider, tuple(batch), subject=job.subject
+            )
+            analyses.extend(batch_analyses)
+            provider_metrics.extend(batch_metrics)
         if not analyses:
             raise ValueError("curriculum analysis rendered no pages")
         page_payloads, exercises = _page_payloads(tuple(analyses))

@@ -8,6 +8,21 @@
 - Owner：Codex（执行）；项目 Owner（2026-08-15 明确要求先多学科、再语文、英语最后）
 - 关联：`PLAN-0034`、`PLAN-0031`、`PLAN-0030`、`PLAN-0007`、`ADR-0017`、`ADR-0027`、`ADR-0028`、`docs/deep-research-report.md`
 
+## 2026-08-25 语文教材分析 Schema 与批次兼容修复
+
+- [x] 根据 CurriculumAnalysis worker 的安全字段路径日志定位：语文 v2 页级提示没有明确列出 `knowledge_observations` 的完整字段，当前 Provider 连续返回 `observation` 或 `type`/`description` 等替代结构并漏掉标题、摘要和置信度，导致整批严格校验失败。
+- [x] 页级提示升级为 `chinese-curriculum-page-visual.v3`，逐项固定观察/练习字段、枚举、数组和 `0`～`1` 置信度，并禁止额外页码及替代字段名。
+- [x] 语文页级观察属于可为空的中间证据；服务端现在只丢弃无法通过既有 `ProviderKnowledgeObservation` 严格校验的观察，不从页面字段补造标题、目标或置信度。页面摘要、可审核篇章/古诗边界及最终知识图谱严格校验和家长批准门禁保持不变；数学路径不放宽。
+- [x] 合成回归覆盖日志中的两类漂移对象，确认保留古诗行、丢弃计数可观测且日志不包含教材内容。真实重试进一步暴露四页请求的 `provider_http_413`；worker 现在只在同一 Provider 上递归二分当前批次，单页仍为 413 时保持失败可见，不跨 Provider 回退，也不记录页内容。
+- [x] 真实页级分析完成后，整书 Provider 连续返回 `chapter_title`、`pages`、`page_references`、`knowledge_observations` 等替代字段。整书提示升级为 `chinese-curriculum-book-consolidation.v3`，明确顶层、章节和知识点的精确字段、数量上限、页码/练习引用约束，并禁止这些替代字段；服务端固定 `chinese-curriculum-book-analysis.v2` Schema 和家长审核门禁未放宽。
+- [x] Provider/教材作业定向 `30 passed`、API 非集成全量 `254 passed`、Ruff 和 Mypy（62 source files）通过。
+- [x] 已定向部署 Ubuntu API 与 CurriculumAnalysis worker。发布前备份 `/home/syin/study-backups/20260825T141449Z` 隔离恢复验证为 39 张 PostgreSQL public 表和 363 个 MinIO 文件；首次验证临时 PostgreSQL 容器发生启动竞态，复跑通过后才继续发布。远端旧源码另存于 `/home/syin/study-source-backups/20260825T142000Z`。
+- [x] Docker BuildKit 因 Docker Hub IPv6 token 请求超时失败且未替换运行容器，随后使用已验证的 legacy builder 和本地缓存构建；API/CurriculumAnalysis worker 重新创建后，API/Web LAN health、`0036` current/head、`newapi` 路由、MinIO 私有端口、容器源码哈希、Prompt v3 和 synthetic 丢弃逻辑均通过。
+- [x] 在不读取或记录 Provider 原始响应、教材正文和儿童数据的前提下，运维显式重排既有失败作业；第 4 次尝试完成 `118/118` 页并进入 `needs_review`，生成 10 个章节、12 个全部为 draft 的知识点和 38 条古诗边界证据，错误字段为空。
+- [ ] 家长仍须逐页对照原 PDF 审核并批准知识图谱；本次真实解析成功只证明链路可完成，不代表知识质量、费用、版权/教研签核、浏览器账号或设备验收通过。
+
+回滚：停止 CurriculumAnalysis worker，恢复 `chinese-curriculum-page-visual.v2`、`chinese-curriculum-book-consolidation.v2` 和旧批次调用；保留现有 `needs_review` 草稿、教材对象和审核事实，不删除、降级或自动批准知识图谱。
+
 ## 2026-08-24 本地 Qwen 模型路由与 Ubuntu 部署记录
 
 - [x] Compose 增加可切换的 llama.cpp `local-model` 服务，默认加载 Qwen3.5-4B Q4_K_M GGUF 及视觉 projector；本地服务不发布宿主/LAN 推理端口并持久化模型缓存。

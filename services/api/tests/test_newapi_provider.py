@@ -745,6 +745,78 @@ def test_newapi_provider_uses_chinese_v2_schema_and_short_passage_boundaries() -
         "ChineseProviderPageAnalysisBatch"
     )
     assert "short visible boundary markers" in calls[0]["messages"][0]["content"]
+    assert (
+        "never use alternate keys such as type, description or observation"
+        in (calls[0]["messages"][0]["content"])
+    )
+    assert (
+        "never use alternate keys such as chapter_title, pages, page_references"
+        in calls[1]["messages"][0]["content"]
+    )
+
+
+def test_chinese_curriculum_discards_unreviewable_optional_observations(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    provider = NewApiVisionProvider(_config())
+    image = Image.new("RGB", (20, 20), "white")
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG")
+    image.close()
+    provider._post_json = lambda _payload: {  # type: ignore[method-assign]
+        "choices": [
+            {
+                "message": {
+                    "content": json.dumps(
+                        {
+                            "schema_version": "chinese-curriculum-page-analysis.v2",
+                            "pages": [
+                                {
+                                    "page_number": 1,
+                                    "chapter_title": "第一单元",
+                                    "section_title": "古诗",
+                                    "summary": "识别可审核的古诗边界。",
+                                    "knowledge_observations": [
+                                        {"observation": "朗读古诗"},
+                                        {"type": "recitation", "description": "背诵古诗"},
+                                    ],
+                                    "passages": [
+                                        {
+                                            "title": "合成古诗",
+                                            "start_marker": "第一句",
+                                            "end_marker": "第二句",
+                                            "kind": "poem",
+                                            "confidence": 0.9,
+                                            "lines": ["第一句", "第二句"],
+                                        }
+                                    ],
+                                    "confidence": 0.9,
+                                }
+                            ],
+                        },
+                        ensure_ascii=False,
+                    )
+                }
+            }
+        ]
+    }
+
+    with caplog.at_level(logging.INFO, logger="study_api.newapi_provider"):
+        pages = provider.analyze_curriculum_pages(
+            (
+                CurriculumProviderPage(
+                    page_number=1,
+                    extracted_text="synthetic-only",
+                    image_bytes=buffer.getvalue(),
+                ),
+            ),
+            subject=Subject.CHINESE,
+        )
+
+    assert pages[0].knowledge_observations == ()
+    assert pages[0].passages[0].lines == ("第一句", "第二句")
+    assert "discarded_page_observation_count=2" in caplog.text
+    assert "朗读古诗" not in caplog.text
 
 
 def test_curriculum_schema_failure_logs_only_safe_validation_metadata(

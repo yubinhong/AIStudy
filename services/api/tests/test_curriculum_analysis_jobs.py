@@ -1,4 +1,5 @@
 from study_api.curriculum_analysis_jobs import (
+    _analyze_curriculum_page_batch,
     _page_payloads,
     _validate_book_coverage,
     main,
@@ -11,6 +12,8 @@ from study_api.domain.curriculum_knowledge import (
     ProviderKnowledgeObservation,
     ProviderPageAnalysis,
 )
+from study_api.domain.models import Subject
+from study_api.newapi_provider import CurriculumProviderPage, NewApiProviderError
 
 
 def _book(*, start_page: int = 1, end_page: int = 2) -> ProviderBookAnalysis:
@@ -87,6 +90,78 @@ def test_book_map_allows_nonknowledge_pages_but_rejects_invented_pages() -> None
         assert "unknown page" in str(error)
     else:
         raise AssertionError("invented page must reject the entire knowledge map")
+
+
+def test_curriculum_page_batch_splits_413_until_each_page_fits(caplog) -> None:
+    class SinglePageProvider:
+        last_call_metrics = None
+
+        def __init__(self) -> None:
+            self.batch_sizes: list[int] = []
+
+        def analyze_curriculum_pages(self, pages, *, subject):
+            del subject
+            self.batch_sizes.append(len(pages))
+            if len(pages) > 1:
+                raise NewApiProviderError("oversized", code="provider_http_413")
+            return (
+                ProviderPageAnalysis(
+                    page_number=pages[0].page_number,
+                    chapter_title="合成章节",
+                    section_title="合成小节",
+                    summary="合成页面摘要。",
+                    confidence=0.9,
+                ),
+            )
+
+    provider = SinglePageProvider()
+    pages = tuple(
+        CurriculumProviderPage(
+            page_number=page_number,
+            extracted_text="synthetic-only",
+            image_bytes=b"synthetic",
+        )
+        for page_number in range(1, 5)
+    )
+
+    with caplog.at_level("WARNING", logger="study_api.curriculum_analysis_jobs"):
+        analyses, metrics = _analyze_curriculum_page_batch(
+            provider,
+            pages,
+            subject=Subject.CHINESE,  # type: ignore[arg-type]
+        )
+
+    assert [page.page_number for page in analyses] == [1, 2, 3, 4]
+    assert provider.batch_sizes == [4, 2, 1, 1, 2, 1, 1]
+    assert metrics == ()
+    assert caplog.text.count("curriculum_provider_batch_split") == 3
+    assert "synthetic-only" not in caplog.text
+
+
+def test_curriculum_page_batch_preserves_single_page_413() -> None:
+    class RejectingProvider:
+        last_call_metrics = None
+
+        def analyze_curriculum_pages(self, pages, *, subject):
+            del pages, subject
+            raise NewApiProviderError("oversized", code="provider_http_413")
+
+    page = CurriculumProviderPage(
+        page_number=1,
+        extracted_text="synthetic-only",
+        image_bytes=b"synthetic",
+    )
+
+    try:
+        _analyze_curriculum_page_batch(
+            RejectingProvider(),
+            (page,),
+            subject=Subject.CHINESE,  # type: ignore[arg-type]
+        )
+    except NewApiProviderError as error:
+        assert error.code == "provider_http_413"
+    else:
+        raise AssertionError("a single oversized page must remain a visible failure")
 
 
 def test_one_shot_worker_exits_cleanly_when_newapi_is_disabled(

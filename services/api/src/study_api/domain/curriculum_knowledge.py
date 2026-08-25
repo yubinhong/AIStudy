@@ -15,8 +15,8 @@ CURRICULUM_PAGE_PROMPT = "curriculum-page-visual.v5"
 CURRICULUM_BOOK_PROMPT = "curriculum-book-consolidation.v5"
 CHINESE_CURRICULUM_PAGE_ANALYSIS_SCHEMA = "chinese-curriculum-page-analysis.v2"
 CHINESE_CURRICULUM_BOOK_ANALYSIS_SCHEMA = "chinese-curriculum-book-analysis.v2"
-CHINESE_CURRICULUM_PAGE_PROMPT = "chinese-curriculum-page-visual.v2"
-CHINESE_CURRICULUM_BOOK_PROMPT = "chinese-curriculum-book-consolidation.v2"
+CHINESE_CURRICULUM_PAGE_PROMPT = "chinese-curriculum-page-visual.v3"
+CHINESE_CURRICULUM_BOOK_PROMPT = "chinese-curriculum-book-consolidation.v3"
 
 
 class KnowledgeMapStatus(StrEnum):
