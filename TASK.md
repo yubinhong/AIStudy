@@ -19,9 +19,10 @@
 - [x] 已定向部署 Ubuntu API 与 CurriculumAnalysis worker。发布前备份 `/home/syin/study-backups/20260825T141449Z` 隔离恢复验证为 39 张 PostgreSQL public 表和 363 个 MinIO 文件；首次验证临时 PostgreSQL 容器发生启动竞态，复跑通过后才继续发布。远端旧源码另存于 `/home/syin/study-source-backups/20260825T142000Z`。
 - [x] Docker BuildKit 因 Docker Hub IPv6 token 请求超时失败且未替换运行容器，随后使用已验证的 legacy builder 和本地缓存构建；API/CurriculumAnalysis worker 重新创建后，API/Web LAN health、`0036` current/head、`newapi` 路由、MinIO 私有端口、容器源码哈希、Prompt v3 和 synthetic 丢弃逻辑均通过。
 - [x] 在不读取或记录 Provider 原始响应、教材正文和儿童数据的前提下，运维显式重排既有失败作业；第 4 次尝试完成 `118/118` 页并进入 `needs_review`，生成 10 个章节、12 个全部为 draft 的知识点和 38 条古诗边界证据，错误字段为空。
-- [ ] 家长仍须逐页对照原 PDF 审核并批准知识图谱；本次真实解析成功只证明链路可完成，不代表知识质量、费用、版权/教研签核、浏览器账号或设备验收通过。
+- [x] 2026-08-26 最终部署后只读复核显示审核事实已由外部操作更新为知识图谱 `approved`、12 个知识点全部 `approved`；系统没有在解析或部署中自动批准。118 页、10 个章节和 38 条古诗边界证据保持不变。
+- [ ] 本次真实解析和批准状态不代表 token/费用、正式版权/教研签核、浏览器账号或设备验收通过；这些仍需独立证据。
 
-回滚：停止 CurriculumAnalysis worker，恢复 `chinese-curriculum-page-visual.v2`、`chinese-curriculum-book-consolidation.v2` 和旧批次调用；保留现有 `needs_review` 草稿、教材对象和审核事实，不删除、降级或自动批准知识图谱。
+回滚：停止 CurriculumAnalysis worker，恢复 `chinese-curriculum-page-visual.v2`、`chinese-curriculum-book-consolidation.v2` 和旧批次调用；保留现有教材对象及已批准审核事实，不删除、降级或重新自动运行知识图谱。
 
 ## 2026-08-24 本地 Qwen 模型路由与 Ubuntu 部署记录
 

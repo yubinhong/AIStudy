@@ -3,7 +3,7 @@
 ## 1. 服务概览
 
 - 服务：家庭 AI 学习助手（目标包括 Flutter 孩子端、Web/PWA、FastAPI/Worker、PostgreSQL、Redis、S3/MinIO 和 AI Provider）。
-- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.17.0`/`0036_task_session_progress`；2026-08-25 语文教材 Schema/413 修复发布前备份已隔离恢复（39 张 PostgreSQL public 表、363 个 MinIO 文件），API/Web/worker 健康，既有 118 页语文教材已完成解析并停在家长审核门禁。没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
+- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.17.0`/`0036_task_session_progress`；2026-08-25 语文教材 Schema/413 修复发布前备份已隔离恢复（39 张 PostgreSQL public 表、363 个 MinIO 文件），API/Web/worker 健康，既有 118 页语文教材已完成解析；2026-08-26 最终复核时知识图谱及 12 个知识点已记录为 `approved`。没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
 - Owner/值班：`TBD（项目 Owner/运维负责人在 staging 前确认）`。
 - 用户影响：服务中断会阻止同步、拍题、AI 提示和周报；孩子端必须保留离线任务/作答，不能因服务中断丢学习记录。
 - 外部依赖：单一获批云视觉 Provider、Tutor Provider、可选本地 Qwen 模型镜像/权重、HMS（或应用内提醒）和对象存储；具体云供应商 `TBD`。本地 OCR 仅是目标 PrivacySanitizer 的隐私检测依赖，不是外部 Provider。
@@ -16,8 +16,9 @@
 - 发布：先停止 CurriculumAnalysis worker。BuildKit 在请求 Docker Hub frontend token 时遇到 IPv6 超时且没有替换运行容器；改用 `DOCKER_BUILDKIT=0` 和本地缓存成功构建 API/worker，再以 `--no-deps --force-recreate` 重新创建两者。
 - 运行修复：页级 Prompt `chinese-curriculum-page-visual.v3` 固定可选观察结构；四页请求遇到 `provider_http_413` 时只在同一 Provider 内递归二分，单页 413 保持失败；整书 Prompt `chinese-curriculum-book-consolidation.v3` 禁止 Provider 已出现的章节替代字段。固定 Schema、引用校验和家长批准门禁不变。
 - 真实作业：运维显式重排既有失败作业，不读取或记录 Provider 原始响应和教材正文。第 3 次尝试完成页级分析后暴露整书字段漂移；修复后第 4 次完成 `118/118` 页并停在 `needs_review`，数据库计数为 10 个章节、12 个 draft 知识点、38 条古诗边界证据、无错误码。
+- 后续审核事实：2026-08-26 最终部署后只读复核显示知识图谱和 12 个知识点均为 `approved`；该状态来自部署之外的审核操作，worker 的解析完成路径仍只写入 `needs_review`/`draft`，没有自动批准。
 - 验收：API `0.17.0` 与 Web LAN `/healthz`、Alembic `0036` current/head、运行时 `provider=newapi enabled=True`、全部 Compose 服务、MinIO `HostConfig.PortBindings={}`、远端/容器源码 SHA-256、两个 v3 Prompt 和作业计数通过；新容器日志无启动或 Schema 错误。
-- 未执行：家长逐页内容审核、token/费用基线、正式版权/教研签核、Ubuntu 真实账号浏览器和设备验收。本次解析成功不得描述为知识图谱已批准或正式内容质量通过。
+- 未执行：token/费用基线、正式版权/教研签核、Ubuntu 真实账号浏览器和设备验收。数据库批准事实不得扩展描述为这些独立门槛已经通过。
 
 ### 2026-08-23 部署记录
 
