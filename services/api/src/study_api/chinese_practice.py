@@ -18,6 +18,7 @@ from sqlalchemy.engine import Engine
 from study_api.classical_poems import (
     CLASSICAL_POEM_CATALOG_VERSION,
     is_recognized_classical_poem,
+    is_recognized_classical_poem_line,
 )
 from study_api.database import database_url
 from study_api.domain.repository import IdempotencyConflictError
@@ -402,6 +403,8 @@ def _is_available_for_learning(item: ChineseContentItem) -> bool:
         if (
             clue_match is None
             or not isinstance(item.answer_spec, ExactChoiceSpec)
+            or item.answer_spec.answer not in item.options
+            or not all(is_recognized_classical_poem_line(option) for option in item.options)
             or not is_recognized_classical_poem(
                 item.title,
                 (clue_match.group(1), item.answer_spec.answer),

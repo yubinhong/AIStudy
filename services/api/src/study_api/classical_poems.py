@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-CLASSICAL_POEM_CATALOG_VERSION = "classical-poem-catalog.v1"
+CLASSICAL_POEM_CATALOG_VERSION = "classical-poem-catalog.v2"
 
 
 def _normalize(value: str) -> str:
@@ -60,6 +60,17 @@ _CLASSICAL_POEM_LINES: dict[str, tuple[str, ...]] = {
         "入竹万竿斜",
     ),
 }
+
+_CLASSICAL_POEM_LINE_SET = frozenset(
+    line for lines in _CLASSICAL_POEM_LINES.values() for line in lines
+)
+
+
+def is_recognized_classical_poem_line(line: str) -> bool:
+    """Return whether a visible choice is a reviewed classical poem line."""
+
+    normalized = _normalize(line)
+    return bool(normalized) and normalized in _CLASSICAL_POEM_LINE_SET
 
 
 def is_recognized_classical_poem(title: str, lines: tuple[str, ...]) -> bool:

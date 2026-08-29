@@ -106,6 +106,54 @@ def test_existing_approved_rhyme_is_hidden_and_cannot_be_submitted() -> None:
     assert submitted.status_code == 404
 
 
+def test_existing_poem_with_nonclassical_choices_is_hidden_and_cannot_be_submitted() -> None:
+    client = TestClient(create_app())
+    _enable_chinese(client)
+    repository = client.app.state.chinese_practice_repository
+    invalid = ChineseContentItem(
+        id=uuid4(),
+        revision=1,
+        grade_min=3,
+        grade_max=3,
+        skill=ChineseSkill.POEM,
+        task_group="poem_spot_check",
+        title="风",
+        prompt="“能开二月花”的下一句是哪一句？",
+        options=("过江千尺浪", "太阳当空照", "花儿对我笑"),
+        answer_spec=ExactChoiceSpec(type="exact_choice", answer="过江千尺浪"),
+        knowledge_key="poem:synthetic-invalid-options:1:1",
+        source=ChineseContentSource(
+            type="private_curriculum",
+            source_id="curriculum-poem:synthetic-invalid-options:1",
+            license_status="private_authorized",
+            household_id=DEFAULT_HOUSEHOLD_ID,
+            child_id=CHILD_ID,
+            material_id=uuid4(),
+            snapshot_id=uuid4(),
+            page_number=1,
+        ),
+    )
+    repository._content[invalid.id] = invalid
+    root = f"/households/{DEFAULT_HOUSEHOLD_ID}/children/{CHILD_ID}/chinese"
+    child_headers = session_headers(client, role="child", child_id=CHILD_ID)
+
+    content = client.get(f"{root}/content", headers=child_headers)
+    submitted = client.post(
+        f"{root}/attempts",
+        headers={**child_headers, "Idempotency-Key": "invalid-poem-options-attempt-001"},
+        json={
+            "content_id": str(invalid.id),
+            "content_revision": 1,
+            "response": {"choice": "过江千尺浪"},
+            "elapsed_ms": 1000,
+        },
+    )
+
+    assert content.status_code == 200
+    assert content.json() == []
+    assert submitted.status_code == 404
+
+
 def test_chinese_content_requires_subject_and_is_grade_bounded() -> None:
     client = TestClient(create_app())
     path = f"/households/{DEFAULT_HOUSEHOLD_ID}/children/{CHILD_ID}/chinese/content"

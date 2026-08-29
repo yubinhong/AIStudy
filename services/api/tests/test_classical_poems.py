@@ -1,11 +1,12 @@
 from study_api.classical_poems import (
     CLASSICAL_POEM_CATALOG_VERSION,
     is_recognized_classical_poem,
+    is_recognized_classical_poem_line,
 )
 
 
 def test_classical_poem_gate_rejects_nursery_rhyme() -> None:
-    assert CLASSICAL_POEM_CATALOG_VERSION == "classical-poem-catalog.v1"
+    assert CLASSICAL_POEM_CATALOG_VERSION == "classical-poem-catalog.v2"
     assert not is_recognized_classical_poem(
         "剪窗花",
         (
@@ -34,3 +35,8 @@ def test_classical_poem_gate_accepts_exact_contiguous_lines_after_normalization(
         "风",
         ("解落三秋叶", "错误的下一句"),
     )
+
+
+def test_classical_poem_line_gate_rejects_rhyme_distractors() -> None:
+    assert is_recognized_classical_poem_line("远 看 山 有 色 ，")
+    assert not is_recognized_classical_poem_line("太阳当空照，")

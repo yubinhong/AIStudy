@@ -135,7 +135,7 @@ docker compose -f infra/compose/compose.yml down
 docker volume ls | grep study
 ```
 
-升级步骤：先备份 PostgreSQL 和 MinIO 数据，再拉取/切换到目标代码版本，运行 `config`，执行 `up -d --build`，确认 `migrate` 成功和 `/healthz` 正常。本地和当前 Ubuntu 目标 head 为 `0036_task_session_progress`；回退应用时保留新增表、列和索引，不在正式数据上执行 downgrade。发生学习历史范围异常时先设置 `LEARNING_HISTORY_CLEANUP_ENABLED=false` 并重启 DataLifecycle worker，再前向修复；已经按策略删除的数据不能靠应用回滚恢复。发生 Provider 问题时关闭 NewAPI 开关并停止 ImageAnalysis worker；不得破坏性回滚 Profile、Account、Attempt 或 AuditEvent。
+升级步骤：先备份 PostgreSQL 和 MinIO 数据，再拉取/切换到目标代码版本，运行 `config`，执行 `up -d --build`，确认 `migrate` 成功和 `/healthz` 正常。本地和当前 Ubuntu 目标 head 为 `0038_classical_poem_options`；回退应用时保留新增表、列和索引，不在正式数据上执行 downgrade。发生学习历史范围异常时先设置 `LEARNING_HISTORY_CLEANUP_ENABLED=false` 并重启 DataLifecycle worker，再前向修复；已经按策略删除的数据不能靠应用回滚恢复。发生 Provider 问题时关闭 NewAPI 开关并停止 ImageAnalysis worker；不得破坏性回滚 Profile、Account、Attempt 或 AuditEvent。
 
 ### 备份与恢复验证
 

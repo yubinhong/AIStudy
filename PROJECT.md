@@ -2,10 +2,10 @@
 
 ## 文档信息
 
-- 状态：`ACTIVE`（本地和 Ubuntu API/OpenAPI 均为 0.17.1/0037；古诗抽查仅发布并读取确定性目录验证通过的经典古诗，错误派生题已前向退役；数学今日任务已支持指定题目按序执行、服务端/端侧题号恢复、跳过和断网排队；Nova 9 本次抽查、正式内容、真实 Provider 和完整设备验收仍待完成）
+- 状态：`ACTIVE`（本地和 Ubuntu API/OpenAPI 均为 0.17.1/0038；古诗抽查仅发布并读取标题、连续诗句和全部选项均通过确定性目录的经典古诗，Nova 9 已完成 12 轮全六首抽查；数学今日任务已支持指定题目按序执行、服务端/端侧题号恢复、跳过和断网排队；正式内容、真实 Provider 和其他完整设备验收仍待完成）
 - Owner：`TBD（项目发起人确认）`
-- 最后更新：`2026-08-29`
-- 项目仓库：本地 Git 仓库 `/Users/ybh/PycharmProjects/study`；`origin` 为 `git@github.com:yubinhong/AIStudy.git`；最后远端标签为 `v0.17.0`，Ubuntu 已先行运行待真机验收的 `0.17.1/0037`
+- 最后更新：`2026-08-30`
+- 项目仓库：本地 Git 仓库 `/Users/ybh/PycharmProjects/study`；`origin` 为 `git@github.com:yubinhong/AIStudy.git`；最后远端标签为 `v0.17.0`，Ubuntu 已先行运行完成真机验收的 `0.17.1/0038`，待发布 `v0.17.1`
 - 设计基线：`家庭AI学习助手_架构设计_v1.0.docx`
 
 ## 1. 项目概述
