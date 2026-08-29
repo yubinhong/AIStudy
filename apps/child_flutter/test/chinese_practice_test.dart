@@ -100,6 +100,60 @@ class _EmptyPoemGateway extends _FakeChineseGateway {
   Future<List<ChineseContentItem>> loadContent() async => const [];
 }
 
+class _RefreshingPoemGateway extends _FakeChineseGateway {
+  int loads = 0;
+
+  @override
+  Future<List<ChineseContentItem>> loadContent() async {
+    loads += 1;
+    if (loads == 1) {
+      return const [
+        ChineseContentItem(
+          id: 'stale-rhyme',
+          revision: 1,
+          skill: 'poem',
+          title: '剪窗花',
+          prompt: '剪条鲤鱼摇尾巴，下一句是？',
+          options: ['剪只小鸡叫喳喳'],
+          sourceLabel: '家庭教材',
+        ),
+      ];
+    }
+    return const [
+      ChineseContentItem(
+        id: 'current-poem',
+        revision: 1,
+        skill: 'poem',
+        title: '咏鹅',
+        prompt: '鹅，鹅，鹅，下一句是？',
+        options: ['曲项向天歌'],
+        sourceLabel: '家庭教材',
+      ),
+    ];
+  }
+}
+
+class _RevokedPoemGateway extends _RefreshingPoemGateway {
+  @override
+  Future<List<ChineseContentItem>> loadContent() async {
+    loads += 1;
+    if (loads == 1) {
+      return const [
+        ChineseContentItem(
+          id: 'stale-rhyme',
+          revision: 1,
+          skill: 'poem',
+          title: '剪窗花',
+          prompt: '剪条鲤鱼摇尾巴，下一句是？',
+          options: ['剪只小鸡叫喳喳'],
+          sourceLabel: '家庭教材',
+        ),
+      ];
+    }
+    return const [];
+  }
+}
+
 class _FixedRandom implements Random {
   const _FixedRandom();
 
@@ -173,6 +227,42 @@ void main() {
     expect(find.text('静夜思'), findsOneWidget);
     expect(find.text('疑是地上霜，下一句是？'), findsOneWidget);
     expect(find.text('春眠不觉晓，下一句是？'), findsNothing);
+  });
+
+  testWidgets('poem spot check refreshes stale content before opening', (
+    tester,
+  ) async {
+    final gateway = _RefreshingPoemGateway();
+    await tester.pumpWidget(
+      MaterialApp(home: ChineseHomePage(gateway: gateway)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('古诗抽查'));
+    await tester.pumpAndSettle();
+
+    expect(gateway.loads, 2);
+    expect(find.text('咏鹅'), findsOneWidget);
+    expect(find.text('鹅，鹅，鹅，下一句是？'), findsOneWidget);
+    expect(find.text('剪窗花'), findsNothing);
+  });
+
+  testWidgets('poem spot check does not open content revoked after page load', (
+    tester,
+  ) async {
+    final gateway = _RevokedPoemGateway();
+    await tester.pumpWidget(
+      MaterialApp(home: ChineseHomePage(gateway: gateway)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('古诗抽查'));
+    await tester.pumpAndSettle();
+
+    expect(gateway.loads, 2);
+    expect(find.text('语文学习'), findsOneWidget);
+    expect(find.text('当前没有可抽查的古诗，请稍后重试。'), findsOneWidget);
+    expect(find.text('剪窗花'), findsNothing);
   });
 
   testWidgets(

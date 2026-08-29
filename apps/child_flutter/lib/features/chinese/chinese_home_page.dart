@@ -23,6 +23,7 @@ class ChineseHomePage extends StatefulWidget {
 
 class _ChineseHomePageState extends State<ChineseHomePage> {
   late Future<_ChineseDashboard> _dashboard;
+  bool _openingPoem = false;
 
   @override
   void initState() {
@@ -42,6 +43,41 @@ class _ChineseHomePageState extends State<ChineseHomePage> {
   }
 
   void _retry() => setState(() => _dashboard = _loadDashboard());
+
+  Future<void> _openPoemPractice() async {
+    if (_openingPoem) return;
+    setState(() => _openingPoem = true);
+    try {
+      final latestItems = await widget.gateway.loadContent();
+      if (!mounted) return;
+      final poemItems = latestItems
+          .where((item) => item.skill == 'poem')
+          .toList(growable: false);
+      if (poemItems.isEmpty) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('当前没有可抽查的古诗，请稍后重试。')));
+        return;
+      }
+      final item = _pickPoemQuestion(
+        poemItems,
+        widget.poemRandom ?? Random.secure(),
+      );
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              _ChinesePracticePage(gateway: widget.gateway, item: item),
+        ),
+      );
+    } on ChinesePracticeException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.message)));
+    } finally {
+      if (mounted) setState(() => _openingPoem = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -139,26 +175,17 @@ class _ChineseHomePageState extends State<ChineseHomePage> {
                   leading: const Icon(Icons.menu_book_outlined),
                   title: const Text('古诗抽查'),
                   subtitle: Text(
-                    poemItems.isEmpty ? '家长上传并审核教材后开放' : '随机抽一首，选择下一句',
+                    _openingPoem
+                        ? '正在刷新当前题库'
+                        : poemItems.isEmpty
+                        ? '家长上传并审核教材后开放'
+                        : '随机抽一首，选择下一句',
                   ),
                   trailing: const Icon(Icons.chevron_right),
-                  enabled: poemItems.isNotEmpty,
-                  onTap: poemItems.isEmpty
+                  enabled: poemItems.isNotEmpty && !_openingPoem,
+                  onTap: poemItems.isEmpty || _openingPoem
                       ? null
-                      : () {
-                          final item = _pickPoemQuestion(
-                            poemItems,
-                            widget.poemRandom ?? Random.secure(),
-                          );
-                          Navigator.of(context).push(
-                            MaterialPageRoute<void>(
-                              builder: (_) => _ChinesePracticePage(
-                                gateway: widget.gateway,
-                                item: item,
-                              ),
-                            ),
-                          );
-                        },
+                      : _openPoemPractice,
                 ),
               );
             },
