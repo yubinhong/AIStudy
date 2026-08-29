@@ -9,12 +9,12 @@
 - 当前阶段：`P1 MULTISUBJECT FOUNDATION / CHINESE MVP / GATED ENGLISH LAST`
 - 主要用户：小学阶段孩子与家长/监护人；辅助角色为家庭内容维护者和项目维护者。
 - 生产状态：`SELF_HOSTED_DEPLOYED`（Ubuntu 自用 Compose 运行 API/OpenAPI `0.17.1`/`0038_classical_poem_options`；本地 Qwen 因视觉质量门禁失败已停止，当前 AI 路由为现有 NewAPI 云端配置；API/Web、迁移和四个常驻 worker 健康，不等同于公网/商业生产批准）
-- 当前版本：本地和 Ubuntu API/OpenAPI 均为 `0.17.1`、迁移头 `0038_classical_poem_options`；最近远端标签仍为 `v0.17.0`，`v0.17.1` 待本次最终提交和远端发布。
+- 当前版本：本地和 Ubuntu API/OpenAPI 均为 `0.17.1`、迁移头 `0038_classical_poem_options`；远端发布标签为 `v0.17.1`（`e44a2b1`）。
 - 最近更新：`2026-08-30`
 
 ## 2. 当前工作状态
 
-- 2026-08-29/30 已修复古诗抽查把《剪窗花》等童谣/韵文作为古诗的问题：Provider `poem` 只作为候选，`classical-poem-catalog.v2` 对标题、连续题干/答案和全部可见选项确定性验证，发布、读取和提交均失败关闭。Ubuntu `0037` 退役 157 道错误题，`0038` 再将 21 道保留题的 42 个童谣干扰项替换为古诗句；Attempt/Review 不变。Flutter 每次进入前重新读取当前题库，避免驻留页面复用旧题。Nova 9 已覆盖安装并保留登录态，迁移后 12 轮抽查覆盖咏鹅、画、悯农（其二）、江南、古朗月行、风，所有题干/下一句/选项正确且未提交作答；待最终提交、tag 和 GitHub 发布。
+- 2026-08-29/30 已修复古诗抽查把《剪窗花》等童谣/韵文作为古诗的问题：Provider `poem` 只作为候选，`classical-poem-catalog.v2` 对标题、连续题干/答案和全部可见选项确定性验证，发布、读取和提交均失败关闭。Ubuntu `0037` 退役 157 道错误题，`0038` 再将 21 道保留题的 42 个童谣干扰项替换为古诗句；Attempt/Review 不变。Flutter 每次进入前重新读取当前题库，避免驻留页面复用旧题。Nova 9 已覆盖安装并保留登录态，迁移后 12 轮抽查覆盖咏鹅、画、悯农（其二）、江南、古朗月行、风，所有题干/下一句/选项正确且未提交作答。`v0.17.1` 已推送 GitHub，质量与 Android Actions 成功，Release 含 3 个 ABI APK、校验和及构建元数据。
 
 - 2026-08-25 已修复并部署语文教材页级字段漂移、四页 HTTP 413 和整书章节字段漂移：页级/整书提示分别升级为 `chinese-curriculum-page-visual.v3` 与 `chinese-curriculum-book-consolidation.v3`；worker 在同一 Provider 内递归二分过大的批次，单页失败不隐藏；服务端只丢弃无效的可选页级观察，不补造教材事实，固定 Schema、来源引用和家长批准门禁不变。定向/全量 API、Ruff、Mypy、Ubuntu 备份恢复和运行验证通过。运维显式重排的真实 118 页作业完成时停在 `needs_review`，含 10 个章节、12 个 draft 知识点和 38 条古诗边界证据；2026-08-26 最终复核显示外部审核已将知识图谱和 12 个知识点全部更新为 `approved`，解析/部署没有自动批准。质量费用基线和版权/教研签核仍未完成。
 
@@ -22,7 +22,7 @@
 
 - 活动计划：`TASK-0012` / `PLAN-0031` 的隔离 Chromium 登录态 E2E 已完成，覆盖首次改密、Cookie/CSRF/撤销、跨家庭角色和双孩子学科/切换，并加入 CI；`PLAN-0030` 多学科/语文切片和 Ubuntu `0.17.0/0036` 已发布，本机 PostgreSQL 语文并发 Attempt/Review 合并、导出和级联清理已通过。`PLAN-0032`/`PLAN-0033` 的本地代码已扩展到语文到期复习、技能报告、古诗抽查和看图写话，历史原创演示已在 `0033` 退役，但正式教研/版权签核仍未完成。英语保持供应商中立锁定框架并排最后。语文真实 Provider/PDF、Ubuntu 真实账号浏览器和设备 E2E 待完成。
 - 任务状态：ADR-0018/PLAN-0012 已完成本地与 Ubuntu API/Flutter/Compose/契约迁移；Ubuntu 不再依赖预签名直传，MinIO `9000` 未向宿主/LAN 暴露。最终真机仍未回归。
-- 当前分支：`master`；本地 API/OpenAPI `0.17.0` 和 `0036_task_session_progress` 已完成代码与本机验证，并已部署 Ubuntu、提交、推送和打 tag `v0.17.0`。
+- 当前分支：`master`；本地与 Ubuntu API/OpenAPI `0.17.1`、`0038_classical_poem_options` 已完成代码、本机/Ubuntu/Nova 9 验证，并已提交、推送和发布 tag `v0.17.1`。
 - 当前重点：完成正式语文内容具名教研/版权签核、真实 Provider/PDF 质量与成本评测、Ubuntu 真实账号浏览器和设备 E2E；`PLAN-0034/ADR-0028` 的本地 Qwen 路由和 12 GB Ubuntu 部署能力仍保留，但 4 核下 `question-extraction.v1` synthetic 大图 600 秒内不收敛，8 核下耗时 373.128 秒且生成到 2048 token 上限后仍因 `provider_response_schema_invalid` 失败。Ubuntu 已将开关恢复为 `false` 并停止本地模型，当前运行时为 `newapi`；切换后的 synthetic 数学文本 Schema smoke 3.591 秒通过，详见 `docs/local-qwen-evaluation-report-2026-08-24.md`。本轮未连接手机或平板。英语继续排最后。既有数学教材原页/知识审核、推荐详情和学习记录继续按已部署合同运行。
 - 已完成：本地与 Ubuntu 已部署的既有 OpenAPI/迁移、视觉四态候选与确认、可信 VerifiedQuestion → 云端递进 L1/L2 → 完整步骤/答案/验算、Mistake/Review closeout、语文确定性 Content/Attempt/Review、古诗抽查和看图写话引导，以及 PDF 私有原页、分批多模态教材理解、全书知识图谱、家长批准、“批准知识点 + 全部开放错题”的来源受限推荐和 180 天详细学习历史策略；本地新增任务会话位置、容量/未来日期/撤销保护。
 - 2026-08-16 语文 `v0.16.0` 已部署：`0033` 退役六项语文演示并从已审核教材逐行古诗生成抽查；`0034` 增加独立 `picture_writing_guides` 与 `picture-writing-guide.v1`。看图写话只消耗用户确认的脱敏派生图，Provider 只返回观察/提问/句式支架，绝不走数学抽题、生成范文或评分。Ubuntu 对无人物、无文字的合成花园图完成一次真实 Provider Schema 冒烟；不代表儿童图片、质量、成本或完整设备验收。

@@ -4,7 +4,7 @@
 
 - 计划 ID：`PLAN-0035`
 - 关联：`TASK-0012`、`PLAN-0033`、`ADR-0027`
-- 状态：`IN_PROGRESS`
+- 状态：`COMPLETE`
 - 优先级：`P0 / CHINESE / CHILD CONTENT / RELEASE`
 - Owner：Codex（实现与发布）；项目 Owner（Nova 9 现场验收）
 - 创建：`2026-08-29`
@@ -17,7 +17,7 @@
 - [x] M2 — 实现古诗签名门禁、Provider 提示收窄、同教材派生题重建和 `0037` 前向退役迁移。
 - [x] M3 — API 单元/集成、迁移、Ruff、Mypy、Flutter 回归和契约/版本门槛通过；本机无 PostgreSQL，真实迁移和历史引用验证在 Ubuntu 完成。
 - [x] M4 — Ubuntu 备份恢复、迁移、重建、健康、运行源码和真实题库只读验收通过：157 道错误题退役，保留六首古诗 21 道，Attempt/Review 均保持 1。
-- [ ] M5 — Nova 9 首次复查暴露驻留页面旧题和保留题童谣干扰项；点击前实时刷新、v2 全选项目录门禁和 `0038` 已部署。修复 APK 覆盖安装后 12 轮覆盖全部六首，题干/答案/选项正确且无作答写入；待最终提交、`v0.17.1` tag、GitHub 推送和 Release/CI 核验。
+- [x] M5 — Nova 9 首次复查暴露驻留页面旧题和保留题童谣干扰项；点击前实时刷新、v2 全选项目录门禁和 `0038` 已部署。修复 APK 覆盖安装后 12 轮覆盖全部六首，题干/答案/选项正确且无作答写入。三个修复提交、annotated `v0.17.1`、GitHub refs、`quality`/Android Actions 和含 3 个 ABI APK/校验元数据的 Release 均已完成核验。
 
 ## 回滚与风险
 
