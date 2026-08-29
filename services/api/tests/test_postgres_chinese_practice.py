@@ -59,9 +59,9 @@ def test_postgres_concurrent_chinese_attempts_merge_review_and_export() -> None:
                 snapshot_id=snapshot_id,
                 poems=(
                     ChinesePoemDraft(
-                        title="测试古诗",
+                        title="春晓",
                         page_number=1,
-                        lines=("春眠不觉晓", "处处闻啼鸟", "夜来风雨声"),
+                        lines=("春眠不觉晓", "处处闻啼鸟", "夜来风雨声", "花落知多少"),
                     ),
                 ),
             ),
@@ -122,6 +122,32 @@ def test_postgres_concurrent_chinese_attempts_merge_review_and_export() -> None:
         assert summary.attempts == 2
         assert summary.correct_attempts == 2
         assert summary.due_reviews == 0
+
+        assert (
+            chinese.publish_poems(
+                household_id,
+                child.id,
+                child.grade,
+                PublishChinesePoemsRequest(
+                    material_id=uuid4(),
+                    snapshot_id=snapshot_id,
+                    poems=(
+                        ChinesePoemDraft(
+                            title="剪窗花",
+                            page_number=2,
+                            lines=("小剪刀，手中拿", "我学奶奶剪窗花", "剪雪花，剪梅花"),
+                        ),
+                    ),
+                ),
+            )
+            == 0
+        )
+        assert not chinese.list_content(
+            grade=child.grade, household_id=household_id, child_id=child.id
+        )
+        assert not chinese.list_reviews(household_id, child.id, child.grade, due_only=False)
+        preserved_report = chinese.skill_report(household_id, child.id)
+        assert preserved_report.skills[0].attempts == 2
     finally:
         with profiles.engine.begin() as connection:
             if child is not None:

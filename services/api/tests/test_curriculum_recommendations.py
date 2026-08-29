@@ -174,6 +174,11 @@ def test_approving_chinese_curriculum_publishes_extracted_poem_questions() -> No
                 page_number=12,
                 lines=("春眠不觉晓", "处处闻啼鸟", "夜来风雨声", "花落知多少"),
             ),
+            ChinesePoemDraft(
+                title="剪窗花",
+                page_number=13,
+                lines=("小剪刀，手中拿", "我学奶奶剪窗花", "剪雪花，剪梅花"),
+            ),
         )
     )
     chinese_repository = InMemoryChinesePracticeRepository()
@@ -262,6 +267,7 @@ def test_approving_chinese_curriculum_publishes_extracted_poem_questions() -> No
     }
     assert all(len(item["options"]) >= 2 for item in content.json())
     assert all(item["source"]["snapshot_id"] == snapshot_id for item in content.json())
+    assert {item["title"] for item in content.json()} == {"春晓"}
 
 
 def test_file_upload_uses_a_pdf_specific_provisional_title_when_metadata_is_omitted() -> None:

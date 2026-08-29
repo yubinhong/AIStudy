@@ -8,11 +8,13 @@
 - 一句话目标：复用家庭现有设备，以数学错题闭环为主线，并通过显式多学科核心逐步增加语文确定性练习。
 - 当前阶段：`P1 MULTISUBJECT FOUNDATION / CHINESE MVP / GATED ENGLISH LAST`
 - 主要用户：小学阶段孩子与家长/监护人；辅助角色为家庭内容维护者和项目维护者。
-- 生产状态：`SELF_HOSTED_DEPLOYED`（Ubuntu 自用 Compose 运行 API/OpenAPI `0.17.0`/`0036_task_session_progress`；本地 Qwen 因视觉质量门禁失败已停止，当前 AI 路由为现有 NewAPI 云端配置；API/Web、迁移和四个常驻 worker 健康，不等同于公网/商业生产批准）
-- 当前版本：本地和 Ubuntu API/OpenAPI 均为 `0.17.0`、迁移头 `0036_task_session_progress`；Ubuntu 于 2026-08-25 部署语文教材 Schema/413 修复，最近版本标签仍为 `v0.17.0`，本轮修复由其后的 `master` 提交固化。
-- 最近更新：`2026-08-26`
+- 生产状态：`SELF_HOSTED_DEPLOYED`（Ubuntu 自用 Compose 运行 API/OpenAPI `0.17.1`/`0037_classical_poem_gate`；本地 Qwen 因视觉质量门禁失败已停止，当前 AI 路由为现有 NewAPI 云端配置；API/Web、迁移和四个常驻 worker 健康，不等同于公网/商业生产批准）
+- 当前版本：本地和 Ubuntu API/OpenAPI 均为 `0.17.1`、迁移头 `0037_classical_poem_gate`；最近远端标签仍为 `v0.17.0`，`v0.17.1` 须在 Nova 9 实机抽查通过后创建。
+- 最近更新：`2026-08-29`
 
 ## 2. 当前工作状态
+
+- 2026-08-29 已修复古诗抽查把《剪窗花》等童谣/韵文作为古诗的问题：Provider `poem` 只作为候选，`classical-poem-catalog.v1` 以标题和至少两句连续诗句确定性验证，发布、读取和提交均失败关闭；同教材重发先退役旧派生题。Ubuntu `0037` 将 157 道错误题前向退役并保留全部历史，只留下咏鹅、画、悯农（其二）、江南、古朗月行、风共 21 道；Attempt/Review 数量不变。API/Web/worker 和运行时门禁通过，Nova 9 当前未连接 ADB，真机抽查和 `v0.17.1` 发布仍待完成。
 
 - 2026-08-25 已修复并部署语文教材页级字段漂移、四页 HTTP 413 和整书章节字段漂移：页级/整书提示分别升级为 `chinese-curriculum-page-visual.v3` 与 `chinese-curriculum-book-consolidation.v3`；worker 在同一 Provider 内递归二分过大的批次，单页失败不隐藏；服务端只丢弃无效的可选页级观察，不补造教材事实，固定 Schema、来源引用和家长批准门禁不变。定向/全量 API、Ruff、Mypy、Ubuntu 备份恢复和运行验证通过。运维显式重排的真实 118 页作业完成时停在 `needs_review`，含 10 个章节、12 个 draft 知识点和 38 条古诗边界证据；2026-08-26 最终复核显示外部审核已将知识图谱和 12 个知识点全部更新为 `approved`，解析/部署没有自动批准。质量费用基线和版权/教研签核仍未完成。
 

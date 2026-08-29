@@ -3,11 +3,19 @@
 ## 1. 服务概览
 
 - 服务：家庭 AI 学习助手（目标包括 Flutter 孩子端、Web/PWA、FastAPI/Worker、PostgreSQL、Redis、S3/MinIO 和 AI Provider）。
-- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.17.0`/`0036_task_session_progress`；2026-08-25 语文教材 Schema/413 修复发布前备份已隔离恢复（39 张 PostgreSQL public 表、363 个 MinIO 文件），API/Web/worker 健康，既有 118 页语文教材已完成解析；2026-08-26 最终复核时知识图谱及 12 个知识点已记录为 `approved`。没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
+- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.17.1`/`0037_classical_poem_gate`；API/Web/worker 健康，已审核语文教材的古诗派生题只保留确定性目录验证通过的六首 21 道。没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
 - Owner/值班：`TBD（项目 Owner/运维负责人在 staging 前确认）`。
 - 用户影响：服务中断会阻止同步、拍题、AI 提示和周报；孩子端必须保留离线任务/作答，不能因服务中断丢学习记录。
 - 外部依赖：单一获批云视觉 Provider、Tutor Provider、可选本地 Qwen 模型镜像/权重、HMS（或应用内提醒）和对象存储；具体云供应商 `TBD`。本地 OCR 仅是目标 PrivacySanitizer 的隐私检测依赖，不是外部 Provider。
 - Dashboard/日志/Trace：目标为 OpenTelemetry 接入批准的可观测平台；链接和查询 `TBD`。
+
+### 2026-08-29 古诗题库门禁部署记录
+
+- 备份：`/home/syin/study-backups/20260829T070622Z` 已隔离恢复验证为 39 张 PostgreSQL public 表和 534 个 MinIO 文件；旧源码保存在 `/home/syin/study-source-backups/20260829T072000Z`。
+- 发布：保留 `.env` 和数据卷，白名单同步 API/契约/`0037`，以 legacy builder 构建同一 API 镜像供 API、迁移和四个 worker 使用；停止全部写入端后执行事务迁移，再按 `--no-deps --force-recreate` 切换运行容器。
+- 数据：迁移将 178 道 approved 古诗题收敛为六首 21 道，其他 157 道标记 `retired`；Attempt/Review 前后均为 1，未删除教材、审核或学习事实。
+- 运行：API `0.17.1`、Alembic `0037_classical_poem_gate`、API/Web `/healthz`、四个 worker、`classical-poem-catalog.v1`、页级 Prompt v4 和 MinIO 无宿主端口均通过。Nova 9 未连接 ADB，真机抽查仍待完成。
+- 回滚：可以恢复旧 API 镜像/源码，但不得 downgrade `0037` 或重新批准已退役题；未知古诗继续失败关闭，新增目录项必须前向提交、测试和审核。数据库/对象恢复仅在确认数据损坏时使用上述已验证备份。
 
 ### 2026-08-25 语文教材分析修复部署记录
 

@@ -11,10 +11,14 @@ from typing import Annotated, Any, Literal, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import MetaData, Table, and_, create_engine, func, insert, select
+from sqlalchemy import MetaData, Table, and_, create_engine, func, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import Engine
 
+from study_api.classical_poems import (
+    CLASSICAL_POEM_CATALOG_VERSION,
+    is_recognized_classical_poem,
+)
 from study_api.database import database_url
 from study_api.domain.repository import IdempotencyConflictError
 
@@ -393,6 +397,17 @@ def _source_is_available_for_learning(status: str, source: ChineseContentSource)
 
 
 def _is_available_for_learning(item: ChineseContentItem) -> bool:
+    if item.skill is ChineseSkill.POEM:
+        clue_match = re.fullmatch(r"“(.+)”的下一句是哪一句？", item.prompt)
+        if (
+            clue_match is None
+            or not isinstance(item.answer_spec, ExactChoiceSpec)
+            or not is_recognized_classical_poem(
+                item.title,
+                (clue_match.group(1), item.answer_spec.answer),
+            )
+        ):
+            return False
     return _source_is_available_for_learning(item.status, item.source)
 
 
@@ -549,6 +564,13 @@ class InMemoryChinesePracticeRepository:
         request: PublishChinesePoemsRequest,
     ) -> int:
         items = _poem_question_items(household_id, child_id, grade, request)
+        for content_id, item in tuple(self._content.items()):
+            if (
+                item.skill is ChineseSkill.POEM
+                and item.task_group == "poem_spot_check"
+                and item.source.snapshot_id == request.snapshot_id
+            ):
+                self._content[content_id] = item.model_copy(update={"status": "retired"})
         self._content.update({item.id: item for item in items})
         return len(items)
 
@@ -846,6 +868,15 @@ class PostgresChinesePracticeRepository:
     ) -> int:
         items = _poem_question_items(household_id, child_id, grade, request)
         with self._engine.begin() as connection:
+            connection.execute(
+                update(self._content)
+                .where(
+                    self._content.c.skill == ChineseSkill.POEM.value,
+                    self._content.c.task_group == "poem_spot_check",
+                    self._content.c.source_json["snapshot_id"].astext == str(request.snapshot_id),
+                )
+                .values(status="retired")
+            )
             for item in items:
                 statement = pg_insert(self._content).values(
                     id=item.id,
@@ -893,9 +924,12 @@ def _poem_question_items(
     confined to the approved household snapshot and the server-side answer spec.
     """
 
-    all_lines = tuple(dict.fromkeys(line for poem in request.poems for line in poem.lines))
+    recognized_poems = tuple(
+        poem for poem in request.poems if is_recognized_classical_poem(poem.title, poem.lines)
+    )
+    all_lines = tuple(dict.fromkeys(line for poem in recognized_poems for line in poem.lines))
     items: list[ChineseContentItem] = []
-    for poem in request.poems:
+    for poem in recognized_poems:
         for index, answer in enumerate(poem.lines[1:]):
             clue = poem.lines[index]
             distractors = [line for line in all_lines if line != answer and line != clue][:2]
@@ -907,7 +941,9 @@ def _poem_question_items(
                 type="private_curriculum",
                 source_id=f"curriculum-poem:{request.snapshot_id}:{poem.page_number}",
                 license_status="private_authorized",
-                attribution="家庭已审核教材诗文；仅用于本家庭学习",
+                attribution=(
+                    f"家庭已审核教材诗文；仅用于本家庭学习；{CLASSICAL_POEM_CATALOG_VERSION}"
+                ),
                 household_id=household_id,
                 child_id=child_id,
                 material_id=request.material_id,

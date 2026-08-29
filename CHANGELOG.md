@@ -1,5 +1,7 @@
 # Changelog
 
+- 2026-08-29：修复语文“古诗抽查”把《剪窗花》等儿歌、童谣或现代韵文作为古诗的问题。Provider 分类仅作候选，服务端以 `classical-poem-catalog.v1` 验证标题和连续诗句，并在发布、读取和提交处失败关闭。新增 `0037_classical_poem_gate`，前向退役旧错误派生题而不删除 Attempt、Review、教材或审核事实；同一教材重新发布会先退役旧题，再只恢复通过门禁的题目。语文教材页级 Prompt 升至 v4。Ubuntu 已部署 `0.17.1/0037`；Nova 9 真机抽查及 `v0.17.1` tag 尚待完成。
+
 - 2026-08-25：修复并部署语文教材分析的三类 Provider 兼容失败。`chinese-curriculum-page-visual.v3` 固定观察/练习字段并只丢弃不满足严格模型的可选观察；四页请求遇到 HTTP 413 时在同一 Provider 内递归二分，单页失败仍可见；`chinese-curriculum-book-consolidation.v3` 固定整书/章节/知识点字段并禁止已出现的替代字段。数学路径、固定 Schema、页码/练习引用和家长批准门禁均未放宽。运维显式重排既有作业后真实 118 页语文教材完成解析，初始状态为 `needs_review`，含 10 个章节、12 个 draft 知识点和 38 条古诗边界证据；未读取或保存 Provider 原始响应/教材正文。Ubuntu 备份隔离恢复、API/Web/worker、`0036`、NewAPI 路由、私有 MinIO 和运行源码通过。2026-08-26 最终复核显示外部审核已将知识图谱和 12 个知识点更新为 `approved`；费用、正式版权/教研、浏览器和设备验收仍未完成。
 
 - 2026-08-24：根据 12 GB/4 核与 12 GB/8 核 Ubuntu 的本地 Qwen 视觉失败结果，将 `STUDY_LOCAL_MODEL_ENABLED` 恢复为 `false` 并停止本地模型容器，模型缓存保留供后续重新选型。API 和两个 AI worker 已显式恢复现有 NewAPI 云端路由，不含儿童数据的 synthetic 数学文本 Schema smoke 3.591 秒通过；完整测试结果和适用边界记录到 README 与 `docs/local-qwen-evaluation-report-2026-08-24.md`。

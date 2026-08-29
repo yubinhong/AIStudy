@@ -746,6 +746,10 @@ def test_newapi_provider_uses_chinese_v2_schema_and_short_passage_boundaries() -
     )
     assert "short visible boundary markers" in calls[0]["messages"][0]["content"]
     assert (
+        "Reserve kind poem strictly for classical Chinese poetry"
+        in (calls[0]["messages"][0]["content"])
+    )
+    assert (
         "never use alternate keys such as type, description or observation"
         in (calls[0]["messages"][0]["content"])
     )

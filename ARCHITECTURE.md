@@ -29,6 +29,8 @@ Web 孩子管理修订（2026-08-16）：PLAN-0013 的孩子管理聚合已实�
 
 多学科/语文修订（2026-08-15）：ADR-0027 将孩子档案、教材 Material/Snapshot 和学科导航扩展为显式 `math/chinese`；迁移把既有教材回填为数学，跨学科不得按相同哈希复用。语文采用独立版本化 ContentItem/AnswerSpec、追加写 Attempt 和 ReviewItem，评分是服务端 `chinese-score.v1` 纯函数，孩子合同不返回答案规范，也不调用 AI。数学 VerifiedQuestion/MistakeRecord/ReviewSchedule 主线保持不变；英语继续使用 ADR-0025 的独立设置、同意和 Provider 门禁，并在产品顺序上排最后。
 
+古诗内容门禁修订（2026-08-29）：语文教材 Provider 的 `poem` 分类只是页级候选，不能直接成为孩子内容。API 以版本化公共领域目录验证规范化标题和至少两句连续诗句，只有家长已审核且门禁通过的候选才能编译为相邻句题；读取和提交路径再次校验题干/答案签名。同一 Snapshot 重发时先把旧派生题标为 `retired`，再恢复或生成有效题，不删除既有 Attempt/Review。目录未收录、标题相似但诗句不连续、儿歌、童谣和现代韵文均失败关闭。
+
 实时英语数据流：`Flutter 前台按住说话 → API Session/孩子/同意/配额门禁 → 20/40 ms PCM16 中继 → 单一获批 Provider Adapter → 24 kHz PCM 播放`。PostgreSQL 只保存设置与摘要指标；音频、完整转写、Provider 消息和恢复缓存均不持久化。应用后台、权限撤销、账号切换、Session 撤销、空闲或断线立即停止录音并关闭通道。
 
 ## 2. 系统上下文
