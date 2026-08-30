@@ -18,6 +18,26 @@ function dateParts(date: Date) {
   return `${read("year")}-${read("month")}-${read("day")}`;
 }
 
+export function isShanghaiCalendarDay(
+  value: string | null,
+  reference = new Date(),
+) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return dateParts(date) === dateParts(reference);
+}
+
+export function filterItemsForShanghaiCalendarDay<T>(
+  items: readonly T[],
+  getDate: (item: T) => string | null,
+  reference = new Date(),
+) {
+  return items.filter((item) =>
+    isShanghaiCalendarDay(getDate(item), reference),
+  );
+}
+
 export function shiftDateKey(dateKey: string, days: number) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
   if (!match) return null;

@@ -116,29 +116,6 @@ export async function loadWeeklyReport(
   }
 }
 
-export async function loadChineseSkillReport(
-  childId: string,
-): Promise<unknown | null> {
-  try {
-    const cookieStore = await cookies();
-    const session = cookieStore.get("study_session");
-    if (!session) return null;
-    const householdId = await loadCurrentHousehold(session.value);
-    if (!householdId) return null;
-    const response = await fetch(
-      `${apiBaseUrl}/households/${householdId}/children/${encodeURIComponent(childId)}/chinese/skill-report`,
-      {
-        headers: { Cookie: `study_session=${session.value}` },
-        cache: "no-store",
-      },
-    );
-    if (!response.ok) return null;
-    return response.json();
-  } catch {
-    return null;
-  }
-}
-
 export type LearningDetailsQuery = {
   fromAt: string;
   limit?: number;

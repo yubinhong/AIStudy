@@ -17,6 +17,15 @@
 - 运行：API `0.17.1`、Alembic `0038_classical_poem_options`、API/Web `/healthz`、四个 worker、`classical-poem-catalog.v2`、页级 Prompt v4 和 MinIO 无宿主端口均通过。Nova 9 覆盖安装保留登录态，迁移后 12 轮抽查覆盖全部六首，题干/下一句/全部选项正确且未提交作答。
 - 回滚：可以恢复旧 API 镜像/源码，但不得 downgrade `0037`/`0038` 或重新批准已退役题/童谣选项；未知古诗和非目录选项继续失败关闭，扩展目录必须前向提交、测试和审核。数据库/对象恢复仅在确认数据损坏时使用上述已验证备份。
 
+### 2026-08-30 家长首页简化部署记录
+
+- 备份：`/home/syin/study-backups/20260830T004506Z`；隔离恢复验证为 39 张 PostgreSQL public 表、528 个 MinIO 文件。同步前源码回滚包位于 `/home/syin/study-source-backups/20260830T004632Z`。
+- 发布：仅同步首页、学习历史日期工具、Web BFF 和当前状态文档共 12 个受控文件；保留远端 `.env`、数据卷和其他源码。Docker BuildKit 因 Docker Hub IPv6 token 超时未替换运行容器，随后使用 legacy builder 和本地缓存成功构建 `study-local-web:latest`，再以 `--no-deps --force-recreate` 重建 Web。
+- 运行：API `0.17.1`、Web `/healthz` 均返回 `200`，全部 Compose 服务 running；`page.tsx`、`household-data.ts` 和 `learning-history.ts` 的远端 SHA-256 与本地一致。未执行真实账号浏览器或设备回归。
+- 数据：用户确认两个孩子后，使用 `/home/syin/study-backups/20260830T004506Z`（已隔离恢复验证）执行有界事务清理。删除两名孩子的任务/会话/Attempt、Capture 及 23 个已登记私有对象、语文 Attempt/Review、错题/复习/推荐、Tutor/视觉/OCR/看图写话记录、导出快照和关联幂等记录；全部目标历史表为 0。保留 2 个 ChildProfile、3 个 Account、3 份教材、3 个 CurriculumSnapshot、184 条已审核 ChineseContentItem、设备设置和 149 条 AuditEvent。孤立且无法关联目标 Capture 行的对象未递归删除。
+- 复核：API `0.17.1`、Web `/healthz`、全部 Compose 服务和 Alembic `0038_classical_poem_options` 均恢复正常；MinIO `captures/` 前缀聚合对象数为 0，`curriculum/` 前缀保留 3 个对象。删除不可通过代码回滚，需在确认数据损坏时从上述备份恢复并接受备份时点数据覆盖。
+- 回滚：Web 可恢复源码回滚包并重建旧镜像；数据删除不依赖代码回滚，使用已验证备份恢复。
+
 ### 2026-08-25 语文教材分析修复部署记录
 
 - 来源：先定向同步本地工作区中的 `newapi_provider.py`、`curriculum_knowledge.py` 与 `curriculum_analysis_jobs.py`，保留远端 `.env`、数据卷和其他源码。阶段源码备份位于 `/home/syin/study-source-backups/20260825T142000Z`、`20260825T143000Z` 和 `20260825T145000Z`；最终以 GitHub 提交固化并成对重建 API/worker。

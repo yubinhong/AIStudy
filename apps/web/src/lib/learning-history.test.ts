@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  filterItemsForShanghaiCalendarDay,
+  isShanghaiCalendarDay,
   learningHistoryBounds,
   learningHistoryRange,
   selectedLearningDay,
@@ -10,6 +12,34 @@ import {
 const NOW = new Date("2026-07-30T08:00:00Z");
 
 describe("learning history calendar ranges", () => {
+  it("matches only the same Shanghai calendar day", () => {
+    const reference = new Date("2026-08-30T00:30:00Z");
+
+    expect(isShanghaiCalendarDay("2026-08-29T15:59:59Z", reference)).toBe(
+      false,
+    );
+    expect(isShanghaiCalendarDay("2026-08-29T16:00:00Z", reference)).toBe(true);
+    expect(isShanghaiCalendarDay("2026-08-30T15:59:59Z", reference)).toBe(true);
+    expect(isShanghaiCalendarDay("2026-08-30T16:00:00Z", reference)).toBe(
+      false,
+    );
+    expect(isShanghaiCalendarDay("not-a-date", reference)).toBe(false);
+    expect(isShanghaiCalendarDay(null, reference)).toBe(false);
+  });
+
+  it("filters overdue and future items out of today's attention list", () => {
+    const reference = new Date("2026-08-30T08:00:00Z");
+    const items = [
+      { id: "overdue", dueAt: "2026-08-29T15:59:59Z" },
+      { id: "today", dueAt: "2026-08-30T08:00:00Z" },
+      { id: "future", dueAt: "2026-08-31T08:00:00Z" },
+    ];
+
+    expect(
+      filterItemsForShanghaiCalendarDay(items, (item) => item.dueAt, reference),
+    ).toEqual([{ id: "today", dueAt: "2026-08-30T08:00:00Z" }]);
+  });
+
   it("builds the latest 30 Shanghai calendar days by default", () => {
     expect(learningHistoryRange(null, NOW)).toEqual({
       fromAt: "2026-06-30T16:00:00.000Z",

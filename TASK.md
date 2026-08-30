@@ -8,6 +8,16 @@
 - Owner：Codex（执行）；项目 Owner（2026-08-15 明确要求先多学科、再语文、英语最后）
 - 关联：`PLAN-0034`、`PLAN-0031`、`PLAN-0030`、`PLAN-0007`、`ADR-0017`、`ADR-0027`、`ADR-0028`、`docs/deep-research-report.md`
 
+## 2026-08-30 家长首页简化与历史记录清理
+
+- [x] 首页移除“语文技能报告”卡片及对应 `skill-report` 请求；保留后端接口，避免影响既有导出和其他家长工具。
+- [x] “今日需要关注”改为只显示上海自然日当天到期的开放错题；昨天以前已到期的项目不再出现在首页，未来项目也不进入今日关注。
+- [x] Web 日期边界回归、全量 Vitest `37 passed`、Prettier、ESLint、TypeScript 和 Next production build 通过；本机 Node `20.17.0` 低于项目锁定的 `>=24.18.0 <25`，命令产生 engine warning，未改变测试结果。
+- [x] Ubuntu 已完成受控 Web 部署：备份 `/home/syin/study-backups/20260830T004506Z` 隔离恢复为 39 张 PostgreSQL public 表/528 个 MinIO 文件；Web legacy builder 构建、容器重建、API/Web health 和 3 个运行源码哈希通过。
+- [x] 用户确认清理两个孩子后，使用已验证备份 `/home/syin/study-backups/20260830T004506Z`（39 张 PostgreSQL public 表、528 个 MinIO 文件）执行有界运维清理。删除 4 条 Attempt、18 个 StudySession、21 个 StudyTask、23 个 Capture/私有拍题对象、5 条 ChineseAttempt、5 条 ChineseReviewItem、1 条 MistakeRecord、1 条 ReviewSchedule、10 条 TaskRecommendation、35 条 TutorTurn、15 条 VerifiedQuestion、18 条 QuestionExtraction、22 条 ImageAnalysisJob、2 条 PictureWritingGuide，以及关联的 OCR/导出/幂等记录；全部目标历史表复核为 0。保留 2 个 ChildProfile、3 个 Account、3 份 LearningMaterial、3 个 CurriculumSnapshot、184 条 ChineseContentItem 和 149 条 AuditEvent；API/Web/全部 worker 恢复健康。孤立且无法关联目标 Capture 行的对象未做递归删除。
+
+回滚：首页可恢复语文技能报告展示和原 `due_only` 计数；不通过代码回滚恢复已删除数据，数据清理必须使用经验证备份。
+
 ## 2026-08-29 Nova 9 古诗抽查错误内容修复
 
 - [x] 截图和 Ubuntu 数据确认：《剪窗花》被 Provider 作为宽泛 `poem` 候选，教材批准路径自动把所有该类候选编译为相邻句题；当前 38 条候选中混有大量儿歌/韵文，错误不在 Flutter 随机算法。

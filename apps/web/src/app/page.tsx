@@ -16,7 +16,6 @@ import {
 } from "@/app/components/learning-trend-chart";
 import {
   loadChildren,
-  loadChineseSkillReport,
   loadDevices,
   loadLearningDetails,
   loadMistakes,
@@ -25,7 +24,10 @@ import {
   readObject,
   readString,
 } from "@/lib/household-data";
-import { learningHistoryRange } from "@/lib/learning-history";
+import {
+  filterItemsForShanghaiCalendarDay,
+  learningHistoryRange,
+} from "@/lib/learning-history";
 
 function shanghaiDateKey(date: Date) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -87,20 +89,15 @@ export default async function HomePage({
     children.find((child) => readString(child, "id") === requestedChildId) ??
     children[0];
   const selectedChildId = readString(selectedChild, "id");
-  const trendRange = learningHistoryRange(null, new Date(), 7);
-  const [devices, mistakes, learningDetails, chineseSkillReport] =
-    await Promise.all([
-      loadDevices(),
-      selectedChildId
-        ? loadMistakes(selectedChildId, true)
-        : Promise.resolve([]),
-      selectedChildId
-        ? loadLearningDetails(selectedChildId, { ...trendRange, limit: 200 })
-        : Promise.resolve([]),
-      selectedChildId
-        ? loadChineseSkillReport(selectedChildId)
-        : Promise.resolve(null),
-    ]);
+  const now = new Date();
+  const trendRange = learningHistoryRange(null, now, 7);
+  const [devices, mistakes, learningDetails] = await Promise.all([
+    loadDevices(),
+    selectedChildId ? loadMistakes(selectedChildId, true) : Promise.resolve([]),
+    selectedChildId
+      ? loadLearningDetails(selectedChildId, { ...trendRange, limit: 200 })
+      : Promise.resolve([]),
+  ]);
 
   const childName = readString(selectedChild, "display_name") ?? "家庭空间";
   const grade = readNumber(selectedChild, "grade");
@@ -110,7 +107,11 @@ export default async function HomePage({
     (total, detail) => total + readArray(detail, "tutor_turns").length,
     0,
   );
-  const chineseSkills = readArray(chineseSkillReport, "skills");
+  const dueTodayMistakes = filterItemsForShanghaiCalendarDay(
+    mistakes,
+    (item) => readString(readObject(item, "schedule"), "due_at"),
+    now,
+  );
   const apiConnected = children.length > 0 || devices.length > 0;
   const childOptions = children.flatMap((child) => {
     const id = readString(child, "id");
@@ -149,7 +150,7 @@ export default async function HomePage({
             <p className="section-kicker">优先事项</p>
             <h2>今日需要关注</h2>
           </div>
-          <span className="section-count">{mistakes.length} 项</span>
+          <span className="section-count">{dueTodayMistakes.length} 项</span>
         </div>
 
         <div className="attention-list">
@@ -160,13 +161,13 @@ export default async function HomePage({
             <div className="attention-copy due-question-copy">
               <strong>待复习错题</strong>
               <span>
-                {mistakes.length > 0
-                  ? `${mistakes.length} 道题已到复习时间，建议今天回顾`
-                  : "目前没有到期错题，后续拍题讲解会在这里形成复习记录"}
+                {dueTodayMistakes.length > 0
+                  ? `${dueTodayMistakes.length} 道题今天需要复习`
+                  : "今天没有需要复习的错题"}
               </span>
-              {mistakes.length > 0 ? (
+              {dueTodayMistakes.length > 0 ? (
                 <ol className="due-question-list">
-                  {mistakes.map((item, index) => {
+                  {dueTodayMistakes.map((item, index) => {
                     const question = readObject(item, "question");
                     const schedule = readObject(item, "schedule");
                     return (
@@ -194,10 +195,14 @@ export default async function HomePage({
             </div>
             <span
               className={
-                mistakes.length > 0 ? "status-pill amber" : "status-pill"
+                dueTodayMistakes.length > 0
+                  ? "status-pill amber"
+                  : "status-pill"
               }
             >
-              {mistakes.length > 0 ? `${mistakes.length} 题` : "已清空"}
+              {dueTodayMistakes.length > 0
+                ? `${dueTodayMistakes.length} 题`
+                : "已清空"}
             </span>
             <Link
               className="row-action"
@@ -239,64 +244,11 @@ export default async function HomePage({
             </div>
             <div>
               <p>待复习</p>
-              <strong>{mistakes.length}</strong>
+              <strong>{dueTodayMistakes.length}</strong>
             </div>
           </div>
           <LearningTrendChart data={trend} />
         </article>
-      </section>
-
-      <section className="dashboard-panel" id="chinese-skill-report">
-        <div className="section-heading">
-          <div>
-            <p className="section-kicker">语文技能报告</p>
-            <h2>按技能查看作答与复习</h2>
-          </div>
-          <span className="quiet-label">仅汇总已追加学习事实</span>
-        </div>
-        {chineseSkills.length === 0 ? (
-          <div className="empty-dashboard-state">
-            <div>
-              <strong>还没有语文技能记录</strong>
-              <p>
-                完成语文练习后，这里会显示按拼音、字词、阅读和古诗文汇总的作答与到期复习。
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="attention-list" role="list" aria-label="语文技能报告">
-            {chineseSkills.map((skill, index) => {
-              const attempts = readNumber(skill, "attempts") ?? 0;
-              const correctAttempts =
-                readNumber(skill, "correct_attempts") ?? 0;
-              const dueReviews = readNumber(skill, "due_reviews") ?? 0;
-              return (
-                <div
-                  className="attention-row"
-                  key={readString(skill, "skill") ?? index}
-                  role="listitem"
-                >
-                  <span className="attention-icon success">
-                    <BookOpenText size={24} weight="duotone" />
-                  </span>
-                  <div className="attention-copy">
-                    <strong>
-                      {chineseSkillLabel(readString(skill, "skill"))}
-                    </strong>
-                    <span>{`已作答 ${attempts} 次，正确 ${correctAttempts} 次`}</span>
-                  </div>
-                  <span
-                    className={
-                      dueReviews > 0 ? "status-pill amber" : "status-pill"
-                    }
-                  >
-                    {dueReviews > 0 ? `${dueReviews} 项待复习` : "暂无到期复习"}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
       </section>
 
       <section className="dashboard-panel curriculum-callout">
@@ -315,16 +267,4 @@ export default async function HomePage({
       </section>
     </AdminShell>
   );
-}
-
-function chineseSkillLabel(skill: string | null) {
-  const labels: Record<string, string> = {
-    character: "生字",
-    pinyin: "拼音",
-    reading: "阅读",
-    recitation: "古诗文",
-    sentence: "句子",
-    vocabulary: "词语",
-  };
-  return skill ? (labels[skill] ?? "语文表达") : "语文表达";
 }
