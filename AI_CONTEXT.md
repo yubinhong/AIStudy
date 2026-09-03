@@ -10,9 +10,11 @@
 - 主要用户：小学阶段孩子与家长/监护人；辅助角色为家庭内容维护者和项目维护者。
 - 生产状态：`SELF_HOSTED_DEPLOYED`（Ubuntu 自用 Compose 运行 API/OpenAPI `0.17.1`/`0038_classical_poem_options`；本地 Qwen 因视觉质量门禁失败已停止，当前 AI 路由为现有 NewAPI 云端配置；API/Web、迁移和四个常驻 worker 健康，不等同于公网/商业生产批准）
 - 当前版本：本地和 Ubuntu API/OpenAPI 均为 `0.17.1`、迁移头 `0038_classical_poem_options`；远端发布标签为 `v0.17.1`（`e44a2b1`）。
-- 最近更新：`2026-08-30`
+- 最近更新：`2026-09-03`
 
 ## 2. 当前工作状态
+
+- 2026-09-03 家长后台首轮视觉改版已由提交 `be3bd70` 推送并定向部署 Ubuntu Web：侧栏、顶部栏与主内容区使用新的后台层级，学习记录页修复“时间范围”裁切并压缩空状态。桌面/手机登录态布局断言、完整 Chromium E2E、Web 37 项单元测试、格式/Lint/类型/build 通过；远端锁定 Node 24 镜像、Web/API 本机和 LAN health、运行 CSS 标识通过，API、数据库、MinIO 和四个 worker 未重启。未使用 Ubuntu 真实账号或设备回归。
 
 - 2026-08-29/30 已修复古诗抽查把《剪窗花》等童谣/韵文作为古诗的问题：Provider `poem` 只作为候选，`classical-poem-catalog.v2` 对标题、连续题干/答案和全部可见选项确定性验证，发布、读取和提交均失败关闭。Ubuntu `0037` 退役 157 道错误题，`0038` 再将 21 道保留题的 42 个童谣干扰项替换为古诗句；Attempt/Review 不变。Flutter 每次进入前重新读取当前题库，避免驻留页面复用旧题。Nova 9 已覆盖安装并保留登录态，迁移后 12 轮抽查覆盖咏鹅、画、悯农（其二）、江南、古朗月行、风，所有题干/下一句/选项正确且未提交作答。`v0.17.1` 已推送 GitHub，质量与 Android Actions 成功，Release 含 3 个 ABI APK、校验和及构建元数据。
 

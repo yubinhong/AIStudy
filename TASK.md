@@ -15,7 +15,9 @@
 - [x] 登录态 Chromium 增加桌面 `1280×800` 标签边界断言和手机 `390×844` 无横向溢出断言；完整 Cookie/CSRF、多家庭、双孩子与切换流程 `1 passed`。Web `37 passed`，Prettier、ESLint、TypeScript 和 Next production build 通过。
 - [x] 使用隔离内存 API 和 synthetic 账号完成 `1280×720` 桌面浏览器视觉复核；预览图只保存在本机临时目录，不包含真实账号、儿童数据或学习记录。
 
-未执行：本轮按用户请求先交付 UI 预览，未提交、推送或部署 Ubuntu。当前本机 Node `22.23.0` 低于仓库锁定的 `>=24.18.0 <25`，相关命令有 engine warning；构建和测试结果未受影响，正式发布仍应使用锁定的 Node 24 镜像。回滚时可恢复本轮 Web/CSS 文件，不涉及 API、数据库、契约或数据迁移。
+- [x] 代码提交 `be3bd70` 已推送 `origin/master`；Ubuntu 白名单同步 8 个文件并使用锁定 Node `24.18.0`/pnpm `11.7.0` 的 legacy builder 成功构建，只以 `--no-deps --force-recreate` 替换 Web。Web/API 本机和 LAN health、运行 CSS 标识、远端源码 SHA-256 及其他服务容器 ID 通过。
+
+未执行：未使用 Ubuntu 真实账号做浏览器登录，也未进行设备回归；本轮没有数据库、API、迁移或对象存储变更，因此未停止 writer 或创建数据备份。远端旧源文件保存在 `/home/syin/study-source-backups/20260903T022940Z`，可恢复后重建 Web。当前本机 Node `22.23.0` 低于仓库锁定的 `>=24.18.0 <25`，本地命令有 engine warning；远端正式构建已使用锁定 Node 24。
 
 ## 2026-08-30 家长首页简化与历史记录清理
 

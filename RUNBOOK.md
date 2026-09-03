@@ -9,6 +9,13 @@
 - 外部依赖：单一获批云视觉 Provider、Tutor Provider、可选本地 Qwen 模型镜像/权重、HMS（或应用内提醒）和对象存储；具体云供应商 `TBD`。本地 OCR 仅是目标 PrivacySanitizer 的隐私检测依赖，不是外部 Provider。
 - Dashboard/日志/Trace：目标为 OpenTelemetry 接入批准的可观测平台；链接和查询 `TBD`。
 
+### 2026-09-03 家长后台视觉改版部署记录
+
+- 范围：纯 Web UI、登录态布局回归与状态文档；无 API、OpenAPI、数据库迁移、对象存储或 worker 代码变化，因此不停止 writer、不创建数据备份。远端 8 个旧源文件保存在 `/home/syin/study-source-backups/20260903T022940Z`。
+- 发布：提交 `be3bd70` 已推送 `origin/master`；白名单同步 8 个文件且远端 SHA-256 与本地一致。使用 `DOCKER_BUILDKIT=0`、锁定 Node `24.18.0`/pnpm `11.7.0` 构建镜像 `d03f4feaeb9e…`，再以 `--no-deps --force-recreate web` 只替换 Web 容器。
+- 验收：Web 容器 `2570242dc0fc` healthy；Ubuntu 本机及局域网 `192.168.1.4:3000/healthz` 返回 `200`，API `0.17.1` 健康。运行镜像包含新版 `#171f1c` 导航色与 `learning-history-toolbar` 选择器；API 和四个 worker 容器 ID/创建时间保持不变。
+- 未执行与回滚：未使用 Ubuntu 真实账号登录或执行设备 E2E。回滚时恢复上述源码备份并只重建/替换 Web；不回滚数据库、迁移、API 或 worker。
+
 ### 2026-08-29 古诗题库门禁部署记录
 
 - 备份：首次 `/home/syin/study-backups/20260829T070622Z` 隔离恢复为 39 张 PostgreSQL public 表和 534 个 MinIO 文件；发现旧干扰项后再次创建 `/home/syin/study-backups/20260829T220038Z`，隔离恢复为 39 张 public 表和 528 个 MinIO 文件。旧源码分别保存在 `/home/syin/study-source-backups/20260829T072000Z` 与 `/home/syin/study-source-backups/20260829T220500Z`。
