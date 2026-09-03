@@ -1,4 +1,5 @@
 import { ClockCounterClockwise } from "@phosphor-icons/react/dist/ssr";
+import Link from "next/link";
 
 import {
   readArray,
@@ -31,10 +32,15 @@ export function LearningRecordsTable({ records }: { records: unknown[] }) {
   if (records.length === 0) {
     return (
       <div className="empty-dashboard-state learning-history-empty">
-        <ClockCounterClockwise size={30} weight="duotone" />
+        <span className="empty-state-icon" aria-hidden="true">
+          <ClockCounterClockwise size={28} weight="duotone" />
+        </span>
         <div>
           <strong>这个时间范围内没有学习记录</strong>
           <p>完成一次拍题和讲解后，这里会显示题目、作答状态和分步讲解。</p>
+          <Link className="empty-state-link" href="/">
+            返回家长工作台
+          </Link>
         </div>
       </div>
     );

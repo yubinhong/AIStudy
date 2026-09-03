@@ -251,6 +251,37 @@ test("真实 Cookie 会话完成首次改密、跨家庭角色和双孩子作用
     ).toBeVisible();
   });
 
+  await test.step("学习记录筛选区在桌面和窄屏均完整可见", async () => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/learning");
+    await expect(
+      page.getByRole("heading", { name: "学习记录", exact: true }),
+    ).toBeVisible();
+
+    const periodLabel = page.getByText("时间范围", { exact: true });
+    const toolbar = page.locator(".learning-history-toolbar");
+    await expect(periodLabel).toBeVisible();
+    const [labelBox, toolbarBox] = await Promise.all([
+      periodLabel.boundingBox(),
+      toolbar.boundingBox(),
+    ]);
+    expect(labelBox).not.toBeNull();
+    expect(toolbarBox).not.toBeNull();
+    expect(labelBox!.y).toBeGreaterThanOrEqual(toolbarBox!.y);
+    expect(labelBox!.y + labelBox!.height).toBeLessThanOrEqual(
+      toolbarBox!.y + toolbarBox!.height,
+    );
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(periodLabel).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
+    await page.setViewportSize({ width: 1280, height: 800 });
+  });
+
   await test.step("普通家长退出后受保护页面再次跳转登录", async () => {
     await logout(page);
     expect((await page.request.get("/api/auth/session")).status()).toBe(401);

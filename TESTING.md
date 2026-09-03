@@ -128,12 +128,12 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | Flutter legacy Capture 上传 smoke | 使用合成 StudySession 和 iPad 可达 MinIO，验证旧预签名 PUT、服务端确认、OCR 入队 | 历史回归，不再作为目标发布门槛 | 通过（2026-07-14）；ADR-0018 已替代该直传目标，记录只证明 `0.8.0` 历史实现，不代表新架构验收 |
 | API 流式 Capture 上传 | Session 鉴权单一上传 API；分块大小/哈希、MIME/文件头/尺寸/像素/完整解码、幂等、慢速/断连、MinIO/DB 失败补偿、staging 清理、内存/并发上限 | PLAN-0012 每次上传/API/Compose 变更 | 首版已实现并在本地/Ubuntu 部署；断连/超限/超时现场压测和真机回归待执行 |
 | Web 安装 | `cd apps/web && pnpm install --frozen-lockfile` | 锁文件变化/干净环境 | 通过（2026-07-12；构建脚本白名单已审查） |
-| Web 格式 | `cd apps/web && pnpm format:check` | 每次 Web 变更 | 通过（2026-07-30；学习记录页、表格和日期工具经 Prettier 复核） |
-| Web Lint | `cd apps/web && pnpm lint` | 每次 Web 变更 | 通过（2026-07-30） |
-| Web 类型 | `cd apps/web && pnpm typecheck` | 每次 Web 变更 | 通过（2026-07-30） |
-| Web 单元 | `cd apps/web && pnpm test` | 每次 Web 变更 | 通过（2026-08-23：35 项；新增语文审核动作覆盖） |
+| Web 格式 | `cd apps/web && pnpm format:check` | 每次 Web 变更 | 通过（2026-09-03；后台视觉改版与学习记录布局经 Prettier 复核） |
+| Web Lint | `cd apps/web && pnpm lint` | 每次 Web 变更 | 通过（2026-09-03） |
+| Web 类型 | `cd apps/web && pnpm typecheck` | 每次 Web 变更 | 通过（2026-09-03） |
+| Web 单元 | `cd apps/web && pnpm test` | 每次 Web 变更 | 通过（2026-09-03：37 项） |
 | Web E2E | `cd apps/web && pnpm e2e` | 用户流程变更/P1 门槛 | 不可运行 |
-| Web 构建 | `cd apps/web && pnpm build` | 合并前 | 通过（2026-07-30；Next 16.2.10 production build包含动态 `/learning`；本机 Node 20.17/pnpm 9.10 产生 engine warning，锁定容器仍使用 Node 24.18/pnpm 11.7） |
+| Web 构建 | `cd apps/web && pnpm build` | 合并前 | 通过（2026-09-03；Next 16.2.10 production build 包含动态 `/learning`；本机 Node 22.23/pnpm 9.10 产生 engine warning，锁定容器仍使用 Node 24.18/pnpm 11.7） |
 | API 安装 | `cd services/api && uv sync --locked` | 锁文件变化/干净环境 | 通过（2026-07-15；ARM 镜像内 `uv sync --locked --no-dev` 解析 124 个锁定包并安装 35 个适用包；macOS ARM64/Linux x86_64 保留 PaddleOCR 3.7.0、PaddlePaddle 3.3.1，Linux ARM64 按 marker 排除 Paddle；模型只在 amd64 镜像构建阶段下载） |
 | API 格式 | `cd services/api && uv run ruff format --check .` | 每次 API 变更 | 通过（2026-08-24；全仓 158 files） |
 | API Lint | `cd services/api && uv run ruff check .` | 每次 API 变更 | 通过（2026-08-24；全仓） |
@@ -145,7 +145,7 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | 云端 Provider 回退 smoke | 关闭本地开关，重新创建 API/ImageAnalysis/CurriculumAnalysis worker；检查运行时 Provider 并执行 synthetic 数学文本 Schema 请求 | 本地模型回退云端或云端配置变更 | 通过（2026-08-24，Ubuntu）：运行时 `provider=newapi` 且本地模型容器 `Exited (0)`；不含儿童数据的 synthetic 数学文本在 3.591 秒内返回合法 3 步结构，API/Web/四个 worker 健康，宿主约 10 GiB available、Swap 为 0 |
 | Compose 完整启动 | `docker compose -f infra/compose/compose.yml up -d --build` | API/数据/跨模块变更 | 通过（2026-08-24，Ubuntu 24.04 x86_64；API `0.17.0`、Web、本地 Qwen、四个 worker 运行，迁移 `0036`，API/Web/model health 通过；PostgreSQL/MinIO/Redis 数据卷保留） |
 | Web 镜像 | `cd apps/web && docker buildx build --platform=linux/arm64 --load -t study-web:arm64-debug .` | Web/Compose 变更 | 通过（2026-07-15；Next.js standalone 镜像使用 Node 24.18.0、pnpm 11.7.0，包含 `/healthz`；2026-07-20 Ubuntu 重建验证教材上传幂等键兼容修复） |
-| Web 登录态 E2E | `cd apps/web && pnpm test:e2e:install && pnpm test:e2e` | 认证、Cookie/CSRF、多家庭/多孩子或 Web 路由变更 | 通过（2026-08-16；Chromium `1 passed`，隔离内存 API，不读取 Ubuntu 数据；本机 Node 22.23 低于锁定 Node 24.18，仅产生 engines warning） |
+| Web 登录态 E2E | `cd apps/web && pnpm test:e2e:install && pnpm test:e2e` | 认证、Cookie/CSRF、多家庭/多孩子或 Web 路由变更 | 通过（2026-09-03；Chromium `1 passed`，增加 `1280×800` 时间标签不裁切和 `390×844` 无横向溢出断言；隔离内存 API，不读取 Ubuntu 数据；本机 Node 22.23 低于锁定 Node 24.18，仅产生 engines warning） |
 | 集成环境 | `docker compose -f infra/compose/compose.yml up -d postgres minio` | API/数据/跨模块变更 | 当前通过（2026-07-13；旧配置发布 5432/9000）。PLAN-0012 目标要求 MinIO 仅在 Compose 内部网络可达，并增加宿主/LAN `9000` 不开放的断言 |
 | API 集成 | `cd services/api && uv run pytest -m integration` | 跨模块/数据变更 | 本轮相关通过（2026-08-16：语文并发/导出 `1 passed`，随机 synthetic Household/账号/Child 全部清理；2026-07-30 生命周期 1 项；未运行其余集成套件） |
 | API 镜像 | `cd services/api && docker buildx build --platform=linux/arm64 --load -t study-api:arm64-debug .`；发布仍构建 `linux/amd64` | 合并/发布前 | ARM 本地通过（2026-07-15）；amd64 Ubuntu 远端通过（2026-07-16，构建期模型目录 26 文件/清单标记、Paddle 3.3.1 + PaddleOCR 3.7.0、容器预检 ready、内存 synthetic OCR 4/4）；运行时无模型下载 |

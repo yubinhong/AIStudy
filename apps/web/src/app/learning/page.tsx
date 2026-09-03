@@ -1,5 +1,6 @@
 import {
   CalendarBlank,
+  ChartBar,
   ClockCounterClockwise,
 } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
@@ -70,17 +71,17 @@ export default async function LearningHistoryPage({
     >
       <div className="page-header learning-history-header">
         <div>
-          <p className="page-eyebrow">逐题记录</p>
-          <h1>{selectedDate ? "按日期查看学习记录" : "最近 30 天学习记录"}</h1>
+          <p className="page-eyebrow">学习档案</p>
+          <h1>学习记录</h1>
           <p>
-            查看 {childName} 的题目、作答状态和分步讲解。详细记录保留 180 天。
+            查看 {childName} 的题目、作答状态和分步讲解，详细记录保留 180 天。
           </p>
         </div>
       </div>
 
       <section className="dashboard-panel learning-history-panel">
         <div className="learning-history-toolbar">
-          <div>
+          <div className="learning-period-copy">
             <p className="section-kicker">时间范围</p>
             <h2>{selectedDate ?? "最近 30 天"}</h2>
           </div>
@@ -88,15 +89,17 @@ export default async function LearningHistoryPage({
             {selectedChildId ? (
               <input name="child" type="hidden" value={selectedChildId} />
             ) : null}
-            <label htmlFor="learning-date">选择日期</label>
-            <input
-              defaultValue={selectedDate ?? ""}
-              id="learning-date"
-              max={maxDate}
-              min={minDate}
-              name="date"
-              type="date"
-            />
+            <div className="date-field">
+              <label htmlFor="learning-date">选择日期</label>
+              <input
+                defaultValue={selectedDate ?? ""}
+                id="learning-date"
+                max={maxDate}
+                min={minDate}
+                name="date"
+                type="date"
+              />
+            </div>
             <button className="secondary-button" type="submit">
               <CalendarBlank size={17} /> 查看
             </button>
@@ -107,9 +110,15 @@ export default async function LearningHistoryPage({
             ) : null}
           </form>
         </div>
-        <div className="learning-history-summary">
-          <strong>{records.length}</strong>
-          <span>{selectedDate ? "当天题目" : "近 30 天题目"}</span>
+        <div className="learning-history-summary" aria-label="记录汇总">
+          <span className="summary-icon" aria-hidden="true">
+            <ChartBar size={18} weight="duotone" />
+          </span>
+          <div>
+            <strong>{records.length}</strong>
+            <span>{selectedDate ? "当天记录" : "近 30 天记录"}</span>
+          </div>
+          <span className="retention-note">逐题记录保留 180 天</span>
         </div>
         <LearningRecordsTable records={records} />
       </section>

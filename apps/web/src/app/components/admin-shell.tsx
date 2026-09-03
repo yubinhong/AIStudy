@@ -178,7 +178,10 @@ export function AdminShell({
           <span className="admin-brand-mark" aria-hidden="true">
             <Leaf size={20} weight="fill" />
           </span>
-          <span>家庭 AI 学习助手</span>
+          <span className="admin-brand-copy">
+            <strong>家庭学习助手</strong>
+            <small>家长管理后台</small>
+          </span>
         </Link>
 
         <nav className="admin-navigation" aria-label="家长端主导航">
@@ -206,6 +209,10 @@ export function AdminShell({
             </div>
           ))}
         </nav>
+        <div className="admin-sidebar-foot">
+          <span aria-hidden="true" />
+          家庭私有空间
+        </div>
       </aside>
 
       <div className="admin-workspace">
