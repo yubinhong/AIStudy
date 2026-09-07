@@ -19,8 +19,15 @@
 - 范围：部署 API 的语文家长学习记录查询、Web 的数学/语文学习记录子菜单与页面、OpenAPI 契约；没有新增迁移，不修改 PostgreSQL、MinIO、Redis 数据或英语开关。
 - 备份：`/home/syin/study-backups/20260905T033939Z`；隔离恢复验证通过，包含 39 张 PostgreSQL public 表和 729 个 MinIO 快照文件。远端旧运行源码保存在 `/home/syin/study-source-backups/20260905T034032Z`。
 - 发布：保留远端 `.env` 和数据卷，仅按白名单同步 11 个 API/Web/契约文件；使用 `DOCKER_BUILDKIT=0` 构建 API 镜像 `4ed7303ec283`、Web 镜像 `197ab5fa0402`，再以 `--no-deps --force-recreate` 依次替换 API 和 Web。迁移检查仍为 `0038_classical_poem_options (head)`。
-- 验收：API/Web 容器 healthy；Ubuntu 本机和局域网 `192.168.1.4:8000/3000/healthz` 均返回 `200`；未登录数学/语文页面均返回 `307` 登录跳转，未登录语文记录 API 返回 `401`；API 返回版本 `0.17.2`，容器内语文源码 SHA-256 与本地一致，OpenAPI operation id 为 `getChineseLearningDetails`。其余 7 个 Compose 服务保持运行，MinIO `9000` 未向宿主发布。
-- 未执行与回滚：未使用 Ubuntu 真实账号浏览器或真实设备回归，未创建新 commit/tag。回滚时恢复上述源码目录并只重建 API/Web，不执行数据库 downgrade；若确认数据损坏，再使用已验证备份恢复。
+- 验收：API/Web 容器 healthy；Ubuntu 本机和局域网 `192.168.1.4:8000/3000/healthz` 均返回 `200`；未登录数学/语文页面均返回 `307` 登录跳转，未登录语文记录 API 返回 `401`；当时 API 返回版本 `0.17.1`，容器内语文源码 SHA-256 与本地一致，OpenAPI operation id 为 `getChineseLearningDetails`。其余 7 个 Compose 服务保持运行，MinIO `9000` 未向宿主发布。
+- 未执行与回滚：当时未使用 Ubuntu 真实账号浏览器或真实设备回归。回滚时恢复上述源码目录并只重建 API/Web，不执行数据库 downgrade；若确认数据损坏，再使用已验证备份恢复。
+
+## 2026-09-07 v0.17.2 版本同步
+
+- 备份：`/home/syin/study-backups/20260907T065116Z`；隔离恢复验证通过，包含 39 张 PostgreSQL public 表和 733 个 MinIO 快照文件。
+- 发布：同步已提交的 API `__version__`，使用 `DOCKER_BUILDKIT=0` 重建并替换 API 容器，镜像 `64dddedb18e0`；未执行数据库迁移，远端 `.env` 和数据卷保持不变。
+- 验收：API 返回 `{"status":"ok","service":"study-api","version":"0.17.2"}`，Web health 返回 `200`，9 个 Compose 服务运行，Alembic 仍为 `0038_classical_poem_options (head)`。
+- 未执行：未切换到 GHCR 镜像，未使用 Ubuntu 真实账号浏览器或设备回归。回滚只需恢复 API 源码备份并重建 API，不执行数据库 downgrade。
 
 ## 2026-09-03 Ubuntu Docker 缓存定时清理
 

@@ -4,7 +4,7 @@
 
 - 计划 ID：`PLAN-0039`
 - 关联：`TASK-0012`、`ADR-0008`、`.github/workflows/ci.yml`、`infra/compose/compose.yml`、`RUNBOOK.md`
-- 状态：`COMPLETE（本地实现与静态验证完成；GitHub/Ubuntu 首次运行待推送后验收）`
+- 状态：`COMPLETE（代码、推送与 tag 已完成；首次 GHCR 多架构构建/拉取式部署待远端回收）`
 - 优先级：`P1 / CI / SELF-HOSTED DEPLOYMENT`
 - Owner：Codex（实现与本地验证）；项目 Owner（GitHub 推送、Package 可见性与 Ubuntu 部署）
 - 创建：`2026-09-05`
@@ -16,7 +16,7 @@
 - [x] M1 — CI 在 `master` 与 `v*` tag 推送时完成既有质量门槛，并使用最小 `packages: write` 权限发布 API/Web 镜像、OCI provenance 与 SBOM；Pull Request 不发布镜像。
 - [x] M2 — Compose 删除 API/Web 的本地 `build`，改为可由 `.env` 覆盖的 GHCR 镜像引用，并对应用镜像启用拉取检查。
 - [x] M3 — 更新 `.env.example`、Compose README、根 README、Runbook、Testing、Project、AI Context、Task 和 Changelog，说明 GitHub Package 权限、版本固定、升级、验证和回滚。
-- [x] M4 — Workflow YAML、Compose 展开、镜像引用一致性和最终差异检查通过；本轮不推送、不触发 GitHub Actions、不发布镜像、不部署 Ubuntu。
+- [x] M4 — Workflow YAML、Compose 展开、镜像引用一致性和最终差异检查通过；提交 `044c52e` 已推送并创建 annotated tag `v0.17.2`，Ubuntu 仍按本地 legacy builder 运行，首次 GHCR 构建/拉取式部署待远端验收。
 
 ## 兼容性、风险与回滚
 

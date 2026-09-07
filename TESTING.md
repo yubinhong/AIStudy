@@ -4,7 +4,7 @@
 
 - Workflow 静态检查：解析 `.github/workflows/ci.yml`，断言镜像发布 job 仅依赖全部质量 job、仅 push 发布、只在 job 级获得 `packages: write`，并覆盖 API/Web 两个 context、`linux/amd64,linux/arm64`、`sha-*`/版本/`latest`、provenance 和 SBOM。
 - Compose 配置：把 `infra/compose/compose.yml` 与脱敏 `.env.example` 复制到临时目录后执行 `docker compose config --quiet`；断言应用服务无 `build`，迁移/API/四个 worker 使用同一 `STUDY_API_IMAGE`，Web 使用 `STUDY_WEB_IMAGE`，且均启用 `pull_policy: always`。
-- 实际结果：Workflow YAML、Compose 展开、镜像映射断言和 `git diff --check` 通过。本轮未推送，故未运行 GitHub runner、多架构构建、GHCR push/pull 或 Ubuntu 部署；这些是首次发布的剩余验收。
+- 实际结果：Workflow YAML、Compose 展开、镜像映射断言和 `git diff --check` 通过。提交 `044c52e` 和 annotated tag `v0.17.2` 已推送；GitHub runner、多架构构建、GHCR push/pull 尚待远端回收，Ubuntu 当前已按 legacy builder 部署并运行 `0.17.2/0038`。
 
 ## 2026-09-03 Ubuntu Docker 缓存定时清理
 

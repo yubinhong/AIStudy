@@ -16,7 +16,7 @@
 - [x] README、部署指南、Compose 说明、Runbook、Security、ADR-0008、Testing、Project、AI Context、Plan 与 Changelog 已同步版本固定、私有 Package 登录、升级和回滚边界。
 - [x] GitHub Workflow YAML、脱敏临时 `.env` 的 Compose 展开、镜像引用/服务映射断言和 `git diff --check` 通过。
 
-未执行：本轮未提交或推送，未触发 GitHub Actions，未发布/拉取真实 GHCR 镜像，也未切换 Ubuntu。首次远端运行仍须确认 Package 可见性、双架构 manifest、API/Web 标签对应同一提交，并完成备份恢复、迁移、健康、worker 与容器镜像摘要核验。
+已执行：提交 `044c52e` 已推送到 `master`，并创建/推送 annotated tag `v0.17.2`。首次 GHCR 构建、Package 可见性、双架构 manifest 和 Ubuntu 拉取式镜像部署仍待 GitHub Actions 完成后核验；Ubuntu 当前继续运行本地 legacy builder 版本。
 
 回滚：恢复 Compose 的本地 `build` 定义和旧部署命令；若已经使用 GHCR，则优先同时把 `STUDY_API_IMAGE`/`STUDY_WEB_IMAGE` 固定回上一个已验证标签后重新 `pull`/`up -d`。数据库保持前向修复，不 downgrade、不删除学习事实。
 
@@ -37,7 +37,7 @@
 - [x] Web 语文记录页增加列表和展开详情，明确显示孩子答案、答对/答错、正确答案、复习日期；英语未加入。
 - [x] API 语文定向回归、Ruff/Mypy、Web Vitest、TypeScript、ESLint、Prettier 通过。
 - [x] 完整 API 非集成回归、PostgreSQL 集成回归、Web production build 和本轮最终差异审查通过；API `258 passed, 32 deselected`，Web Vitest `38 passed`，登录态 Chromium E2E `1 passed`。
-- [x] 2026-09-05 已按用户授权部署 Ubuntu：备份 `/home/syin/study-backups/20260905T033939Z` 隔离恢复通过，API/Web 以 legacy builder 构建并替换；本机/LAN health `200`、`0038` head、运行源码哈希和数学/语文登录跳转通过。未执行 Ubuntu 真实账号浏览器、真实设备回归，未创建新 commit/tag。
+- [x] 2026-09-05 已按用户授权部署 Ubuntu：备份 `/home/syin/study-backups/20260905T033939Z` 隔离恢复通过，API/Web 以 legacy builder 构建并替换；本机/LAN health `200`、`0038` head、运行源码哈希和数学/语文登录跳转通过。随后已同步 API `0.17.2` 版本、提交 `044c52e` 并创建/推送 `v0.17.2`；真实账号浏览器、真实设备回归和 GHCR 拉取式部署仍待执行。
 
 回滚：移除新增语文学习记录路由、仓储方法、Web 子菜单和页面；保留语文 Attempt/Review 学习事实及现有数学学习记录 API，不执行迁移回退。
 
