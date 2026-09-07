@@ -14,7 +14,7 @@
 
 ## 2. 当前工作状态
 
-- 2026-09-05 本地已将服务镜像交付切换为 GitHub Actions + GHCR：`quality` 仅在全部质量 job 通过后的 `master`/`v*` push 发布 API/Web amd64/arm64 镜像，Compose 的迁移/API/四个 worker 复用同一 API 镜像并取消本地构建。正式自用部署应同时固定两个镜像的同一版本或 `sha-*` 标签。本轮 GHCR 链路未推送、未产生首批 Package；Ubuntu 的家长学习记录增量另按白名单使用 legacy builder 完成部署，现有运行态详见 `RUNBOOK.md` 的 2026-09-05 部署记录。
+- 2026-09-05/07 服务镜像交付已切换为 GitHub Actions + GHCR：`quality` 仅在全部质量 job 通过后的 `master`/`v*` push 发布 API/Web amd64/arm64 镜像，Compose 的迁移/API/四个 worker 复用同一 API 镜像并取消本地构建。`v0.17.2` tag 的 workflow run `34093042527` 中契约、API、Web、Chromium E2E 和两个 GHCR 发布 job 均成功；正式自用部署应同时固定两个镜像的同一版本或 `sha-*` 标签。Ubuntu 的家长学习记录增量仍按白名单使用 legacy builder 完成部署，尚未切换到 GHCR 运行容器。
 
 - 2026-09-03 Ubuntu 自用服务器已部署每日 Docker 缓存维护：只清理 7 天前的未使用构建缓存和悬空镜像，不触碰卷、容器、网络或仍有标签的镜像。服务器为 UTC，`cron.service` 已安装并启用，`syin` 的 `16:00 UTC` 任务对应北京时间次日 `00:00`；远端检查与 journal 留痕通过，未提前执行真实清理，Compose 容器未重启。
 

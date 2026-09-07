@@ -116,7 +116,7 @@
 
 2026-09-04/05 新增并部署家长后台分学科学习记录：侧栏学习记录展开为数学和语文两个子菜单；数学页继续读取已确认数学题/讲解，语文页通过家长专用查询读取 `chinese_attempts` 并展示孩子答案、对错、错误时正确答案、耗时及复习状态。新增查询为兼容式 API 扩展，API/Web 完整回归、登录态浏览器 E2E、Ubuntu 备份恢复、API/Web health 和运行源码核验已通过；没有数据库迁移。版本 `v0.17.2` 已提交并推送，Ubuntu 真实账号/设备验收仍待执行。
 
-2026-09-05 交付链路增量：GitHub Actions `quality` 在全部质量 job 通过后发布 GHCR API/Web 多架构镜像，Compose 改为只拉取镜像；迁移/API/四个 worker 使用同一后端产物。镜像可用版本或 `sha-*` 固定，`latest` 仅跟随 `master`。本轮未推送、未实际发布 Package 或切换 Ubuntu，staging/production、签名与漏洞扫描策略仍未完成。
+2026-09-05/07 交付链路增量：GitHub Actions `quality` 在全部质量 job 通过后发布 GHCR API/Web 多架构镜像，Compose 改为只拉取镜像；迁移/API/四个 worker 使用同一后端产物。`v0.17.2` tag workflow run `34093042527` 的质量和两个 GHCR 发布 job 均成功。镜像可用版本或 `sha-*` 固定，`latest` 仅跟随 `master`；Ubuntu 本次仍使用本地 legacy builder，staging/production、签名与漏洞扫描策略仍未完成。
 
 上传架构修订（2026-07-17）：项目 Owner 接受 ADR-0018，以 Session 鉴权的 API 有界流式上传替代 ADR-0010/0014 的 App 预签名直传。目标合同合并申请/PUT/确认并只返回已确认 Capture，移除 `upload_url`、`OBJECT_STORAGE_PUBLIC_ENDPOINT_URL` 和 MinIO `9000` LAN 暴露。API/Flutter/OpenAPI/Compose 已迁移，Ubuntu 已成对部署；最终设备回归和 Provider 额度恢复后的真实识别由 TASK-0009 跟踪。
 

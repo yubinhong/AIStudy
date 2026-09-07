@@ -16,7 +16,7 @@
 - [x] README、部署指南、Compose 说明、Runbook、Security、ADR-0008、Testing、Project、AI Context、Plan 与 Changelog 已同步版本固定、私有 Package 登录、升级和回滚边界。
 - [x] GitHub Workflow YAML、脱敏临时 `.env` 的 Compose 展开、镜像引用/服务映射断言和 `git diff --check` 通过。
 
-已执行：提交 `044c52e` 已推送到 `master`，并创建/推送 annotated tag `v0.17.2`。首次 GHCR 构建、Package 可见性、双架构 manifest 和 Ubuntu 拉取式镜像部署仍待 GitHub Actions 完成后核验；Ubuntu 当前继续运行本地 legacy builder 版本。
+已执行：提交 `044c52e` 已推送到 `master`，并创建/推送 annotated tag `v0.17.2`。tag workflow run `34093042527` 的契约、API、Web、Chromium E2E 和 API/Web GHCR 多架构镜像发布均为 `success`；Ubuntu 当前继续运行本地 legacy builder 版本，尚未切换为 GHCR 拉取式部署。
 
 回滚：恢复 Compose 的本地 `build` 定义和旧部署命令；若已经使用 GHCR，则优先同时把 `STUDY_API_IMAGE`/`STUDY_WEB_IMAGE` 固定回上一个已验证标签后重新 `pull`/`up -d`。数据库保持前向修复，不 downgrade、不删除学习事实。
 

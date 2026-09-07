@@ -12,7 +12,7 @@
 - 镜像：`ghcr.io/yubinhong/aistudy-api` 同时供 `migrate`、`api` 和四个 worker 使用，`ghcr.io/yubinhong/aistudy-web` 供 Web 使用。`master` 发布 `latest`/`sha-*`，`v*` 发布版本/`sha-*`。
 - 部署：先完成备份恢复验证，在远端 `.env` 将 `STUDY_API_IMAGE` 和 `STUDY_WEB_IMAGE` 固定到同一次发布的相同版本或 `sha-*` 标签，再运行 `docker compose pull` 与 `docker compose up -d`。私有 Package 只允许部署主机使用 `read:packages` 凭据登录 GHCR。
 - 回滚：同时固定回上一个已验证的 API/Web 标签并重新拉取、启动；数据库仍只前向修复，不 downgrade、不删除 Attempt/AuditEvent 或其他学习事实。
-- 当前状态：仓库本地已配置该链路，但本轮未推送、未触发 GitHub Actions、未发布首批 GHCR 镜像；Ubuntu 的家长学习记录增量另按下方白名单使用本地 legacy builder 部署，未切换到 GHCR 运行容器。
+- 当前状态：`v0.17.2` tag 已推送并触发 workflow run `34093042527`；契约、API、Web、Chromium E2E 和 API/Web 两个 GHCR 多架构镜像发布 job 均成功。Ubuntu 的家长学习记录增量另按下方白名单使用本地 legacy builder 部署，尚未切换到 GHCR 运行容器。
 
 ### 2026-09-05 家长后台分学科学习记录部署记录
 
