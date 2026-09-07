@@ -49,3 +49,6 @@ apps/web/test-results/
 *.tar.gz
 services/api/model-cache/
 infra/compose/backups/
+
+# Host-specific operations
+infra/compose/scripts/cleanup-docker-cache.sh

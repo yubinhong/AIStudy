@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 家庭 AI 学习助手 API
-  version: 0.17.1
+  version: 0.17.2
   description: Self-hosted Household account/session, multi-subject learning, Chinese practice, and gated English speaking contracts.
 servers:
   - url: http://localhost:8000
@@ -2233,6 +2233,52 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorResponse'}
+  /households/{household_id}/children/{child_id}/chinese/learning-details:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    get:
+      operationId: getChineseLearningDetails
+      summary: Read parent-only Chinese answer records
+      description: Returns bounded Chinese attempts with the child's submitted response, deterministic result, failed-answer feedback, content prompt and current review state. It contains no image bytes or Provider payloads.
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 500, default: 200}
+        - name: from_at
+          in: query
+          required: false
+          description: Inclusive timezone-aware start. Defaults to 30 days before to_at and cannot be older than the 180-day retention boundary.
+          schema: {type: string, format: date-time}
+        - name: to_at
+          in: query
+          required: false
+          description: Exclusive timezone-aware end. The requested range cannot exceed 31 days.
+          schema: {type: string, format: date-time}
+      responses:
+        '200':
+          description: Recent per-attempt Chinese learning details.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/ChineseLearningDetail'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: Chinese is not enabled for this child.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorResponse'}
+        '422': {$ref: '#/components/responses/InvalidRequest'}
   /households/{household_id}/children/{child_id}/chinese/attempts:
     parameters:
       - $ref: '#/components/parameters/HouseholdId'
@@ -2803,7 +2849,7 @@ components:
           const: study-api
         version:
           type: string
-          const: 0.17.1
+          const: 0.17.2
     CreateChildRequest:
       type: object
       additionalProperties: false
@@ -3721,6 +3767,17 @@ components:
         strength: {type: integer, minimum: 0, maximum: 5}
         last_feedback_tag: {type: string, minLength: 1, maxLength: 80}
         updated_at: {type: string, format: date-time}
+    ChineseLearningDetail:
+      type: object
+      additionalProperties: false
+      required: [attempt, content, review]
+      properties:
+        attempt: {$ref: '#/components/schemas/ChineseAttemptExport'}
+        content: {$ref: '#/components/schemas/ChineseContentItem'}
+        review:
+          oneOf:
+            - $ref: '#/components/schemas/ChineseReviewItem'
+            - type: 'null'
     ChineseSkillSummary:
       type: object
       additionalProperties: false

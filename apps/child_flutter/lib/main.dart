@@ -465,6 +465,7 @@ class _ChildLoginScreenState extends State<ChildLoginScreen> {
     });
     try {
       final baseUrl = normalizeServerBaseUrl(_serverBaseUrl.text);
+      await prepareLocalNetworkAccess(baseUrl);
       await (widget.healthAction ?? _healthWithClient)(baseUrl);
       if (mounted) {
         setState(() {

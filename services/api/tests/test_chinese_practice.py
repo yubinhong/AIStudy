@@ -250,6 +250,45 @@ def test_chinese_review_queue_and_parent_skill_report_are_role_scoped() -> None:
     assert child_report.status_code == 403
 
 
+def test_parent_can_read_chinese_learning_details_with_answer_and_review_state() -> None:
+    client = TestClient(create_app())
+    _enable_chinese(client)
+    _publish_test_poems(client)
+    root = f"/households/{DEFAULT_HOUSEHOLD_ID}/children/{CHILD_ID}/chinese"
+    child_headers = session_headers(client, role="child", child_id=CHILD_ID)
+    content = client.get(f"{root}/content", headers=child_headers).json()
+    poem = next(item for item in content if item["prompt"].startswith("“春眠不觉晓”"))
+    wrong_choice = poem["options"][1]
+
+    submitted = client.post(
+        f"{root}/attempts",
+        headers={**child_headers, "Idempotency-Key": "chinese-history-attempt-001"},
+        json={
+            "content_id": poem["id"],
+            "content_revision": poem["revision"],
+            "response": {"choice": wrong_choice},
+            "elapsed_ms": 2300,
+        },
+    )
+    parent_history = client.get(
+        f"{root}/learning-details",
+        headers=session_headers(client, role="parent"),
+    )
+    child_history = client.get(f"{root}/learning-details", headers=child_headers)
+
+    assert submitted.status_code == 201
+    assert parent_history.status_code == 200
+    assert len(parent_history.json()) == 1
+    detail = parent_history.json()[0]
+    assert detail["content"]["title"] == "春晓"
+    assert detail["attempt"]["response"] == {"choice": wrong_choice}
+    assert detail["attempt"]["result"]["correct"] is False
+    assert detail["attempt"]["result"]["correct_answer"] == "处处闻啼鸟"
+    assert detail["attempt"]["elapsed_ms"] == 2300
+    assert detail["review"]["strength"] == 0
+    assert child_history.status_code == 403
+
+
 def test_deterministic_scorer_handles_order_and_evidence_without_provider() -> None:
     source = ChineseContentSource(type="original", source_id="test", license_status="cleared")
     ordered = ChineseContentItem(

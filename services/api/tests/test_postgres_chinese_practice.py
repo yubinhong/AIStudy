@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from uuid import UUID, uuid4
 
@@ -109,6 +110,17 @@ def test_postgres_concurrent_chinese_attempts_merge_review_and_export() -> None:
         assert len(export.chinese_attempts) == 2
         assert all(attempt.result.correct for attempt in export.chinese_attempts)
         assert all(attempt.response == request.response for attempt in export.chinese_attempts)
+        history = chinese.learning_details(
+            household_id,
+            child.id,
+            from_at=datetime.now(UTC) - timedelta(minutes=5),
+            to_at=datetime.now(UTC) + timedelta(minutes=5),
+            limit=10,
+        )
+        assert len(history) == 2
+        assert all(detail.attempt.response == request.response for detail in history)
+        assert all(detail.content.title == "春晓" for detail in history)
+        assert all(detail.review is not None for detail in history)
         assert len(export.chinese_review_items) == 1
         assert export.chinese_review_items[0].strength == 2
         assert export.chinese_review_items[0].skill is ChineseSkill.POEM

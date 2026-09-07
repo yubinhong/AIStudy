@@ -1,3 +1,76 @@
+# PLANS.md — PLAN-0039 GitHub Actions 容器镜像发布
+
+## 计划元数据
+
+- 计划 ID：`PLAN-0039`
+- 关联：`TASK-0012`、`ADR-0008`、`.github/workflows/ci.yml`、`infra/compose/compose.yml`、`RUNBOOK.md`
+- 状态：`COMPLETE（本地实现与静态验证完成；GitHub/Ubuntu 首次运行待推送后验收）`
+- 优先级：`P1 / CI / SELF-HOSTED DEPLOYMENT`
+- Owner：Codex（实现与本地验证）；项目 Owner（GitHub 推送、Package 可见性与 Ubuntu 部署）
+- 创建：`2026-09-05`
+
+## 目标、边界与里程碑
+
+将 API/worker 与 Web 的 Linux 镜像构建从本地/Ubuntu 主机迁移到 GitHub Actions。质量作业通过后，由 GitHub Actions 构建 `linux/amd64`、`linux/arm64` 多架构镜像并发布到 GHCR；Compose 只拉取镜像，同一 API 镜像供迁移、API 和四个 worker 使用。自用部署可固定版本或 `sha-*` 标签，`latest` 只作为 `master` 的便捷默认值。
+
+- [x] M1 — CI 在 `master` 与 `v*` tag 推送时完成既有质量门槛，并使用最小 `packages: write` 权限发布 API/Web 镜像、OCI provenance 与 SBOM；Pull Request 不发布镜像。
+- [x] M2 — Compose 删除 API/Web 的本地 `build`，改为可由 `.env` 覆盖的 GHCR 镜像引用，并对应用镜像启用拉取检查。
+- [x] M3 — 更新 `.env.example`、Compose README、根 README、Runbook、Testing、Project、AI Context、Task 和 Changelog，说明 GitHub Package 权限、版本固定、升级、验证和回滚。
+- [x] M4 — Workflow YAML、Compose 展开、镜像引用一致性和最终差异检查通过；本轮不推送、不触发 GitHub Actions、不发布镜像、不部署 Ubuntu。
+
+## 兼容性、风险与回滚
+
+不修改 OpenAPI、数据库 Schema、运行命令、端口、卷或服务依赖。GHCR package 为 private 时，部署主机必须预先用只具备 `read:packages` 的凭据执行 `docker login ghcr.io`；CI 只使用仓库 `GITHUB_TOKEN` 写入本仓库 package。多架构 API 镜像沿用现有约束：amd64 包含锁定 Paddle 运行时与模型，arm64 仅支持 API/迁移/NewAPI 路线。回滚时把 `STUDY_API_IMAGE` 与 `STUDY_WEB_IMAGE` 固定到上一个已验证的 `sha-*` 或版本标签后执行 `docker compose pull` 和 `docker compose up -d`；数据库仍遵循前向修复，不 downgrade、不删除学习事实。
+
+---
+
+# PLANS.md — PLAN-0038 家长后台分学科学习记录
+
+## 计划元数据
+
+- 计划 ID：`PLAN-0038`
+- 关联：`TASK-0012`、`PRD.md`、`ARCHITECTURE.md`、`packages/contracts/openapi.yaml`
+- 状态：`COMPLETE`
+- 优先级：`P1 / WEB / API / CHINESE`
+- Owner：Codex（实现与验证）
+- 创建：`2026-09-04`
+
+- 目标：将家长后台“学习记录”拆为“数学学习记录”和“语文学习记录”两个子菜单；英语暂不加入。
+- 范围：数学继续读取已确认数学题和 Tutor 讲解；语文新增家长专用 Attempt 查询，显示孩子答案、对错、错误时的正确答案、耗时和当前复习状态。两者均支持原有 180 天保留和日期范围约束。
+- 边界：语文记录查询不读取图片或 Provider 原始响应，不改变孩子提交接口、评分规则、复习队列或教材审核门禁；本次部署只替换 API/Web，不执行数据库迁移。
+- 状态：`COMPLETE`（代码、完整 API/Web 回归、登录态浏览器 E2E 和 2026-09-05 Ubuntu 自用部署已通过）。
+- 验证：API 非集成 `258 passed, 32 deselected`；PostgreSQL 集成通过；Web Vitest `38 passed`、TypeScript、ESLint、Prettier、production build 通过；OpenAPI YAML 与 operation id 校验通过；登录态 Chromium E2E `1 passed`。
+- Ubuntu 验收：备份 `/home/syin/study-backups/20260905T033939Z` 隔离恢复为 39 张 PostgreSQL public 表和 729 个 MinIO 文件；API/Web 镜像构建、容器健康、局域网 health、`0038` head、运行源码 SHA-256 和数学/语文路由登录跳转通过。真实账号/设备回归和新 commit/tag 未执行。
+- 回滚：移除 Web 子菜单/语文页面和新增查询路由；保留 `chinese_attempts`、`chinese_review_items` 及既有数学/语文学习事实，不做数据库 downgrade。
+
+---
+
+# PLANS.md — PLAN-0037 Ubuntu Docker 缓存定时清理
+
+## 计划元数据
+
+- 计划 ID：`PLAN-0037`
+- 关联：`TASK-0012`、`RUNBOOK.md`
+- 状态：`COMPLETE`
+- 优先级：`P1 / OPERATIONS / DISK HYGIENE`
+- Owner：Codex（实现与部署）；项目 Owner（已明确授权 Ubuntu 定时清理）
+- 创建：`2026-09-03`
+
+## 目标、边界与里程碑
+
+在 Ubuntu 自用服务器部署保守的 Docker 缓存清理脚本，并于北京时间每天 `00:00` 自动执行。默认只删除 7 天前的未使用构建缓存和悬空镜像；不清理数据卷、容器、网络或仍有标签的镜像。脚本必须防止并发执行、通过系统日志留痕，并提供不执行删除的检查模式。
+
+- [x] M1 — 核对服务器时区、Docker 命令能力、磁盘与缓存占用以及现有用户 crontab。
+- [x] M2 — 增加带 24 小时最小保留保护、非阻塞文件锁、Docker 权限检查和 `--check` 模式的清理脚本。
+- [x] M3 — shell 语法与隔离行为验证通过；脚本已定向同步，远端 `--check`、SHA-256、执行权限和 system journal 日志核验通过。
+- [x] M4 — Ubuntu 官方 `cron` 已安装并启用；`syin` crontab 的唯一标记块使用 `0 16 * * *`，对应北京时间午夜。Runbook、测试、活动任务和变更记录已同步。
+
+## 回滚与风险
+
+删除的构建缓存和悬空镜像不可原地恢复，但不承载业务数据，可在后续构建或拉取时重新生成。回滚只移除标记的 cron 条目并删除远端脚本，不修改 Compose、数据库、MinIO 卷或运行容器。服务器采用 UTC，因此北京时间 `00:00` 对应 cron 的 `16:00 UTC`；若服务器时区变化必须同步调整计划。
+
+---
+
 # PLANS.md — PLAN-0036 家长首页简化与历史记录清理
 
 ## 计划元数据

@@ -17,4 +17,15 @@ describe("admin shell information architecture", () => {
     );
     expect(childScopedHref("/accounts")).toBe("/accounts");
   });
+
+  it("exposes separate math and Chinese learning-record submenus", () => {
+    const learning = adminNavigationGroups
+      .flatMap((group) => group.items)
+      .find((item) => item.section === "learning");
+
+    expect(learning?.children).toEqual([
+      { href: "/learning/math", key: "math", label: "数学学习记录" },
+      { href: "/learning/chinese", key: "chinese", label: "语文学习记录" },
+    ]);
+  });
 });

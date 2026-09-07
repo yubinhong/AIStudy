@@ -1,6 +1,6 @@
-import LearningHistoryPage from "./learning-history-page";
+import LearningHistoryPage from "../learning-history-page";
 
-export default async function MathLearningHistoryPage({
+export default function MathLearningHistoryPage({
   searchParams,
 }: {
   searchParams?: Promise<{ child?: string; date?: string }>;

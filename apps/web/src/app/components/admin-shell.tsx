@@ -27,6 +27,7 @@ type ActiveSection =
 
 type AdminShellProps = {
   active: ActiveSection;
+  activeLearningSubject?: "math" | "chinese";
   children: ReactNode;
   childOptions?: ChildOption[];
   childName?: string;
@@ -43,10 +44,17 @@ export type ChildOption = {
 };
 
 type NavigationItem = {
+  children?: NavigationChild[];
   href: string;
   icon: ComponentType<IconProps>;
   label: string;
   section?: ActiveSection;
+};
+
+type NavigationChild = {
+  href: string;
+  key: "math" | "chinese";
+  label: string;
 };
 
 type CurrentAccount = {
@@ -76,6 +84,10 @@ export const adminNavigationGroups: Array<{
         icon: ClockCounterClockwise,
         label: "学习记录",
         section: "learning",
+        children: [
+          { href: "/learning/math", key: "math", label: "数学学习记录" },
+          { href: "/learning/chinese", key: "chinese", label: "语文学习记录" },
+        ],
       },
     ],
   },
@@ -138,6 +150,7 @@ function weekRangeLabel() {
 
 export function AdminShell({
   active,
+  activeLearningSubject,
   children,
   childOptions = [],
   childName = "家庭空间",
@@ -191,19 +204,50 @@ export function AdminShell({
               {group.items.map((item) => {
                 const Icon = item.icon;
                 const selected = item.section === active;
+                const subitems = item.children ?? [];
                 return (
-                  <Link
-                    className={selected ? "nav-item active" : "nav-item"}
-                    href={childScopedHref(item.href, selectedChildId)}
+                  <div
+                    className="nav-item-wrap"
                     key={`${group.label}-${item.label}`}
-                    aria-current={selected ? "page" : undefined}
                   >
-                    <Icon size={19} weight={selected ? "fill" : "regular"} />
-                    <span>{item.label}</span>
-                    {selected ? (
-                      <CaretRight className="nav-caret" size={15} />
+                    <Link
+                      className={selected ? "nav-item active" : "nav-item"}
+                      href={childScopedHref(item.href, selectedChildId)}
+                      aria-current={selected ? "page" : undefined}
+                    >
+                      <Icon size={19} weight={selected ? "fill" : "regular"} />
+                      <span>{item.label}</span>
+                      {subitems.length > 0 ? (
+                        <CaretDown className="nav-caret" size={15} />
+                      ) : selected ? (
+                        <CaretRight className="nav-caret" size={15} />
+                      ) : null}
+                    </Link>
+                    {selected && subitems.length > 0 ? (
+                      <div
+                        className="nav-subitems"
+                        aria-label={`${item.label}子菜单`}
+                      >
+                        {subitems.map((subitem) => {
+                          const subSelected =
+                            activeLearningSubject === subitem.key;
+                          return (
+                            <Link
+                              className={subSelected ? "active" : ""}
+                              href={childScopedHref(
+                                subitem.href,
+                                selectedChildId,
+                              )}
+                              key={subitem.key}
+                              aria-current={subSelected ? "page" : undefined}
+                            >
+                              <span>{subitem.label}</span>
+                            </Link>
+                          );
+                        })}
+                      </div>
                     ) : null}
-                  </Link>
+                  </div>
                 );
               })}
             </div>

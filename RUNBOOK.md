@@ -3,8 +3,32 @@
 ## 1. 服务概览
 
 - 服务：家庭 AI 学习助手（目标包括 Flutter 孩子端、Web/PWA、FastAPI/Worker、PostgreSQL、Redis、S3/MinIO 和 AI Provider）。
-- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.17.1`/`0038_classical_poem_options`；API/Web/worker 健康，已审核语文教材只保留标题、连续诗句和全部选项均通过确定性目录的六首 21 道古诗题。没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
+- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.17.2`/`0038_classical_poem_options`；API/Web/worker 健康，已审核语文教材只保留标题、连续诗句和全部选项均通过确定性目录的六首 21 道古诗题。没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
 - Owner/值班：`TBD（项目 Owner/运维负责人在 staging 前确认）`。
+
+## 2026-09-05 GitHub Actions 服务镜像发布
+
+- 构建：`quality` Workflow 在 `master` 或 `v*` 标签的契约、API、Web 和隔离 Chromium 作业全部通过后，使用仓库 `GITHUB_TOKEN` 的最小 `packages: write` 权限向 GHCR 发布 API/Web 的 `linux/amd64`、`linux/arm64` 镜像，并附带 OCI provenance 与 SBOM；Pull Request 不发布。
+- 镜像：`ghcr.io/yubinhong/aistudy-api` 同时供 `migrate`、`api` 和四个 worker 使用，`ghcr.io/yubinhong/aistudy-web` 供 Web 使用。`master` 发布 `latest`/`sha-*`，`v*` 发布版本/`sha-*`。
+- 部署：先完成备份恢复验证，在远端 `.env` 将 `STUDY_API_IMAGE` 和 `STUDY_WEB_IMAGE` 固定到同一次发布的相同版本或 `sha-*` 标签，再运行 `docker compose pull` 与 `docker compose up -d`。私有 Package 只允许部署主机使用 `read:packages` 凭据登录 GHCR。
+- 回滚：同时固定回上一个已验证的 API/Web 标签并重新拉取、启动；数据库仍只前向修复，不 downgrade、不删除 Attempt/AuditEvent 或其他学习事实。
+- 当前状态：仓库本地已配置该链路，但本轮未推送、未触发 GitHub Actions、未发布首批 GHCR 镜像；Ubuntu 的家长学习记录增量另按下方白名单使用本地 legacy builder 部署，未切换到 GHCR 运行容器。
+
+### 2026-09-05 家长后台分学科学习记录部署记录
+
+- 范围：部署 API 的语文家长学习记录查询、Web 的数学/语文学习记录子菜单与页面、OpenAPI 契约；没有新增迁移，不修改 PostgreSQL、MinIO、Redis 数据或英语开关。
+- 备份：`/home/syin/study-backups/20260905T033939Z`；隔离恢复验证通过，包含 39 张 PostgreSQL public 表和 729 个 MinIO 快照文件。远端旧运行源码保存在 `/home/syin/study-source-backups/20260905T034032Z`。
+- 发布：保留远端 `.env` 和数据卷，仅按白名单同步 11 个 API/Web/契约文件；使用 `DOCKER_BUILDKIT=0` 构建 API 镜像 `4ed7303ec283`、Web 镜像 `197ab5fa0402`，再以 `--no-deps --force-recreate` 依次替换 API 和 Web。迁移检查仍为 `0038_classical_poem_options (head)`。
+- 验收：API/Web 容器 healthy；Ubuntu 本机和局域网 `192.168.1.4:8000/3000/healthz` 均返回 `200`；未登录数学/语文页面均返回 `307` 登录跳转，未登录语文记录 API 返回 `401`；API 返回版本 `0.17.2`，容器内语文源码 SHA-256 与本地一致，OpenAPI operation id 为 `getChineseLearningDetails`。其余 7 个 Compose 服务保持运行，MinIO `9000` 未向宿主发布。
+- 未执行与回滚：未使用 Ubuntu 真实账号浏览器或真实设备回归，未创建新 commit/tag。回滚时恢复上述源码目录并只重建 API/Web，不执行数据库 downgrade；若确认数据损坏，再使用已验证备份恢复。
+
+## 2026-09-03 Ubuntu Docker 缓存定时清理
+
+- 脚本：`infra/compose/scripts/cleanup-docker-cache.sh`。默认只删除 168 小时前的未使用构建缓存和悬空镜像，明确不清理卷、容器、网络或仍有标签的镜像；保留时间不得短于 24 小时。
+- 检查：运行 `infra/compose/scripts/cleanup-docker-cache.sh --check` 只验证 Docker 权限、daemon、锁和配置，不执行删除。执行日志使用 systemd journal 标签 `study-docker-cache-cleanup`，可用 `journalctl -t study-docker-cache-cleanup` 查看。
+- 调度：Ubuntu 主机为 UTC；`syin` 用户 crontab 使用 `0 16 * * *`，对应北京时间每天 `00:00`。脚本自身用 `/tmp/study-docker-cache-cleanup.lock` 防止并发。
+- 部署记录：精简 Ubuntu 原先没有 `crontab`，已安装官方 `cron 3.0pl1-184ubuntu2` 并启用 `cron.service`；服务当前为 `enabled/active`，crontab 标记块计数为 1。远端 `--check` 已写入 journal，未提前执行真实清理；9 个 Compose 容器保持运行。
+- 停用/回滚：从 `crontab -e` 删除 `# BEGIN STUDY DOCKER CACHE CLEANUP` 到 `# END STUDY DOCKER CACHE CLEANUP` 标记块即可停用；确认不再被 cron 引用后可删除远端脚本。已清理缓存不可原地恢复，但可由后续构建或拉取重新生成，不影响 PostgreSQL/MinIO 数据卷。
 - 用户影响：服务中断会阻止同步、拍题、AI 提示和周报；孩子端必须保留离线任务/作答，不能因服务中断丢学习记录。
 - 外部依赖：单一获批云视觉 Provider、Tutor Provider、可选本地 Qwen 模型镜像/权重、HMS（或应用内提醒）和对象存储；具体云供应商 `TBD`。本地 OCR 仅是目标 PrivacySanitizer 的隐私检测依赖，不是外部 Provider。
 - Dashboard/日志/Trace：目标为 OpenTelemetry 接入批准的可观测平台；链接和查询 `TBD`。
@@ -73,7 +97,7 @@ GitHub Actions Android APK 构建、稳定签名 Secret、Artifact 校验/安装
 
 ### 当前环境
 
-- local：`infra/compose/compose.yml` 已编排 PostgreSQL、Redis、MinIO、API、家长 Web、一次性 Alembic migration、AI worker 和可切换的 llama.cpp/Qwen 本地模型服务；Apple Silicon `linux/arm64` 调试镜像构建成功。`STUDY_LOCAL_MODEL_ENABLED=false` 时本地模型容器保持空闲，路由读取 NewAPI；设置为 `true` 时所有当前 AI 请求只走 Compose 内部本地模型，模型缓存写入独立持久卷且不发布推理端口。
+- local：`infra/compose/compose.yml` 已编排 PostgreSQL、Redis、MinIO、API、家长 Web、一次性 Alembic migration、AI worker 和可切换的 llama.cpp/Qwen 本地模型服务；应用服务现在从 GHCR 拉取匹配宿主架构的镜像，本地源码调试使用各子项目标准命令。`STUDY_LOCAL_MODEL_ENABLED=false` 时本地模型容器保持空闲，路由读取 NewAPI；设置为 `true` 时所有当前 AI 请求只走 Compose 内部本地模型，模型缓存写入独立持久卷且不发布推理端口。
 - Ubuntu 自用验收：宿主为 Ubuntu 24.04/x86_64、12 GB 内存/8 核，远端 `infra/compose/.env` 权限 600。2026-08-24 备份 `/home/syin/study-backups/20260824T024445Z` 已隔离恢复验证 39 张 PostgreSQL public 表和 353 个 MinIO 文件；API/OpenAPI `0.17.0`、迁移 `0036_task_session_progress`、PostgreSQL、MinIO、Redis、Web 和四个 worker 健康。Qwen3.5-4B Q4_K_M 在 4 核下视觉 synthetic 600 秒内不收敛，8 核下耗时 373.128 秒且生成到 2048 token 上限后仍因 Schema 无效失败；当前 `STUDY_LOCAL_MODEL_ENABLED=false`、模型容器已停止并保留缓存，运行态选择 `newapi`。回退后 synthetic 数学文本 Schema smoke 3.591 秒通过，宿主约 10 GiB available、Swap 为 0；真实 PDF、账号浏览器和设备未验证。
 - 真机拍题当前事实：API/Flutter/Compose/Ubuntu 已切换为 App 携带 Session 向 API 上传，且 Compose 不发布 MinIO `9000`。最新 iPad Release `Runner.app` 已安装到无线设备 `00008110-0011356E0E41801E`，但 iOS 首次启动要求用户在“设置 → 通用 → VPN 与设备管理”显式信任开发者 Team `VZ59988J63`；信任后仍需执行拍题、权限、弱网和重启验收。Provider HTTP `402` 只表示 NewAPI 余额/模型额度不可用，不应误判为上传或 MinIO 故障。
 - staging：未建立。
@@ -167,7 +191,8 @@ STUDY_LOCAL_MODEL_BASE_URL=http://local-model:8080/v1
 cp infra/compose/.env.example infra/compose/.env
 openssl rand -hex 32
 docker compose -f infra/compose/compose.yml config
-docker compose -f infra/compose/compose.yml up -d --build
+docker compose -f infra/compose/compose.yml pull
+docker compose -f infra/compose/compose.yml up -d
 docker compose -f infra/compose/compose.yml ps
 curl http://127.0.0.1:${WEB_PORT:-3000}/healthz
 ```
@@ -195,9 +220,7 @@ uv run python scripts/run_ocr_worker.py --watch
 
 ### staging/production 部署
 
-```text
-TBD：当前提供已验证的单家庭自托管 Compose；公网暴露、CI/CD、定时异机备份、监控和多环境发布流程尚未决定。
-```
+当前已配置 GitHub Actions 生成版本化 GHCR 镜像，但 staging/production 平台仍未建立。公网暴露、自动部署、定时异机备份、监控和多环境发布流程尚未决定；现有能力只覆盖人工批准的单家庭自托管 Compose 拉取式部署。
 
 未获用户明确授权不得部署、修改云资源、迁移生产数据或发送外部通知。
 

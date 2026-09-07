@@ -28,6 +28,8 @@
 
 提议选择选项 3。local、staging、production 使用独立账户、网络、数据库、对象 bucket 与密钥；CI 生成版本化产物并以最小权限部署，生产凭据不进入本地或 PR 作业。应用/Worker 输出允许字段白名单的结构化日志和 OpenTelemetry 指标/追踪，记录不可逆家庭/设备标识、版本、延迟、队列和成本，不记录儿童原文/图片/令牌。发布采用兼容性检查、迁移前置检查、合成烟雾、功能降级和优先前向修复；staging 必须完成授权、离线、AI、删除/导出和恢复演练。具体平台、Secret Manager、告警数值、RPO/RTO 与值班 Owner 待批准。
 
+2026-09-05 自用交付增量：项目 Owner 批准先将 API/Web 镜像构建迁移到 GitHub Actions。既有质量作业通过后，CI 使用最小 Package 写权限发布 GHCR 多架构镜像；Compose 通过版本或提交标签拉取同批 API/Web 产物，不再在部署主机本地构建。该增量不代表 staging/production 平台、Secret Manager、SLO/RPO/RTO 或公网发布已经批准。
+
 ## Consequences
 
 ### Positive

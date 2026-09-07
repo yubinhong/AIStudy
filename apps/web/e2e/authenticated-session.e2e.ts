@@ -253,10 +253,23 @@ test("真实 Cookie 会话完成首次改密、跨家庭角色和双孩子作用
 
   await test.step("学习记录筛选区在桌面和窄屏均完整可见", async () => {
     await page.setViewportSize({ width: 1280, height: 800 });
-    await page.goto("/learning");
+    await page.goto("/learning/math");
     await expect(
-      page.getByRole("heading", { name: "学习记录", exact: true }),
+      page.getByRole("heading", { name: "数学学习记录", exact: true }),
     ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "数学学习记录", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "语文学习记录", exact: true }),
+    ).toBeVisible();
+
+    await page.getByRole("link", { name: "语文学习记录", exact: true }).click();
+    await expect(page).toHaveURL(/\/learning\/chinese\?child=/);
+    await expect(
+      page.getByRole("heading", { name: "语文学习记录", exact: true }),
+    ).toBeVisible();
+    await page.goto("/learning/math");
 
     const periodLabel = page.getByText("时间范围", { exact: true });
     const toolbar = page.locator(".learning-history-toolbar");

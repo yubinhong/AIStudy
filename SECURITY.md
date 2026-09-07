@@ -123,7 +123,7 @@ ADR-0020/0023 与 PLAN-0017/0018 已进入实现：`0020` 把视觉四态候选�
 - 依赖准入：说明用途、许可证、维护状态、替代方案、权限、体积/成本和已知漏洞；核心依赖/Provider 需要 ADR。
 - 漏洞扫描：具体命令 `TBD（代码和镜像建立后写入 TESTING.md/CI）`；合并/发布前扫描直接依赖、传递依赖、容器和密钥。
 - 修复 SLA：Critical 在确认后立即阻断发布并启动处置；High 默认 7 天内修复或由 Owner 书面接受临时缓解；Medium/Low SLA `TBD`。
-- 构建：CI 使用最小权限、固定 action/镜像版本、受保护发布凭据；生产前决定 SBOM、来源证明和签名策略。
+- 构建：CI 使用最小权限、固定 action/镜像版本和仓库 `GITHUB_TOKEN` 发布 GHCR Package；只有通过质量门槛的 `master`/`v*` push 作业获得 `packages: write`，Pull Request 不发布。服务镜像生成 OCI provenance 与 SBOM；部署主机对私有 Package 只使用 `read:packages` 凭据，凭据不得写入 Compose `.env`。镜像签名、漏洞扫描和正式生产准入策略仍须在生产前批准。
 
 ## 7. 日志与审计
 

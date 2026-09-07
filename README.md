@@ -42,7 +42,7 @@ AIStudy 是给一个家庭自己使用的小学生学习助手。孩子在平板
 | 英语 | 暂未开放 |
 | 自用部署 | 已在家庭 Ubuntu 服务器运行；不等同于公开网站或商业服务 |
 
-Ubuntu 当前运行 API/OpenAPI `0.17.0`、迁移 `0036_task_session_progress`。服务器配有 12 GB 内存和 8 个 CPU 核心；本地 `Qwen3.5-4B Q4_K_M` 已完成测试但因视觉质量门禁失败而停止，当前 AI 请求使用现有 NewAPI 云端配置。跨设备任务位置、每天最多 3 项、未来任务保护、家长撤销、语文教材批准后自动古诗出题和看图写话安全降级由 tag `v0.17.0` 固化；可切换本地模型路由是后续增量。备份、恢复校验、模型测试、健康检查和仍待完成的设备/Provider 验证见 [RUNBOOK.md](RUNBOOK.md) 和 [TESTING.md](TESTING.md)。
+Ubuntu 当前运行 API/OpenAPI `0.17.2`、迁移 `0038_classical_poem_options`。服务器配有 12 GB 内存和 8 个 CPU 核心；本地 `Qwen3.5-4B Q4_K_M` 已完成测试但因视觉质量门禁失败而停止，当前 AI 请求使用现有 NewAPI 云端配置。跨设备任务位置、每天最多 3 项、未来任务保护、家长撤销、语文教材批准后自动古诗出题和看图写话安全降级已由版本标签固化。GitHub Actions/GHCR 服务镜像链路已提交，等待首次远端构建；Ubuntu 本次仍使用本地 legacy builder 部署。备份、恢复校验、模型测试、健康检查和仍待完成的设备/Provider 验证见 [RUNBOOK.md](RUNBOOK.md) 和 [TESTING.md](TESTING.md)。
 
 ## 家庭使用流程
 
@@ -67,9 +67,12 @@ cp infra/compose/.env.example infra/compose/.env
 
 编辑 `infra/compose/.env`，至少替换 PostgreSQL、MinIO 和 Session Secret。初次启动应保持所有外部 Provider 开关关闭。
 
+服务端镜像由 GitHub Actions 发布到 GHCR。公开 Package 可直接拉取；若 Package 为 private，先使用只具备 `read:packages` 的凭据登录 `ghcr.io`。正式升级应把 `.env` 中的 `STUDY_API_IMAGE` 和 `STUDY_WEB_IMAGE` 固定到同一个 `v*` 或 `sha-*` 标签，避免 `latest` 漂移。
+
 ```bash
 docker compose -f infra/compose/compose.yml config
-docker compose -f infra/compose/compose.yml up -d --build
+docker compose -f infra/compose/compose.yml pull
+docker compose -f infra/compose/compose.yml up -d
 docker compose -f infra/compose/compose.yml ps
 
 curl -fsS http://127.0.0.1:8000/healthz
@@ -94,6 +97,8 @@ Compose 支持在本地 Qwen 和现有 NewAPI 云端模型之间进行显式切�
 ## Android APK 与部署
 
 仓库提供 `Build Android APK` GitHub Actions：手动运行时生成保留 14 天的 Actions Artifact；推送 `v*` 标签时还会自动创建对应 GitHub Release，并上传三个 ABI APK、SHA-256 摘要和构建信息。工作流使用固定 Flutter `3.44.6`，发布 Job 才获得最小 `contents: write` 权限。
+
+`quality` GitHub Actions 在 `master` 或 `v*` 标签通过契约、API、Web 和隔离浏览器门槛后，发布 `ghcr.io/yubinhong/aistudy-api` 与 `ghcr.io/yubinhong/aistudy-web` 的 `linux/amd64`、`linux/arm64` 镜像。`master` 生成 `latest` 和 `sha-*`，版本标签生成同名版本和 `sha-*`；Pull Request 不获得 Package 写权限，也不发布镜像。
 
 未配置 Android 签名 Secrets 时，产物使用 runner 的 debug 证书，只适合家庭侧载验证；稳定升级和正式分发必须配置受控签名密钥并更换当前示例 application ID。GitHub Actions 操作、签名配置、APK 安装、Compose 服务端部署、升级和回滚见 [构建与自托管部署指南](docs/DEPLOYMENT.md)。
 

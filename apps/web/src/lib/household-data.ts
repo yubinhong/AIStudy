@@ -152,6 +152,36 @@ export async function loadLearningDetails(
   }
 }
 
+export async function loadChineseLearningDetails(
+  childId: string,
+  query: LearningDetailsQuery,
+): Promise<unknown[]> {
+  try {
+    const cookieStore = await cookies();
+    const session = cookieStore.get("study_session");
+    if (!session) return [];
+    const householdId = await loadCurrentHousehold(session.value);
+    if (!householdId) return [];
+    const search = new URLSearchParams({
+      from_at: query.fromAt,
+      limit: String(query.limit ?? 200),
+      to_at: query.toAt,
+    });
+    const response = await fetch(
+      `${apiBaseUrl}/households/${householdId}/children/${encodeURIComponent(childId)}/chinese/learning-details?${search}`,
+      {
+        headers: { Cookie: `study_session=${session.value}` },
+        cache: "no-store",
+      },
+    );
+    if (!response.ok) return [];
+    const payload: unknown = await response.json();
+    return Array.isArray(payload) ? payload : [];
+  } catch {
+    return [];
+  }
+}
+
 export function readString(record: unknown, key: string): string | null {
   if (typeof record !== "object" || record === null || !(key in record))
     return null;

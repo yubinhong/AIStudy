@@ -1,5 +1,6 @@
 """Household-scoped Chinese practice routes."""
 
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import UUID
 
@@ -11,6 +12,7 @@ from study_api.chinese_practice import (
     ChineseAttempt,
     ChineseAttemptRequest,
     ChineseContentItemView,
+    ChineseLearningDetail,
     ChinesePracticeRepository,
     ChineseReviewItem,
     ChineseSkill,
@@ -27,6 +29,10 @@ router = APIRouter(
 )
 Principal = Annotated[AuthenticatedPrincipal, Depends(get_principal)]
 IdempotencyKey = Annotated[str, Header(alias="Idempotency-Key", min_length=8, max_length=128)]
+
+CHINESE_HISTORY_DEFAULT_WINDOW = timedelta(days=30)
+CHINESE_HISTORY_MAX_QUERY_WINDOW = timedelta(days=31)
+CHINESE_HISTORY_RETENTION = timedelta(days=180)
 
 
 def _repository(request: Request) -> ChinesePracticeRepository:
@@ -82,6 +88,56 @@ def list_content(
         ChineseContentItemView.from_item(item)
         for item in repository.list_content(grade, skill, household_id, child_id)
     ]
+
+
+def _aware_utc(value: datetime, name: str) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise HTTPException(status_code=422, detail=f"{name} must include a timezone")
+    return value.astimezone(UTC)
+
+
+@router.get(
+    "/learning-details",
+    response_model=list[ChineseLearningDetail],
+    operation_id="getChineseLearningDetails",
+)
+def list_learning_details(
+    household_id: UUID,
+    child_id: UUID,
+    principal: Principal,
+    repository: Repository,
+    profiles: Profiles,
+    from_at: Annotated[datetime | None, Query()] = None,
+    to_at: Annotated[datetime | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 200,
+) -> tuple[ChineseLearningDetail, ...]:
+    _authorize(household_id, child_id, principal, profiles)
+    require_parent(principal.role)
+    now = datetime.now(UTC)
+    effective_to = _aware_utc(to_at, "to_at") if to_at is not None else now
+    effective_from = (
+        _aware_utc(from_at, "from_at")
+        if from_at is not None
+        else effective_to - CHINESE_HISTORY_DEFAULT_WINDOW
+    )
+    if effective_from >= effective_to:
+        raise HTTPException(status_code=422, detail="from_at must be before to_at")
+    if effective_to - effective_from > CHINESE_HISTORY_MAX_QUERY_WINDOW:
+        raise HTTPException(
+            status_code=422,
+            detail="Chinese learning history range cannot exceed 31 days",
+        )
+    if effective_from < now - CHINESE_HISTORY_RETENTION:
+        raise HTTPException(
+            status_code=422, detail="Chinese learning history is retained for 180 days"
+        )
+    return repository.learning_details(
+        household_id,
+        child_id,
+        from_at=effective_from,
+        to_at=effective_to,
+        limit=limit,
+    )
 
 
 @router.post("/attempts", response_model=ChineseAttempt, status_code=status.HTTP_201_CREATED)

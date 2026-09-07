@@ -1,8 +1,23 @@
 # TESTING.md
 
+## 2026-09-05 GitHub Actions 服务镜像发布
+
+- Workflow 静态检查：解析 `.github/workflows/ci.yml`，断言镜像发布 job 仅依赖全部质量 job、仅 push 发布、只在 job 级获得 `packages: write`，并覆盖 API/Web 两个 context、`linux/amd64,linux/arm64`、`sha-*`/版本/`latest`、provenance 和 SBOM。
+- Compose 配置：把 `infra/compose/compose.yml` 与脱敏 `.env.example` 复制到临时目录后执行 `docker compose config --quiet`；断言应用服务无 `build`，迁移/API/四个 worker 使用同一 `STUDY_API_IMAGE`，Web 使用 `STUDY_WEB_IMAGE`，且均启用 `pull_policy: always`。
+- 实际结果：Workflow YAML、Compose 展开、镜像映射断言和 `git diff --check` 通过。本轮未推送，故未运行 GitHub runner、多架构构建、GHCR push/pull 或 Ubuntu 部署；这些是首次发布的剩余验收。
+
+## 2026-09-03 Ubuntu Docker 缓存定时清理
+
+- 本地静态检查：`sh -n infra/compose/scripts/cleanup-docker-cache.sh`。
+- 行为检查：以临时假 Docker/日志命令验证 `--check` 不调用 prune、正常模式只调用 `builder prune --force --filter until=168h` 和 `image prune --force --filter until=168h`，并验证小于 24 小时的配置失败关闭。
+- Ubuntu 验收：远端执行 `--check`，复核脚本 SHA-256、执行权限、用户 crontab 唯一标记块及 `0 16 * * *` 调度；不提前运行真实清理。服务器时区为 UTC，该时间对应北京时间每天 `00:00`。
+- 实际结果：`sh -n`、`git diff --check` 和隔离行为检查通过；远端脚本权限为 `755`，SHA-256 为 `9671321203a0c5004d5dcf26176d20bdfc4916d5dfb99a2ac6fdb3f54ff336e0`，`--check` 通过并写入 journal。`cron.service` 为 `enabled/active`，标记块计数为 1，9 个 Compose 容器保持运行。
+
 ## 1. 当前状态与质量目标
 
-当前仓库已有 P0/P1 依赖清单、三类锁文件、核心测试和 CI 草案。API 的 Household/认证/学习/Capture/可信 Tutor/周报/导出、Mistake/Review closeout、教材 PDF-only 私有原页/多模态知识图谱、作答四态/推荐审批、Web/Flutter 入口、SQLite 任务位置与离线 Attempt/任务终态队列、服务端任务位置/容量/未来日期/撤销保护和 Compose 已验证；Android/iOS 构建及 PostgreSQL/MinIO 恢复已有记录。本地和 Ubuntu API/OpenAPI 均为 `0.17.1`、迁移头 `0038_classical_poem_options`。剩余是正式语文内容签核、真实 PDF/Provider 质量成本和完整设备 E2E 发布门槛。
+当前仓库已有 P0/P1 依赖清单、三类锁文件、核心测试和 CI 草案。API 的 Household/认证/学习/Capture/可信 Tutor/周报/导出、Mistake/Review closeout、教材 PDF-only 私有原页/多模态知识图谱、作答四态/推荐审批、Web/Flutter 入口、SQLite 任务位置与离线 Attempt/任务终态队列、服务端任务位置/容量/未来日期/撤销保护和 Compose 已验证；Android/iOS 构建及 PostgreSQL/MinIO 恢复已有记录。本地和 Ubuntu API/OpenAPI 均为 `0.17.2`、迁移头 `0038_classical_poem_options`。2026-09-04/05 新增并部署家长后台数学/语文学习记录分栏及语文答题记录投影；完整 API/Web 回归、登录态浏览器 E2E、生产构建、Ubuntu 备份恢复和 LAN health 已通过，真实账号/设备回归仍待执行。剩余是正式语文内容签核、真实 PDF/Provider 质量成本和完整设备 E2E 发布门槛。
+
+2026-09-04 iPhone 11 本地网络回归：iOS `26.6.1` 真机在权限列表尚未登记 App 时稳定复现 `/healthz` 的 `errno 65: No route to host`，Ubuntu 未收到请求；API 容器、本机/LAN `8000` 和 Mac 跨网段访问均正常。孩子端现于健康检查前通过原生 `NWConnection` 连接用户填写的实际家庭服务器，等待 iOS 本地网络权限决定后再发 HTTP 请求；修复包以 Personal Team 签名覆盖安装，系统授权后 Ubuntu 记录 `192.168.1.100` 的 `/healthz` 为 `200 OK`。定向 Flutter `37 passed`、完整 Flutter `74 passed`、Analyze 和 iPhone Release 签名构建通过；未输入账号、未读取儿童数据，也未执行登录、相机/相册或弱网 E2E。
 
 2026-08-30 家长首页简化：移除语文技能报告卡片与 `skill-report` 请求；`due_only=true` 返回的开放错题再按 `Asia/Shanghai` 自然日过滤，只显示当天到期项。日期边界回归 `5 passed`，Web 全量 Vitest `37 passed`，Prettier、ESLint、TypeScript 和 Next production build 通过。本机 Node `20.17.0` 低于锁定 `>=24.18.0 <25`，产生 engine warning。Ubuntu 以已验证备份 `/home/syin/study-backups/20260830T004506Z` 为恢复依据完成两个孩子历史清理；全部目标学习表与已登记拍题对象为 0，2 个孩子档案/3 个账号/教材/快照/审核内容/审计记录保留，API/Web/全部 worker 健康。
 
@@ -143,7 +158,7 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | 本地模型路由 | `cd services/api && uv run pytest tests/test_newapi_provider.py -q` | Provider、模型或环境路由变更 | 通过（2026-08-24：`24 passed`；覆盖本地/云端互斥、Qwen 关闭 reasoning、2048 输出上限、600 秒本地上限和本地失败不重试） |
 | 本地 Qwen Compose smoke | `docker compose -f infra/compose/compose.yml up -d local-model api image-analysis-worker curriculum-analysis-worker`；检查 `local-model /health`、`/v1/models` 和 synthetic text/vision/schema 请求 | `STUDY_LOCAL_MODEL_ENABLED=true` 或 llama.cpp/GGUF/硬件变更 | 部分通过后关闭（2026-08-24，Ubuntu 12 GB）：镜像、Q4_K_M 权重和 BF16 projector 下载/加载，health、alias、multimodal、`local_qwen` 选择、文本 JSON 和私有端口通过。4 核下 synthetic 大图 600 秒内不收敛；8 核下短文本 1.387 秒，完整视觉请求 373.128 秒、生成 2048 tokens 后以 `provider_response_schema_invalid` 失败，模型约 5.87 GiB、无 Swap。视觉 Schema 门禁未通过，Ubuntu 已恢复云端并停止模型容器；详见 `docs/local-qwen-evaluation-report-2026-08-24.md`，未使用真实儿童数据 |
 | 云端 Provider 回退 smoke | 关闭本地开关，重新创建 API/ImageAnalysis/CurriculumAnalysis worker；检查运行时 Provider 并执行 synthetic 数学文本 Schema 请求 | 本地模型回退云端或云端配置变更 | 通过（2026-08-24，Ubuntu）：运行时 `provider=newapi` 且本地模型容器 `Exited (0)`；不含儿童数据的 synthetic 数学文本在 3.591 秒内返回合法 3 步结构，API/Web/四个 worker 健康，宿主约 10 GiB available、Swap 为 0 |
-| Compose 完整启动 | `docker compose -f infra/compose/compose.yml up -d --build` | API/数据/跨模块变更 | 通过（2026-08-24，Ubuntu 24.04 x86_64；API `0.17.0`、Web、本地 Qwen、四个 worker 运行，迁移 `0036`，API/Web/model health 通过；PostgreSQL/MinIO/Redis 数据卷保留） |
+| Compose 完整启动 | `docker compose -f infra/compose/compose.yml pull && docker compose -f infra/compose/compose.yml up -d` | API/数据/跨模块变更 | 待首次 GHCR 发布后运行；此前 2026-08-24 Ubuntu 本地构建链路通过，当前运行态为 `0.17.2/0038`，本轮只完成拉取式 Compose 静态验证 |
 | Web 镜像 | `cd apps/web && docker buildx build --platform=linux/arm64 --load -t study-web:arm64-debug .` | Web/Compose 变更 | 通过（2026-09-03，Ubuntu x86_64 legacy builder；Next.js standalone 镜像使用 Node 24.18.0、pnpm 11.7.0，镜像 `d03f4fea…`；Web/API 本机和 LAN health、运行 CSS 标识及其他服务未重启通过） |
 | Web 登录态 E2E | `cd apps/web && pnpm test:e2e:install && pnpm test:e2e` | 认证、Cookie/CSRF、多家庭/多孩子或 Web 路由变更 | 通过（2026-09-03；Chromium `1 passed`，增加 `1280×800` 时间标签不裁切和 `390×844` 无横向溢出断言；隔离内存 API，不读取 Ubuntu 数据；本机 Node 22.23 低于锁定 Node 24.18，仅产生 engines warning） |
 | 集成环境 | `docker compose -f infra/compose/compose.yml up -d postgres minio` | API/数据/跨模块变更 | 当前通过（2026-07-13；旧配置发布 5432/9000）。PLAN-0012 目标要求 MinIO 仅在 Compose 内部网络可达，并增加宿主/LAN `9000` 不开放的断言 |

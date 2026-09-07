@@ -8,13 +8,19 @@
 - 一句话目标：复用家庭现有设备，以数学错题闭环为主线，并通过显式多学科核心逐步增加语文确定性练习。
 - 当前阶段：`P1 MULTISUBJECT FOUNDATION / CHINESE MVP / GATED ENGLISH LAST`
 - 主要用户：小学阶段孩子与家长/监护人；辅助角色为家庭内容维护者和项目维护者。
-- 生产状态：`SELF_HOSTED_DEPLOYED`（Ubuntu 自用 Compose 运行 API/OpenAPI `0.17.1`/`0038_classical_poem_options`；本地 Qwen 因视觉质量门禁失败已停止，当前 AI 路由为现有 NewAPI 云端配置；API/Web、迁移和四个常驻 worker 健康，不等同于公网/商业生产批准）
-- 当前版本：本地和 Ubuntu API/OpenAPI 均为 `0.17.1`、迁移头 `0038_classical_poem_options`；远端发布标签为 `v0.17.1`（`e44a2b1`）。
-- 最近更新：`2026-09-03`
+- 生产状态：`SELF_HOSTED_DEPLOYED`（Ubuntu 自用 Compose 运行 API/OpenAPI `0.17.2`/`0038_classical_poem_options`；本地 Qwen 因视觉质量门禁失败已停止，当前 AI 路由为现有 NewAPI 云端配置；API/Web、迁移和四个常驻 worker 健康，不等同于公网/商业生产批准）
+- 当前版本：本地和 Ubuntu API/OpenAPI 均为 `0.17.2`、迁移头 `0038_classical_poem_options`；本次发布 tag 为 `v0.17.2`。
+- 最近更新：`2026-09-07`
 
 ## 2. 当前工作状态
 
+- 2026-09-05 本地已将服务镜像交付切换为 GitHub Actions + GHCR：`quality` 仅在全部质量 job 通过后的 `master`/`v*` push 发布 API/Web amd64/arm64 镜像，Compose 的迁移/API/四个 worker 复用同一 API 镜像并取消本地构建。正式自用部署应同时固定两个镜像的同一版本或 `sha-*` 标签。本轮 GHCR 链路未推送、未产生首批 Package；Ubuntu 的家长学习记录增量另按白名单使用 legacy builder 完成部署，现有运行态详见 `RUNBOOK.md` 的 2026-09-05 部署记录。
+
+- 2026-09-03 Ubuntu 自用服务器已部署每日 Docker 缓存维护：只清理 7 天前的未使用构建缓存和悬空镜像，不触碰卷、容器、网络或仍有标签的镜像。服务器为 UTC，`cron.service` 已安装并启用，`syin` 的 `16:00 UTC` 任务对应北京时间次日 `00:00`；远端检查与 journal 留痕通过，未提前执行真实清理，Compose 容器未重启。
+
 - 2026-09-03 家长后台首轮视觉改版已由提交 `be3bd70` 推送并定向部署 Ubuntu Web：侧栏、顶部栏与主内容区使用新的后台层级，学习记录页修复“时间范围”裁切并压缩空状态。桌面/手机登录态布局断言、完整 Chromium E2E、Web 37 项单元测试、格式/Lint/类型/build 通过；远端锁定 Node 24 镜像、Web/API 本机和 LAN health、运行 CSS 标识通过，API、数据库、MinIO 和四个 worker 未重启。未使用 Ubuntu 真实账号或设备回归。
+
+- 2026-09-04/05 家长后台学习记录已按学科拆分并部署 Ubuntu：侧栏“学习记录”展开“数学学习记录”和“语文学习记录”，旧 `/learning` 保持数学兼容入口。数学继续读取 `verified_questions`/`tutor_turns`；新增家长专用 `/chinese/learning-details` 查询语文 Attempt，显示孩子答案、确定性对错、错误时正确答案、耗时和当前复习状态。API 非集成 `258 passed, 32 deselected`、PostgreSQL 集成 `32 passed`、Web Vitest `38 passed`、TypeScript、ESLint、Prettier、production build、登录态 Chromium E2E `1 passed`、OpenAPI YAML/operation id、Ubuntu 备份恢复和 LAN health 均通过。发布版本为 `v0.17.2`，没有新增数据库迁移，英语仍关闭；Ubuntu 真实账号/设备复核仍待执行。
 
 - 2026-08-29/30 已修复古诗抽查把《剪窗花》等童谣/韵文作为古诗的问题：Provider `poem` 只作为候选，`classical-poem-catalog.v2` 对标题、连续题干/答案和全部可见选项确定性验证，发布、读取和提交均失败关闭。Ubuntu `0037` 退役 157 道错误题，`0038` 再将 21 道保留题的 42 个童谣干扰项替换为古诗句；Attempt/Review 不变。Flutter 每次进入前重新读取当前题库，避免驻留页面复用旧题。Nova 9 已覆盖安装并保留登录态，迁移后 12 轮抽查覆盖咏鹅、画、悯农（其二）、江南、古朗月行、风，所有题干/下一句/选项正确且未提交作答。`v0.17.1` 已推送 GitHub，质量与 Android Actions 成功，Release 含 3 个 ABI APK、校验和及构建元数据。
 
@@ -26,7 +32,8 @@
 
 - 活动计划：`TASK-0012` / `PLAN-0031` 的隔离 Chromium 登录态 E2E 已完成，覆盖首次改密、Cookie/CSRF/撤销、跨家庭角色和双孩子学科/切换，并加入 CI；`PLAN-0030` 多学科/语文切片和 Ubuntu `0.17.0/0036` 已发布，本机 PostgreSQL 语文并发 Attempt/Review 合并、导出和级联清理已通过。`PLAN-0032`/`PLAN-0033` 的本地代码已扩展到语文到期复习、技能报告、古诗抽查和看图写话，历史原创演示已在 `0033` 退役，但正式教研/版权签核仍未完成。英语保持供应商中立锁定框架并排最后。语文真实 Provider/PDF、Ubuntu 真实账号浏览器和设备 E2E 待完成。
 - 任务状态：ADR-0018/PLAN-0012 已完成本地与 Ubuntu API/Flutter/Compose/契约迁移；Ubuntu 不再依赖预签名直传，MinIO `9000` 未向宿主/LAN 暴露。最终真机仍未回归。
-- 当前分支：`master`；本地与 Ubuntu API/OpenAPI `0.17.1`、`0038_classical_poem_options` 已完成代码、本机/Ubuntu/Nova 9 验证，并已提交、推送和发布 tag `v0.17.1`。
+- 2026-09-04 iPhone 11：重新签名安装后复现 iOS 本地网络权限未登记导致的 `errno 65`；Flutter/iOS 已在健康检查前用 `NWConnection` 对实际家庭服务器触发授权并等待结果。修复包覆盖安装后，Ubuntu 收到 iPhone `192.168.1.100` 的 `/healthz` 并返回 200。登录、相机/相册、弱网和完整设备生命周期仍未验收。
+- 当前分支：`master`；本地与 Ubuntu API/OpenAPI `0.17.2`、`0038_classical_poem_options` 已完成代码、本机/Ubuntu/Nova 9 验证，并已提交、推送和发布 tag `v0.17.2`。
 - 当前重点：完成正式语文内容具名教研/版权签核、真实 Provider/PDF 质量与成本评测、Ubuntu 真实账号浏览器和设备 E2E；`PLAN-0034/ADR-0028` 的本地 Qwen 路由和 12 GB Ubuntu 部署能力仍保留，但 4 核下 `question-extraction.v1` synthetic 大图 600 秒内不收敛，8 核下耗时 373.128 秒且生成到 2048 token 上限后仍因 `provider_response_schema_invalid` 失败。Ubuntu 已将开关恢复为 `false` 并停止本地模型，当前运行时为 `newapi`；切换后的 synthetic 数学文本 Schema smoke 3.591 秒通过，详见 `docs/local-qwen-evaluation-report-2026-08-24.md`。本轮未连接手机或平板。英语继续排最后。既有数学教材原页/知识审核、推荐详情和学习记录继续按已部署合同运行。
 - 已完成：本地与 Ubuntu 已部署的既有 OpenAPI/迁移、视觉四态候选与确认、可信 VerifiedQuestion → 云端递进 L1/L2 → 完整步骤/答案/验算、Mistake/Review closeout、语文确定性 Content/Attempt/Review、古诗抽查和看图写话引导，以及 PDF 私有原页、分批多模态教材理解、全书知识图谱、家长批准、“批准知识点 + 全部开放错题”的来源受限推荐和 180 天详细学习历史策略；本地新增任务会话位置、容量/未来日期/撤销保护。
 - 2026-08-16 语文 `v0.16.0` 已部署：`0033` 退役六项语文演示并从已审核教材逐行古诗生成抽查；`0034` 增加独立 `picture_writing_guides` 与 `picture-writing-guide.v1`。看图写话只消耗用户确认的脱敏派生图，Provider 只返回观察/提问/句式支架，绝不走数学抽题、生成范文或评分。Ubuntu 对无人物、无文字的合成花园图完成一次真实 Provider Schema 冒烟；不代表儿童图片、质量、成本或完整设备验收。

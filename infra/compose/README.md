@@ -1,17 +1,18 @@
 # Docker Compose 自托管部署
 
-这套 Compose 适合单家庭、自用部署，包含 PostgreSQL、Redis、私有 MinIO、FastAPI API、家长 Web、数据库迁移一次性服务、AI worker、可切换的 llama.cpp 本地模型服务和数据生命周期 worker。Compose 会从同目录的 `.env` 注入服务变量，不需要在启动命令中传入 `--env-file`。云端 NewAPI 仍由部署者单独提供；API 通过 OpenAI-compatible `/v1/chat/completions` 访问。
+这套 Compose 适合单家庭、自用部署，包含 PostgreSQL、Redis、私有 MinIO、FastAPI API、家长 Web、数据库迁移一次性服务、AI worker、可切换的 llama.cpp 本地模型服务和数据生命周期 worker。Compose 会从同目录的 `.env` 注入服务变量，不需要在启动命令中传入 `--env-file`。API/worker 和 Web 直接拉取 GitHub Actions 发布到 GHCR 的多架构镜像，不在部署主机本地构建。云端 NewAPI 仍由部署者单独提供；API 通过 OpenAI-compatible `/v1/chat/completions` 访问。
 
-当前本地和 Ubuntu 服务端状态：API `0.17.0`、迁移头 `0036_task_session_progress`；本次 Ubuntu 发布先来自未提交工作区，现已由 `v0.17.0` 提交/tag 固化，详细备份和验收记录见根目录 `RUNBOOK.md`。账号密码/可撤销会话、PostgreSQL 业务事实、MinIO、ImageAnalysis/VerifiedQuestion/TutorTurn、独立 `picture_writing_guides`、周报/导出、家长 Web、worker 和备份恢复脚本已实现。真实自动视觉检测器、正式监控和四设备回归仍未完成，因此本文件提供的是自用部署说明，不是公网或商业生产发布证明。
+当前本地和 Ubuntu 服务端状态：API `0.17.2`、迁移头 `0038_classical_poem_options`；2026-09-05 家长后台数学/语文学习记录增量已从未提交工作区白名单部署，详细备份和验收记录见根目录 `RUNBOOK.md`。本次仍使用 Ubuntu 本地 legacy builder，未切换 GitHub Actions/GHCR 镜像链路。账号密码/可撤销会话、PostgreSQL 业务事实、MinIO、ImageAnalysis/VerifiedQuestion/TutorTurn、独立 `picture_writing_guides`、周报/导出、家长 Web、worker 和备份恢复脚本已实现。真实自动视觉检测器、正式监控、真实账号和四设备回归仍未完成，因此本文件提供的是自用部署说明，不是公网或商业生产发布证明。
 
 ## 1. 前置条件
 
 - Docker Desktop 或 Docker Engine + Compose v2。
-- Linux x86_64 或 ARM64 Docker；Apple Silicon 上默认构建原生 `linux/arm64` 调试镜像，不再强制 amd64 模拟。
+- Linux x86_64 或 ARM64 Docker；GHCR manifest 会为宿主自动选择 `linux/amd64` 或 `linux/arm64` 镜像。
+- 能访问 GHCR。Package 为 private 时，部署主机须预先使用只具备 `read:packages` 的 GitHub 凭据执行 `docker login ghcr.io`；凭据不得写入 `.env`、仓库或部署日志。
 - NewAPI 已单独部署，并有支持图片输入的 OpenAI-compatible 视觉模型；没有 NewAPI 时仍可启动 API，但图片分析保持关闭。
-- x86_64 构建需要留出模型构建所需磁盘空间和网络。Paddle 模型只在 amd64 镜像构建阶段下载并校验 SHA-256，运行时不会自动下载或更新。
+- 部署主机需要为应用镜像和本地模型缓存预留磁盘，并能拉取所需 registry。Paddle 模型只在 GitHub Actions 的 amd64 镜像构建阶段下载并校验 SHA-256，部署和运行时不会自动下载或更新。
 
-Apple M4 本身是 ARM64，PaddlePaddle 3.3.1 也提供 macOS ARM64 wheel；但 Docker Desktop 容器运行的是 Linux ARM64，当前锁定版本没有对应的 Linux aarch64 wheel。因此原生 ARM Compose 调试镜像包含 API、迁移和 NewAPI ImageAnalysis worker，但不包含旧本地 Paddle OCR 或五份 Paddle 模型。需要在 M4 上调试完整 Paddle 路线时，应让 PostgreSQL/Redis/MinIO 留在 Compose，API/OCR worker 使用仓库 macOS Python 环境原生运行；也可显式构建 `linux/amd64` 镜像进行模拟，但速度较慢。不得把 ARM 调试镜像描述成已验证的本地 Paddle 脱敏运行时。
+Apple M4 本身是 ARM64，PaddlePaddle 3.3.1 也提供 macOS ARM64 wheel；但 Docker Desktop 容器运行的是 Linux ARM64，当前锁定版本没有对应的 Linux aarch64 wheel。因此 GHCR 的 ARM 镜像包含 API、迁移和 NewAPI ImageAnalysis worker，但不包含旧本地 Paddle OCR 或五份 Paddle 模型。需要在 M4 上调试完整 Paddle 路线时，应让 PostgreSQL/Redis/MinIO 留在 Compose，API/OCR worker 使用仓库 macOS Python 环境原生运行；也可手工运行 `linux/amd64` 镜像进行模拟，但速度较慢。不得把 ARM 镜像描述成已验证的本地 Paddle 脱敏运行时。
 
 ## 2. 配置
 
@@ -26,6 +27,7 @@ openssl rand -hex 32
 - 替换 `POSTGRES_PASSWORD`、`MINIO_ROOT_PASSWORD`、NewAPI key 和视觉模型配置；首次启动后必须在本机使用 `admin/admin123456` 登录并立即改密。
 - `DATABASE_URL` 必须把主机写成 `postgres`，并与 PostgreSQL 用户、密码、数据库名一致。
 - `WEB_PORT` 是家长 Web 对宿主机暴露的端口，默认 `3000`；Web 容器内部始终通过 `http://api:8000` 访问 API。
+- `STUDY_API_IMAGE` 和 `STUDY_WEB_IMAGE` 默认为 `latest`。可重复部署和回滚必须把两者固定到同一次 CI 产生的相同 `v*` 或 `sha-*` 标签；不要混用来自不同提交的 API 与 Web。
 - Capture 图片现在由 App 携带登录 Session 通过 API 的有界原始字节流上传，API 在内部校验并写入私有 MinIO。MinIO 的 S3 API 和控制台不映射到宿主机或局域网；不要配置 `OBJECT_STORAGE_PUBLIC_ENDPOINT_URL`、`MINIO_API_PORT` 或预签名上传地址。
 - Compose 只使用账号密码认证。Web 登录后会通过 HttpOnly Cookie 保存会话；不要把会话或密码写入 `.env`、客户端构建参数或日志。HMAC、Demo Header 和 Web 免登录旁路已删除。
 - 如果 NewAPI 在宿主机，使用 `http://host.docker.internal:<port>`；如果在另一台机器或另一个 Compose 网络，填写容器可访问的 URL。Adapter 会自动补齐 `/v1/chat/completions`，因此 base URL 可以是根地址或以 `/v1` 结尾。
@@ -47,7 +49,9 @@ openssl rand -hex 32
 ```bash
 docker compose -f infra/compose/compose.yml config
 
-docker compose -f infra/compose/compose.yml up -d --build
+docker compose -f infra/compose/compose.yml pull
+
+docker compose -f infra/compose/compose.yml up -d
 
 docker compose -f infra/compose/compose.yml ps
 
@@ -55,7 +59,7 @@ curl http://127.0.0.1:${API_PORT:-8000}/healthz
 curl http://127.0.0.1:${WEB_PORT:-3000}/healthz
 ```
 
-首次 amd64 构建会安装 PaddleOCR 依赖并下载五份锁定模型，可能明显慢于后续启动；原生 ARM 构建会跳过该不兼容依赖和模型。Web 构建使用 Node 24.18.0 和 pnpm 11.7.0，并生成 Next.js standalone 镜像。`migrate` 只执行 `alembic upgrade head`，成功后退出；API 依赖其成功状态，Web 依赖 API 健康状态。ImageAnalysis worker 在 `STUDY_NEWAPI_ENABLED=false` 时安全空闲，不连接 Provider、不读取图片；DataLifecycle worker 默认每 300 秒清理到期 Capture 对象、24 小时导出快照和超过 180 天的可清理详细学习历史，只记录计数。迁移是前滚式的，Compose 不会自动 downgrade。
+GitHub Actions 为 API 和 Web 构建 `linux/amd64`、`linux/arm64` 镜像；amd64 API 镜像包含锁定 PaddleOCR 依赖和五份构建期校验模型，arm64 镜像跳过不兼容的 Paddle 运行时。Web 使用 Node 24.18.0 和 pnpm 11.7.0 生成 Next.js standalone 镜像。迁移、API 和四个 worker 使用完全相同的 API 镜像；`migrate` 只执行 `alembic upgrade head`，成功后退出。API 依赖其成功状态，Web 依赖 API 健康状态。ImageAnalysis worker 在 `STUDY_NEWAPI_ENABLED=false` 时安全空闲，不连接 Provider、不读取图片；DataLifecycle worker 默认每 300 秒清理到期 Capture 对象、24 小时导出快照和超过 180 天的可清理详细学习历史，只记录计数。迁移是前滚式的，Compose 不会自动 downgrade。
 
 查看日志时只看稳定状态，不要把请求体、图片、令牌或 NewAPI key 粘贴到工单或聊天中：
 
@@ -118,7 +122,9 @@ STUDY_NEWAPI_USER_AGENT=study-api/0.5
 
 ```bash
 docker compose -f infra/compose/compose.yml \
-  up -d --build api image-analysis-worker
+  pull api image-analysis-worker
+docker compose -f infra/compose/compose.yml \
+  up -d api image-analysis-worker
 ```
 
 只有客户端已确认、且服务端保存的 SHA-256 与 Capture 一致的脱敏副本会进入 worker。worker 只保存 Schema 校验后的未确认 `QuestionExtraction`，不会把它直接当作答案或 Tutor 学习事实。失败只记录稳定失败状态；关闭开关后新 worker 不再领取任务。
@@ -135,7 +141,7 @@ docker compose -f infra/compose/compose.yml down
 docker volume ls | grep study
 ```
 
-升级步骤：先备份 PostgreSQL 和 MinIO 数据，再拉取/切换到目标代码版本，运行 `config`，执行 `up -d --build`，确认 `migrate` 成功和 `/healthz` 正常。本地和当前 Ubuntu 目标 head 为 `0038_classical_poem_options`；回退应用时保留新增表、列和索引，不在正式数据上执行 downgrade。发生学习历史范围异常时先设置 `LEARNING_HISTORY_CLEANUP_ENABLED=false` 并重启 DataLifecycle worker，再前向修复；已经按策略删除的数据不能靠应用回滚恢复。发生 Provider 问题时关闭 NewAPI 开关并停止 ImageAnalysis worker；不得破坏性回滚 Profile、Account、Attempt 或 AuditEvent。
+升级步骤：先备份 PostgreSQL 和 MinIO 数据，把 `.env` 中两个应用镜像固定到同一个已批准版本或 `sha-*` 标签，再运行 `config`、`pull` 和 `up -d`，确认 `migrate` 成功和 `/healthz` 正常。当前 Ubuntu 目标 head 为 `0038_classical_poem_options`；回退应用时把两个镜像变量一起改回上一个已验证标签并重新 `pull`/`up -d`，保留新增表、列和索引，不在正式数据上执行 downgrade。发生学习历史范围异常时先设置 `LEARNING_HISTORY_CLEANUP_ENABLED=false` 并重启 DataLifecycle worker，再前向修复；已经按策略删除的数据不能靠应用回滚恢复。发生 Provider 问题时关闭 NewAPI 开关并停止 ImageAnalysis worker；不得破坏性回滚 Profile、Account、Attempt 或 AuditEvent。
 
 ### 备份与恢复验证
 
@@ -148,7 +154,7 @@ infra/compose/scripts/verify-restore.sh /srv/study-backups/<UTC_TIMESTAMP>
 
 恢复验证只在一次性隔离的 `postgres:16.10` 容器中执行，不覆盖运行中的数据库。脚本验证 MinIO 快照文件和全部摘要，但正式灾难恢复时仍需运维人员在停机窗口把验证过的快照恢复到新卷。备份包含 Restricted 数据，宿主目录必须权限最小化并另行配置加密/异机副本；仓库不保存备份或密钥。
 
-当前未提供定时备份调度或生产级监控；不要把 `down -v` 当作清理儿童数据的正式删除流程，也不要把本 Compose 暴露到公网。
+当前未提供定时备份调度或生产级监控；Docker 缓存可使用 `scripts/cleanup-docker-cache.sh` 保守清理 7 天前的构建缓存和悬空镜像，该脚本不清理卷、容器、网络或仍有标签的镜像。不要把 `down -v` 当作清理儿童数据的正式删除流程，也不要把本 Compose 暴露到公网。
 
 ## 7. 最小验收
 

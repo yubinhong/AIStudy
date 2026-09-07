@@ -2,10 +2,10 @@
 
 ## 文档信息
 
-- 状态：`ACTIVE`（本地和 Ubuntu API/OpenAPI 均为 0.17.1/0038；古诗抽查仅发布并读取标题、连续诗句和全部选项均通过确定性目录的经典古诗，Nova 9 已完成 12 轮全六首抽查；数学今日任务已支持指定题目按序执行、服务端/端侧题号恢复、跳过和断网排队；家长首页已移除语文技能报告并只展示上海自然日当天到期错题，Ubuntu Web 已完成受控部署；用户已确认并完成远端同一家庭两个孩子的学习历史清理，账号/档案/教材/审核/设备设置/审计记录保留；正式内容、真实 Provider 和其他完整设备验收仍待完成）
+- 状态：`ACTIVE`（本地和 Ubuntu API/OpenAPI 均为 0.17.2/0038；古诗抽查仅发布并读取标题、连续诗句和全部选项均通过确定性目录的经典古诗，Nova 9 已完成 12 轮全六首抽查；数学今日任务已支持指定题目按序执行、服务端/端侧题号恢复、跳过和断网排队；家长首页已移除语文技能报告并只展示上海自然日当天到期错题，Ubuntu Web 已完成受控部署；用户已确认并完成远端同一家庭两个孩子的学习历史清理，账号/档案/教材/审核/设备设置/审计记录保留；正式内容、真实 Provider 和其他完整设备验收仍待完成）
 - Owner：`TBD（项目发起人确认）`
-- 最后更新：`2026-08-30`
-- 项目仓库：本地 Git 仓库 `/Users/ybh/PycharmProjects/study`；`origin` 为 `git@github.com:yubinhong/AIStudy.git`；最后远端标签为 `v0.17.1`（`e44a2b1`），Ubuntu 运行 `0.17.1/0038`，GitHub 质量/Android Actions 和 Release 已通过
+- 最后更新：`2026-09-05`
+- 项目仓库：本地 Git 仓库 `/Users/ybh/PycharmProjects/study`；`origin` 为 `git@github.com:yubinhong/AIStudy.git`；最后远端标签为 `v0.17.2`，Ubuntu 运行 `0.17.2/0038`，GitHub 质量/Android Actions 和 Release 已通过
 - 设计基线：`家庭AI学习助手_架构设计_v1.0.docx`
 
 ## 1. 项目概述
@@ -102,17 +102,21 @@
 | 缓存/队列 | Redis | `TBD（P0 锁定）` | 不作为长期业务事实来源 |
 | 文件 | 本地 MinIO / S3 兼容 Adapter | MinIO `RELEASE.2025-09-07T16-13-09Z`；boto3 `1.43.46` | 私有 Bucket；API/worker 由内部地址有界流式写入且 MinIO 不暴露 LAN，见 ADR-0018/0011。Ubuntu 已完成成对迁移 |
 | 端侧数据 | SQLite | 随 Flutter 依赖锁定 | 缓存今日任务、学习会话和上传队列 |
-| 交付/可观测性 | Docker Compose、CI、OpenTelemetry | `TBD（P0 锁定）` | CI 覆盖 lint、test、契约测试与 AI eval；模型和 Prompt/Policy 版本化 |
+| 交付/可观测性 | Docker Compose、GitHub Actions、GHCR、OpenTelemetry | GitHub Actions 服务镜像发布已配置；正式监控仍 `TBD` | CI 覆盖契约、API、Web 和隔离浏览器检查；通过后发布 API/Web amd64/arm64 镜像、provenance 与 SBOM。模型和 Prompt/Policy 版本化 |
 
 ## 7. 环境
 
 | 环境 | 用途 | 访问方式 | 数据级别 | 部署来源 |
 | --- | --- | --- | --- | --- |
-| local | 本地开发、离线与多端联调 | `infra/compose/compose.yml` 编排 PostgreSQL、Redis、MinIO、API、家长 Web、迁移、worker 和可切换的 llama.cpp/Qwen 本地模型服务；模型仅在 `STUDY_LOCAL_MODEL_ENABLED=true` 时加载 | synthetic / 自用 restricted（需显式启用并自行承担生命周期） | 本地工作区 |
+| local | 本地开发、离线与多端联调 | `infra/compose/compose.yml` 编排 PostgreSQL、Redis、MinIO、API、家长 Web、迁移、worker 和可切换的 llama.cpp/Qwen 本地模型服务；模型仅在 `STUDY_LOCAL_MODEL_ENABLED=true` 时加载 | synthetic / 自用 restricted（需显式启用并自行承担生命周期） | GitHub Actions 发布的 GHCR 镜像；本地源码调试使用各子项目标准命令 |
 | staging | 集成、设备、AI 评测和迁移/恢复验证 | `TBD（P0/P1 建立）` | sanitized/synthetic | CI 产物，禁止从个人工作区直接发布 |
 | production | 家庭正式使用 | `TBD（发布方案和 RUNBOOK 批准后建立）` | restricted | 仅允许已通过发布门槛的版本化产物 |
 
-当前事实：Git 位于 `master`；本地和 Ubuntu API/OpenAPI 均为 `0.17.1`、迁移头 `0038_classical_poem_options`，家长首页已移除语文技能报告并只展示上海自然日当天到期错题；独立学习记录页默认近 30 个上海自然日并支持 180 天窗口内单日筛选，更早逾期项仍可从学习记录/复习入口访问。用户已确认并完成远端同一家庭两个孩子的全部学习历史清理，目标学习表和已登记拍题对象均为 0；保留账号、孩子档案、教材/快照/已审核内容、设备设置和审计记录。PostgreSQL 已有私有页图元数据、页级 AI 分析、全书知识图谱、规范化知识点及语文 Content/Attempt/Review；同一孩子可并行发布多份教材，推荐遍历全部已发布且已批准的知识图谱，并继续为每条题目保留确切教材/页码来源。全实例只有一个超级管理员 `super_admin`，它可开通独立亲戚家庭及其普通家长；普通家长只能管理自己名下孩子。只有显式声明为国家公开教材、完整内容指纹匹配且来源图谱已批准的 PDF 可跨家庭复用私有 PDF/页图/解析草稿，目标家庭仍独立审核发布。2026-08-29/30 已完成 Ubuntu `0.17.1`/`0038` 前向部署，备份与恢复校验、迁移、健康、worker、OpenAPI、古诗题库和局域网 smoke 均通过；隔离 Chromium 已验证跨家庭登录态、Cookie/CSRF/撤销及双孩子学科/切换。孩子英语框架保持关闭，正式教研/版权、真实 Provider/PDF、Ubuntu 真实账号浏览器与设备验收仍未执行。
+当前事实：Git 位于 `master`；本地和 Ubuntu API/OpenAPI 均为 `0.17.2`、迁移头 `0038_classical_poem_options`，家长首页已移除语文技能报告并只展示上海自然日当天到期错题；独立学习记录页默认近 30 个上海自然日并支持 180 天窗口内单日筛选，更早逾期项仍可从学习记录/复习入口访问。用户已确认并完成远端同一家庭两个孩子的全部学习历史清理，目标学习表和已登记拍题对象均为 0；保留账号、孩子档案、教材/快照/已审核内容、设备设置和审计记录。PostgreSQL 已有私有页图元数据、页级 AI 分析、全书知识图谱、规范化知识点及语文 Content/Attempt/Review；同一孩子可并行发布多份教材，推荐遍历全部已发布且已批准的知识图谱，并继续为每条题目保留确切教材/页码来源。全实例只有一个超级管理员 `super_admin`，它可开通独立亲戚家庭及其普通家长；普通家长只能管理自己名下孩子。只有显式声明为国家公开教材、完整内容指纹匹配且来源图谱已批准的 PDF 可跨家庭复用私有 PDF/页图/解析草稿，目标家庭仍独立审核发布。2026-09-05 已完成 Ubuntu `0.17.2`/`0038` 前向部署，备份与恢复校验、迁移、健康、worker、OpenAPI、古诗题库和局域网 smoke 均通过；隔离 Chromium 已验证跨家庭登录态、Cookie/CSRF/撤销及双孩子学科/切换。孩子英语框架保持关闭，正式教研/版权、真实 Provider/PDF、Ubuntu 真实账号浏览器与设备验收仍未执行。
+
+2026-09-04/05 新增并部署家长后台分学科学习记录：侧栏学习记录展开为数学和语文两个子菜单；数学页继续读取已确认数学题/讲解，语文页通过家长专用查询读取 `chinese_attempts` 并展示孩子答案、对错、错误时正确答案、耗时及复习状态。新增查询为兼容式 API 扩展，API/Web 完整回归、登录态浏览器 E2E、Ubuntu 备份恢复、API/Web health 和运行源码核验已通过；没有数据库迁移。版本 `v0.17.2` 已提交并推送，Ubuntu 真实账号/设备验收仍待执行。
+
+2026-09-05 交付链路增量：GitHub Actions `quality` 在全部质量 job 通过后发布 GHCR API/Web 多架构镜像，Compose 改为只拉取镜像；迁移/API/四个 worker 使用同一后端产物。镜像可用版本或 `sha-*` 固定，`latest` 仅跟随 `master`。本轮未推送、未实际发布 Package 或切换 Ubuntu，staging/production、签名与漏洞扫描策略仍未完成。
 
 上传架构修订（2026-07-17）：项目 Owner 接受 ADR-0018，以 Session 鉴权的 API 有界流式上传替代 ADR-0010/0014 的 App 预签名直传。目标合同合并申请/PUT/确认并只返回已确认 Capture，移除 `upload_url`、`OBJECT_STORAGE_PUBLIC_ENDPOINT_URL` 和 MinIO `9000` LAN 暴露。API/Flutter/OpenAPI/Compose 已迁移，Ubuntu 已成对部署；最终设备回归和 Provider 额度恢复后的真实识别由 TASK-0009 跟踪。
 

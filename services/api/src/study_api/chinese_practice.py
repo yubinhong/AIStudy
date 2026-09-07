@@ -230,6 +230,16 @@ class ChineseReviewItem(BaseModel):
     updated_at: datetime
 
 
+class ChineseLearningDetail(BaseModel):
+    """Parent-visible answer record for one Chinese practice attempt."""
+
+    model_config = ConfigDict(frozen=True)
+
+    attempt: ChineseAttemptExport
+    content: ChineseContentItemView
+    review: ChineseReviewItem | None = None
+
+
 class ChineseSkillSummary(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -357,6 +367,16 @@ class ChinesePracticeRepository(Protocol):
         self, household_id: UUID, child_id: UUID, grade: int, due_only: bool
     ) -> list[ChineseReviewItem]: ...
 
+    def learning_details(
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+        limit: int = 200,
+    ) -> tuple[ChineseLearningDetail, ...]: ...
+
     def skill_report(self, household_id: UUID, child_id: UUID) -> ChineseSkillReport: ...
 
     def publish_poems(
@@ -426,6 +446,7 @@ class InMemoryChinesePracticeRepository:
     def __init__(self) -> None:
         self._content = {item.id: item for item in _starter_content()}
         self._attempts: dict[UUID, ChineseAttempt] = {}
+        self._attempt_responses: dict[UUID, dict[str, Any]] = {}
         self._reviews: dict[tuple[UUID, UUID, UUID], ChineseReviewItem] = {}
         self._idempotency: dict[tuple[UUID, UUID, str], tuple[str, UUID]] = {}
 
@@ -485,6 +506,7 @@ class InMemoryChinesePracticeRepository:
             created_at=datetime.now(UTC),
         )
         self._attempts[attempt.id] = attempt
+        self._attempt_responses[attempt.id] = dict(request.response)
         review_key = (household_id, child_id, item.id)
         previous = self._reviews.get(review_key)
         self._reviews[review_key] = ChineseReviewItem(
@@ -506,6 +528,50 @@ class InMemoryChinesePracticeRepository:
         )
         self._idempotency[key] = (fingerprint, attempt.id)
         return attempt, False
+
+    def learning_details(
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+        limit: int = 200,
+    ) -> tuple[ChineseLearningDetail, ...]:
+        reviews = {
+            (review.content_id, review.content_revision): review
+            for review in self._reviews.values()
+            if review.household_id == household_id and review.child_id == child_id
+        }
+        details: list[ChineseLearningDetail] = []
+        for attempt in self._attempts.values():
+            if (
+                attempt.household_id != household_id
+                or attempt.child_id != child_id
+                or attempt.created_at < from_at
+                or attempt.created_at >= to_at
+            ):
+                continue
+            item = self._content.get(attempt.content_id)
+            if item is None or item.revision != attempt.content_revision:
+                continue
+            export = ChineseAttemptExport.model_validate(
+                {
+                    **attempt.model_dump(),
+                    "response": self._attempt_responses.get(attempt.id, {}),
+                }
+            )
+            details.append(
+                ChineseLearningDetail(
+                    attempt=export,
+                    content=ChineseContentItemView.from_item(item),
+                    review=reviews.get((item.id, item.revision)),
+                )
+            )
+        details.sort(
+            key=lambda detail: (detail.attempt.created_at, detail.attempt.id), reverse=True
+        )
+        return tuple(details[:limit])
 
     def list_reviews(
         self, household_id: UUID, child_id: UUID, grade: int, due_only: bool
@@ -809,6 +875,90 @@ class PostgresChinesePracticeRepository:
                     ChineseContentSource.model_validate(row["_content_source"]),
                 )
             ]
+
+    def learning_details(
+        self,
+        household_id: UUID,
+        child_id: UUID,
+        *,
+        from_at: datetime,
+        to_at: datetime,
+        limit: int = 200,
+    ) -> tuple[ChineseLearningDetail, ...]:
+        with self._engine.connect() as connection:
+            attempt_rows = (
+                connection.execute(
+                    select(self._attempts)
+                    .where(
+                        self._attempts.c.household_id == household_id,
+                        self._attempts.c.child_id == child_id,
+                        self._attempts.c.created_at >= from_at,
+                        self._attempts.c.created_at < to_at,
+                    )
+                    .order_by(
+                        self._attempts.c.created_at.desc(),
+                        self._attempts.c.id.desc(),
+                    )
+                    .limit(limit)
+                )
+                .mappings()
+                .all()
+            )
+            content_keys = {(row["content_id"], row["content_revision"]) for row in attempt_rows}
+            content_rows = (
+                connection.execute(
+                    select(self._content).where(
+                        self._content.c.id.in_([key[0] for key in content_keys])
+                    )
+                )
+                .mappings()
+                .all()
+                if content_keys
+                else []
+            )
+            review_rows = (
+                connection.execute(
+                    select(self._reviews).where(
+                        self._reviews.c.household_id == household_id,
+                        self._reviews.c.child_id == child_id,
+                        self._reviews.c.content_id.in_([key[0] for key in content_keys]),
+                    )
+                )
+                .mappings()
+                .all()
+                if content_keys
+                else []
+            )
+        content_by_key = {
+            (row["id"], row["revision"]): self._item(dict(row)) for row in content_rows
+        }
+        review_by_key = {
+            (row["content_id"], row["content_revision"]): ChineseReviewItem.model_validate(
+                dict(row)
+            )
+            for row in review_rows
+        }
+        details: list[ChineseLearningDetail] = []
+        for row in attempt_rows:
+            key = (row["content_id"], row["content_revision"])
+            item = content_by_key.get(key)
+            if item is None:
+                continue
+            attempt = ChineseAttemptExport.model_validate(
+                {
+                    **dict(row),
+                    "response": row["response_json"],
+                    "result": row["result_json"],
+                }
+            )
+            details.append(
+                ChineseLearningDetail(
+                    attempt=attempt,
+                    content=ChineseContentItemView.from_item(item),
+                    review=review_by_key.get(key),
+                )
+            )
+        return tuple(details)
 
     def skill_report(self, household_id: UUID, child_id: UUID) -> ChineseSkillReport:
         now = datetime.now(UTC)

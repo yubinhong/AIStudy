@@ -8,6 +8,48 @@
 - Owner：Codex（执行）；项目 Owner（2026-08-15 明确要求先多学科、再语文、英语最后）
 - 关联：`PLAN-0034`、`PLAN-0031`、`PLAN-0030`、`PLAN-0007`、`ADR-0017`、`ADR-0027`、`ADR-0028`、`docs/deep-research-report.md`
 
+## 2026-09-05 GitHub Actions 服务镜像发布
+
+- [x] `quality` Workflow 在 `master` 与 `v*` tag push 上运行既有契约、API、Web 和隔离 Chromium 门槛；全部通过后才以 job 级最小 `packages: write` 权限发布镜像，Pull Request 不发布。
+- [x] API 与 Web 均构建 `linux/amd64`、`linux/arm64`，发布 `sha-*`、版本标签及仅 `master` 使用的 `latest`，并生成 OCI provenance 与 SBOM。
+- [x] Compose 的迁移、API、四个 worker 和 Web 已删除本地 `build`，改为拉取可由 `.env` 固定版本的 GHCR 镜像；迁移/API/worker 共用同一 API 产物。
+- [x] README、部署指南、Compose 说明、Runbook、Security、ADR-0008、Testing、Project、AI Context、Plan 与 Changelog 已同步版本固定、私有 Package 登录、升级和回滚边界。
+- [x] GitHub Workflow YAML、脱敏临时 `.env` 的 Compose 展开、镜像引用/服务映射断言和 `git diff --check` 通过。
+
+未执行：本轮未提交或推送，未触发 GitHub Actions，未发布/拉取真实 GHCR 镜像，也未切换 Ubuntu。首次远端运行仍须确认 Package 可见性、双架构 manifest、API/Web 标签对应同一提交，并完成备份恢复、迁移、健康、worker 与容器镜像摘要核验。
+
+回滚：恢复 Compose 的本地 `build` 定义和旧部署命令；若已经使用 GHCR，则优先同时把 `STUDY_API_IMAGE`/`STUDY_WEB_IMAGE` 固定回上一个已验证标签后重新 `pull`/`up -d`。数据库保持前向修复，不 downgrade、不删除学习事实。
+
+## 2026-09-04 iPhone 本地网络授权修复
+
+- [x] iPhone 11（iOS `26.6.1`）重新启用开发者模式并使用 Personal Team 自动签名安装 `Study Child 0.16.0 (2)`；设备安装、签名信任、启动和进程存活通过。
+- [x] 真机复现登录页访问 `http://192.168.1.4:8000` 返回 `errno 65: No route to host`，且“设置 → 隐私与安全性 → 本地网络”没有 Study Child；Ubuntu API/端口和 Mac 跨网段访问均正常，问题收敛为 iOS 权限仍处于未决定状态。
+- [x] iOS 原生层使用 `NWConnection` 对用户填写的实际家庭服务器建立无业务数据的 TCP 连接，在 Flutter `/healthz` 前等待系统权限决定；不增加第三方依赖、Bonjour 虚假服务或额外网络权限。非 iOS 平台保持原行为。
+- [x] 修复包覆盖安装并触发本地网络授权后，iPhone `192.168.1.100` 于 `14:43:05` 请求 `/healthz`，Ubuntu 返回 `200 OK`。定向 Flutter 回归 `37 passed`、完整 Flutter 回归 `74 passed`、Analyze 和签名 Release 构建通过。
+
+回滚：移除 `study/local_network` MethodChannel、AppDelegate 的 `NWConnection` 准备逻辑及健康检查前调用；保留既有 `NSLocalNetworkUsageDescription` 和 ATS 局域网声明。回滚会恢复 iPhone 权限未决定时可能直接出现错误 65 的旧行为。
+
+## 2026-09-04 家长后台分学科学习记录
+
+- [x] 核对现状：原“学习记录”页面只查询 `verified_questions`/`tutor_turns` 数学链路；语文 Attempt/Review 独立保存，未进入该页面。
+- [x] 侧栏“学习记录”增加“数学学习记录”和“语文学习记录”子菜单；旧 `/learning` 保持数学页面兼容，新页面为 `/learning/math` 与 `/learning/chinese`。
+- [x] 增加家长专用语文学习记录查询，返回孩子提交答案、确定性判定、失败时的正确答案、耗时、题目和复习安排；孩子身份仍返回 403，时间范围沿用 31 天查询上限和 180 天保留边界。
+- [x] Web 语文记录页增加列表和展开详情，明确显示孩子答案、答对/答错、正确答案、复习日期；英语未加入。
+- [x] API 语文定向回归、Ruff/Mypy、Web Vitest、TypeScript、ESLint、Prettier 通过。
+- [x] 完整 API 非集成回归、PostgreSQL 集成回归、Web production build 和本轮最终差异审查通过；API `258 passed, 32 deselected`，Web Vitest `38 passed`，登录态 Chromium E2E `1 passed`。
+- [x] 2026-09-05 已按用户授权部署 Ubuntu：备份 `/home/syin/study-backups/20260905T033939Z` 隔离恢复通过，API/Web 以 legacy builder 构建并替换；本机/LAN health `200`、`0038` head、运行源码哈希和数学/语文登录跳转通过。未执行 Ubuntu 真实账号浏览器、真实设备回归，未创建新 commit/tag。
+
+回滚：移除新增语文学习记录路由、仓储方法、Web 子菜单和页面；保留语文 Attempt/Review 学习事实及现有数学学习记录 API，不执行迁移回退。
+
+## 2026-09-03 Ubuntu Docker 缓存定时清理
+
+- [x] 服务器前置审计确认主机为 UTC、Docker `29.1.3`、根分区使用约 53%，`syin` 当前无 crontab；Docker 支持按 `until` 过滤构建缓存和悬空镜像。
+- [x] 新增保守清理脚本：默认保留 168 小时，最小允许 24 小时；只清理未使用构建缓存和悬空镜像，不触碰卷、容器、网络或仍有标签的镜像；增加文件锁、system journal 日志及 `--check` 模式。
+- [x] 隔离行为测试确认检查模式不 prune、正常模式仅发出两条受限 prune 命令、过短保留期失败关闭；脚本已部署 Ubuntu 并通过远端语法、权限、哈希、Docker 权限和 journal 核验。
+- [x] 精简 Ubuntu 原先缺少 `crontab`，已安装并启用官方 `cron`；`syin` 唯一标记块为 `0 16 * * *`（北京时间每天 `00:00`）。未提前执行真实清理，9 个 Compose 容器保持运行。
+
+回滚：删除 `syin` crontab 中成对标记的清理块并删除远端脚本；不需要回滚 Compose 或数据。已删除缓存只能重新构建/拉取，不从业务备份恢复。
+
 ## 2026-09-03 家长后台视觉改版与学习记录布局修复
 
 - [x] 统一重做家长后台的基础视觉层：侧栏改为深石墨导航与绿色选中标识，品牌区、导航分组、顶部当前孩子/账号区和主内容区建立更清楚的层级；保留原路由、角色导航和孩子作用域行为。

@@ -115,9 +115,8 @@ services:
     restart: unless-stopped
 
   migrate:
-    build:
-      context: ../../services/api
-      dockerfile: Dockerfile
+    image: ${STUDY_API_IMAGE:-ghcr.io/yubinhong/aistudy-api:latest}
+    pull_policy: always
     command: ["alembic", "upgrade", "head"]
     environment:
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in infra/compose/.env}
@@ -130,9 +129,8 @@ services:
     restart: "no"
 
   api:
-    build:
-      context: ../../services/api
-      dockerfile: Dockerfile
+    image: ${STUDY_API_IMAGE:-ghcr.io/yubinhong/aistudy-api:latest}
+    pull_policy: always
     env_file:
       - .env
     environment:
@@ -174,9 +172,8 @@ services:
     restart: unless-stopped
 
   web:
-    build:
-      context: ../../apps/web
-      dockerfile: Dockerfile
+    image: ${STUDY_WEB_IMAGE:-ghcr.io/yubinhong/aistudy-web:latest}
+    pull_policy: always
     environment:
       STUDY_API_URL: http://api:8000
       HOSTNAME: 0.0.0.0
@@ -194,9 +191,8 @@ services:
     restart: unless-stopped
 
   image-analysis-worker:
-    build:
-      context: ../../services/api
-      dockerfile: Dockerfile
+    image: ${STUDY_API_IMAGE:-ghcr.io/yubinhong/aistudy-api:latest}
+    pull_policy: always
     command: ["python", "scripts/run_image_analysis_worker.py", "--watch"]
     env_file:
       - .env
@@ -216,9 +212,8 @@ services:
     restart: unless-stopped
 
   material-parse-worker:
-    build:
-      context: ../../services/api
-      dockerfile: Dockerfile
+    image: ${STUDY_API_IMAGE:-ghcr.io/yubinhong/aistudy-api:latest}
+    pull_policy: always
     command: ["python", "scripts/run_material_parse_worker.py", "--watch"]
     env_file:
       - .env
@@ -235,9 +230,8 @@ services:
     restart: unless-stopped
 
   curriculum-analysis-worker:
-    build:
-      context: ../../services/api
-      dockerfile: Dockerfile
+    image: ${STUDY_API_IMAGE:-ghcr.io/yubinhong/aistudy-api:latest}
+    pull_policy: always
     command: ["python", "scripts/run_curriculum_analysis_worker.py", "--watch"]
     env_file:
       - .env
@@ -259,9 +253,8 @@ services:
     restart: unless-stopped
 
   data-lifecycle-worker:
-    build:
-      context: ../../services/api
-      dockerfile: Dockerfile
+    image: ${STUDY_API_IMAGE:-ghcr.io/yubinhong/aistudy-api:latest}
+    pull_policy: always
     command: ["python", "scripts/run_data_lifecycle_worker.py", "--watch"]
     env_file:
       - .env

@@ -158,6 +158,7 @@ http://192.168.1.20:8000
 
 - Linux x86_64 或 ARM64 主机。
 - Docker Engine 与 Docker Compose v2。
+- 能访问 GHCR；私有 Package 需要一个只具备 `read:packages` 的 GitHub 凭据。
 - 至少为 PostgreSQL、MinIO、镜像和备份预留充足磁盘空间。
 - 家庭局域网内固定或可发现的服务器地址。
 - 可选 NewAPI；如果不启用本地模型，没有 NewAPI 时保持 AI Provider 关闭，基础服务仍可启动。
@@ -179,12 +180,20 @@ openssl rand -hex 32
 3. 初次部署保持 `STUDY_NEWAPI_ENABLED=false`。
 4. 保持 `STUDY_ENGLISH_LIVE_ENABLED=false` 和 `STUDY_ENGLISH_LIVE_PROVIDER=disabled`。
 5. 不添加客户端密钥、真实教材内容、儿童资料或 Session。
+6. 将 `STUDY_API_IMAGE` 与 `STUDY_WEB_IMAGE` 固定到同一次 GitHub Actions 发布的相同 `v*` 或 `sha-*` 标签；`latest` 只适合跟随 `master` 的临时自用环境。
+
+GitHub Actions 只在 `master` 或 `v*` 标签的契约、API、Web 和隔离浏览器检查全部通过后发布镜像。Pull Request 不发布。Package 为 private 时，在部署主机先登录，令牌不得进入命令历史、`.env` 或日志：
+
+```bash
+printf '%s' "$GHCR_READ_TOKEN" | docker login ghcr.io -u <github-user> --password-stdin
+```
 
 ### 启动和验证
 
 ```bash
 docker compose -f infra/compose/compose.yml config
-docker compose -f infra/compose/compose.yml up -d --build
+docker compose -f infra/compose/compose.yml pull
+docker compose -f infra/compose/compose.yml up -d
 docker compose -f infra/compose/compose.yml ps
 
 curl -fsS http://127.0.0.1:8000/healthz
@@ -229,17 +238,18 @@ infra/compose/scripts/backup.sh /srv/study-backups
 infra/compose/scripts/verify-restore.sh /srv/study-backups/<UTC_TIMESTAMP>
 ```
 
-然后拉取明确版本，检查差异并重建：
+然后拉取明确代码版本，将两个镜像变量固定到该版本对应的同一镜像标签，再拉取并启动：
 
 ```bash
 git fetch --tags origin
 git checkout <approved-tag-or-commit>
 docker compose -f infra/compose/compose.yml config
-docker compose -f infra/compose/compose.yml up -d --build
+docker compose -f infra/compose/compose.yml pull
+docker compose -f infra/compose/compose.yml up -d
 docker compose -f infra/compose/compose.yml ps
 ```
 
-回滚应用时保留 PostgreSQL、MinIO 和 Redis 卷，不执行 `down -v`，也不在正式数据上随意运行数据库 downgrade。Android 回滚必须使用相同签名密钥和兼容的版本号；如果旧 APK 不接受新数据库/API 合同，应优先做前向修复。
+回滚应用时把 `STUDY_API_IMAGE` 与 `STUDY_WEB_IMAGE` 一起改回上一个已验证的 `v*` 或 `sha-*` 标签，再执行 `pull` 和 `up -d`。保留 PostgreSQL、MinIO 和 Redis 卷，不执行 `down -v`，也不在正式数据上随意运行数据库 downgrade。Android 回滚必须使用相同签名密钥和兼容的版本号；如果旧 APK 不接受新数据库/API 合同，应优先做前向修复。
 
 ## 9. 尚未完成的生产门槛
 
@@ -249,4 +259,4 @@ docker compose -f infra/compose/compose.yml ps
 - 真实教材质量、Provider 成本和儿童数据法务审批。
 - 合规英语语音 Provider、监护人同意文本和真实安全评测。
 
-在这些门槛完成前，GitHub Actions 成功只证明该提交能通过自动检查并生成 APK，不证明它已经达到应用商店或商业生产发布条件。
+在这些门槛完成前，GitHub Actions 成功只证明该提交能通过自动检查并生成 APK/服务镜像，不证明它已经达到应用商店或商业生产发布条件。

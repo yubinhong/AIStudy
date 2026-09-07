@@ -3,12 +3,34 @@ import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 const defaultServerBaseUrl = String.fromEnvironment(
   'STUDY_API_URL',
   defaultValue: 'http://127.0.0.1:8000',
 );
+
+const _localNetworkChannel = MethodChannel('study/local_network');
+
+Future<void> prepareLocalNetworkAccess(
+  String baseUrl, {
+  MethodChannel channel = _localNetworkChannel,
+}) async {
+  if (defaultTargetPlatform != TargetPlatform.iOS) return;
+  final uri = Uri.parse(baseUrl);
+  final port = uri.hasPort ? uri.port : (uri.scheme == 'https' ? 443 : 80);
+  try {
+    await channel.invokeMethod<bool>('prepare', {
+      'host': uri.host,
+      'port': port,
+    });
+  } on MissingPluginException {
+    // Older builds can continue with the normal health request.
+  } on PlatformException catch (error) {
+    debugPrint('study.child.local_network_prepare_failed code=${error.code}');
+  }
+}
 
 class ChildAuthException implements Exception {
   const ChildAuthException(this.message);
