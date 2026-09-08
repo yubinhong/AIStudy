@@ -1,3 +1,29 @@
+# PLANS.md — PLAN-0041 Ubuntu GHCR 拉取式部署
+
+## 计划元数据
+
+- 计划 ID：`PLAN-0041`
+- 关联：`TASK-0012`、`PLAN-0039`、`ADR-0008`、`infra/compose/compose.yml`、`RUNBOOK.md`
+- 状态：`COMPLETE`
+- 优先级：`P1 / SELF-HOSTED DEPLOYMENT`
+- Owner：Codex（备份、切换、验证和记录）
+- 创建：`2026-09-08`
+
+## 目标、边界与里程碑
+
+把已由 GitHub Actions 发布的代码提交 `6a518fc` 镜像部署到 Ubuntu 自用 Compose；保留远端 `.env` 与数据卷，完成备份/隔离恢复验证、固定镜像拉取、迁移/健康/worker 验收。该计划不建立 staging/production，也不代替真实账号、Provider 或设备验收。
+
+- [x] M1 — 拉取并核对 API/Web `sha-6a518fc` GHCR 镜像，记录运行 digest 与 OCI revision。
+- [x] M2 — 备份 `/home/syin/study-backups/20260908T074345Z`，隔离恢复验证 39 张 PostgreSQL public 表和 715 个 MinIO 快照文件；远端旧 Compose/`.env` 保存到 `/home/syin/study-source-backups/20260908T074345Z-ghcr/`。
+- [x] M3 — 更新远端 Compose 与镜像变量，`docker compose config --quiet`、`pull` 和 `up -d --no-build` 成功；迁移/API/Web/四个 worker 使用固定镜像。
+- [x] M4 — API/Web 本机和 `192.168.1.4` LAN health 返回 200，Alembic 为 `0038_classical_poem_options (head)`，worker running，最近 10 分钟无错误日志。
+
+## 兼容性、风险与回滚
+
+本次无数据库迁移、无业务数据删除；回滚优先恢复旧 `STUDY_API_IMAGE`/`STUDY_WEB_IMAGE` 标签并重新拉取/启动，数据库只前滚不 downgrade。`STUDY_LOCAL_MODEL_ENABLED=false` 时 `local-model` 保持空闲，不能描述为本地模型质量验收通过。
+
+---
+
 # PLANS.md — PLAN-0040 代码与文档一致性复核
 
 ## 计划元数据
@@ -20,7 +46,7 @@
 
 ## 兼容性、风险与回滚
 
-OpenAPI 只追认已经由 API、Web/Flutter 客户端和回归测试使用的真实路由：OCR 确认使用 `/confirmations` 子资源，并补记家长发布已审核古诗的接口；不改变运行时代码或数据库。回滚可撤销本次文档与 OpenAPI 提交；不会回退迁移、删除学习事实或改变 Ubuntu 当前 legacy-builder 运行状态。
+OpenAPI 只追认已经由 API、Web/Flutter 客户端和回归测试使用的真实路由：OCR 确认使用 `/confirmations` 子资源，并补记家长发布已审核古诗的接口；不改变运行时代码或数据库。回滚可撤销本次文档与 OpenAPI 提交；不会回退迁移或删除学习事实。该计划完成时尚未切换 Ubuntu，后续切换由 PLAN-0041 记录。
 
 ---
 
@@ -30,7 +56,7 @@ OpenAPI 只追认已经由 API、Web/Flutter 客户端和回归测试使用的�
 
 - 计划 ID：`PLAN-0039`
 - 关联：`TASK-0012`、`ADR-0008`、`.github/workflows/ci.yml`、`infra/compose/compose.yml`、`RUNBOOK.md`
-- 状态：`COMPLETE（代码、推送、tag 和 GHCR 多架构构建已完成；Ubuntu 尚未切换为 GHCR 拉取式部署）`
+- 状态：`COMPLETE（代码、推送、tag、GHCR 多架构构建和后续 Ubuntu 拉取式部署均已完成；部署证据见 PLAN-0041）`
 - 优先级：`P1 / CI / SELF-HOSTED DEPLOYMENT`
 - Owner：Codex（实现与本地验证）；项目 Owner（GitHub 推送、Package 可见性与 Ubuntu 部署）
 - 创建：`2026-09-05`
@@ -42,7 +68,7 @@ OpenAPI 只追认已经由 API、Web/Flutter 客户端和回归测试使用的�
 - [x] M1 — CI 在 `master` 与 `v*` tag 推送时完成既有质量门槛，并使用最小 `packages: write` 权限发布 API/Web 镜像、OCI provenance 与 SBOM；Pull Request 不发布镜像。
 - [x] M2 — Compose 删除 API/Web 的本地 `build`，改为可由 `.env` 覆盖的 GHCR 镜像引用，并对应用镜像启用拉取检查。
 - [x] M3 — 更新 `.env.example`、Compose README、根 README、Runbook、Testing、Project、AI Context、Task 和 Changelog，说明 GitHub Package 权限、版本固定、升级、验证和回滚。
-- [x] M4 — Workflow YAML、Compose 展开、镜像引用一致性和最终差异检查通过；提交 `044c52e` 已推送并创建 annotated tag `v0.17.2`，tag workflow run `34093042527` 的 API/Web GHCR 多架构镜像发布成功。Ubuntu 仍按本地 legacy builder 运行，尚未切换为 GHCR 拉取式部署。
+- [x] M4 — Workflow YAML、Compose 展开、镜像引用一致性和最终差异检查通过；提交 `044c52e` 已推送并创建 annotated tag `v0.17.2`，tag workflow run `34093042527` 的 API/Web GHCR 多架构镜像发布成功。Ubuntu 后续切换由 PLAN-0041 完成。
 
 ## 兼容性、风险与回滚
 

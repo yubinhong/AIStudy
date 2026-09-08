@@ -3,7 +3,7 @@
 ## 1. 服务概览
 
 - 服务：家庭 AI 学习助手（目标包括 Flutter 孩子端、Web/PWA、FastAPI/Worker、PostgreSQL、Redis、S3/MinIO 和 AI Provider）。
-- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.17.2`/`0038_classical_poem_options`；API/Web/worker 健康，已审核语文教材只保留标题、连续诗句和全部选项均通过确定性目录的六首 21 道古诗题。没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
+- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.17.2`/`0038_classical_poem_options`；API/Web/worker 健康，已审核语文教材只保留标题、连续诗句和全部选项均通过确定性目录的六首 21 道古诗题。2026-09-08 已切换到代码提交 `6a518fc` 的 GHCR `sha-6a518fc` 镜像。没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
 - Owner/值班：`TBD（项目 Owner/运维负责人在 staging 前确认）`。
 
 ## 2026-09-05 GitHub Actions 服务镜像发布
@@ -12,7 +12,15 @@
 - 镜像：`ghcr.io/yubinhong/aistudy-api` 同时供 `migrate`、`api` 和四个 worker 使用，`ghcr.io/yubinhong/aistudy-web` 供 Web 使用。`master` 发布 `latest`/`sha-*`，`v*` 发布版本/`sha-*`。
 - 部署：先完成备份恢复验证，在远端 `.env` 将 `STUDY_API_IMAGE` 和 `STUDY_WEB_IMAGE` 固定到同一次发布的相同版本或 `sha-*` 标签，再运行 `docker compose pull` 与 `docker compose up -d`。私有 Package 只允许部署主机使用 `read:packages` 凭据登录 GHCR。
 - 回滚：同时固定回上一个已验证的 API/Web 标签并重新拉取、启动；数据库仍只前向修复，不 downgrade、不删除 Attempt/AuditEvent 或其他学习事实。
-- 当前状态：`v0.17.2` tag 已推送并触发 workflow run `34093042527`；契约、API、Web、Chromium E2E 和 API/Web 两个 GHCR 多架构镜像发布 job 均成功。Ubuntu 的家长学习记录增量另按下方白名单使用本地 legacy builder 部署，尚未切换到 GHCR 运行容器。
+- 当前状态：`v0.17.2` tag 已推送并触发 workflow run `34093042527`；契约、API、Web、Chromium E2E 和 API/Web 两个 GHCR 多架构镜像发布 job 均成功。Ubuntu 后续切换记录见下方 `2026-09-08 Ubuntu GHCR 拉取式部署`。
+
+## 2026-09-08 Ubuntu GHCR 拉取式部署
+
+- 载荷：API/Web 固定 `ghcr.io/yubinhong/aistudy-api:sha-6a518fc` 与 `ghcr.io/yubinhong/aistudy-web:sha-6a518fc`；运行 digest 分别为 `sha256:653444b0d1c2bf9494c54b0793cdfc37824354cea8c6ca221ef85cc4398095da` 和 `sha256:c312f5301efe5fe448c550f9fe54e344c4c324ae66609f761e7eeb02c43dc729`，OCI revision 均为 `6a518fc1de39c4f8414a40185a7cae593c6010c2`。
+- 备份：`/home/syin/study-backups/20260908T074345Z`；`verify-restore.sh` 隔离恢复报告 `postgres_public_tables=39`、`minio_snapshot_files=715`。旧 Compose 与 `.env` 保存在 `/home/syin/study-source-backups/20260908T074345Z-ghcr/`。
+- 发布：远端 Compose 校验、GHCR pull 和 `docker compose up -d --no-build` 成功；迁移、API、Web 和四个 worker 使用固定镜像，远端 `.env` 与数据卷保留。
+- 验收：API/Web 本机及 `192.168.1.4` LAN `healthz` 返回 200，Alembic 为 `0038_classical_poem_options (head)`，四个 worker running，最近 10 分钟无新增错误日志。`STUDY_LOCAL_MODEL_ENABLED=false` 时 local-model 仅保持空闲，不表示本地推理质量已验收。
+- 未执行：Ubuntu 真实账号浏览器、四设备完整 E2E、真实 Provider/PDF 质量成本、staging/production。回滚优先固定上一个已验证 GHCR 标签并重新 pull/up，不执行数据库 downgrade。
 
 ### 2026-09-05 家长后台分学科学习记录部署记录
 

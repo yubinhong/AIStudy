@@ -8,6 +8,15 @@
 - Owner：Codex（执行）；项目 Owner（2026-08-15 明确要求先多学科、再语文、英语最后）
 - 关联：`PLAN-0034`、`PLAN-0031`、`PLAN-0030`、`PLAN-0007`、`ADR-0017`、`ADR-0027`、`ADR-0028`、`docs/deep-research-report.md`
 
+## 2026-09-08 Ubuntu GHCR 拉取式部署（PLAN-0041）
+
+- [x] 目标代码提交为 `6a518fc`；服务器 `syin@192.168.1.4:/home/syin/study` 已完成 GHCR 登录、API/Web `sha-6a518fc` 拉取和 Compose 配置校验。
+- [x] 部署前备份 `/home/syin/study-backups/20260908T074345Z` 已完成；`verify-restore.sh` 隔离恢复报告 `postgres_public_tables=39`、`minio_snapshot_files=715`。旧 Compose 与远端 `.env` 另存于 `/home/syin/study-source-backups/20260908T074345Z-ghcr/`。
+- [x] `migrate`、API、Web 和四个 worker 均使用固定 GHCR 镜像并以 `--no-build` 启动；API digest 为 `sha256:653444b0d1c2bf9494c54b0793cdfc37824354cea8c6ca221ef85cc4398095da`，Web digest 为 `sha256:c312f5301efe5fe448c550f9fe54e344c4c324ae66609f761e7eeb02c43dc729`。
+- [x] 运行验收通过：API/Web 容器 healthy，局域网 `192.168.1.4:8000/healthz` 与 `:3000/healthz` 均返回 200，Alembic 为 `0038_classical_poem_options (head)`，四个 worker running，最近 10 分钟无新增错误日志；`STUDY_LOCAL_MODEL_ENABLED=false` 时本地模型容器仅保持空闲，不代表本地推理已验收。
+
+未执行：Ubuntu 真实账号浏览器、四设备完整 E2E、真实 Provider/PDF 质量成本和 staging/production 发布。回滚优先把 `STUDY_API_IMAGE`/`STUDY_WEB_IMAGE` 固定回已验证旧标签并重新 `pull`/`up -d`；数据库不 downgrade。部署载荷是 `6a518fc`，本次后续文档提交只记录事实，不替换服务器运行镜像。
+
 ## 2026-09-08 代码、契约与文档一致性复核
 
 - [x] 以可运行代码、锁文件、Compose、迁移头和已验证发布记录为事实源，复核仓库级文档、模块 README 与 OpenAPI；审计开始时 `master`/`origin/master` 同为 `17275d8` 且工作区干净。
@@ -16,7 +25,7 @@
 - [x] 验证：API Ruff format/check、Mypy（63 source files）、非集成测试 `258 passed, 32 deselected`；Web Node `24.19.0` 下 Prettier、ESLint、TypeScript、Vitest `38 passed`、production build、隔离 Chromium E2E `1 passed`；Flutter 格式、Analyze、`74 passed`；OCR/Privacy/Tutor/English synthetic eval 分别 `6/6`、`6/6`、`5/5`、`7/7`；OpenAPI/JSON Schema 解析与引用闭合、运行时路由对比、Alembic `0038` 单 head、Compose 静态 config、66 个 Markdown 本地链接和 `git diff --check` 通过。
 - [x] 本轮变更按 Conventional Commit 提交并推送 `origin/master`；不创建 tag、不触发 Ubuntu 部署、不读取真实账号/儿童数据/教材正文或 Provider 密钥。
 
-未执行：PostgreSQL/MinIO 集成、真实 Provider、实体设备和 Ubuntu 运行验证；本轮没有业务代码、数据库迁移、Compose 行为或部署变更。回滚只需 revert 本次提交；不得回退数据库或删除学习事实。GitHub Actions 的 push workflow 会重新执行质量门槛并构建 `master`/`latest` GHCR 镜像，但“推送触发”不等于镜像构建完成，更不等于 Ubuntu 已拉取部署。
+代码/契约复核阶段未执行 PostgreSQL/MinIO 集成、真实 Provider、实体设备和 Ubuntu 运行验证；随后独立的 PLAN-0041 已完成 Ubuntu GHCR 拉取式部署。该复核提交本身不改变业务代码、数据库或 Compose 行为；GitHub Actions 的 push workflow 会重新执行质量门槛并构建 `master`/`latest` GHCR 镜像，不能把新文档提交误认为服务器已切换到新的镜像载荷。
 
 ## 2026-09-05 GitHub Actions 服务镜像发布
 
@@ -26,7 +35,7 @@
 - [x] README、部署指南、Compose 说明、Runbook、Security、ADR-0008、Testing、Project、AI Context、Plan 与 Changelog 已同步版本固定、私有 Package 登录、升级和回滚边界。
 - [x] GitHub Workflow YAML、脱敏临时 `.env` 的 Compose 展开、镜像引用/服务映射断言和 `git diff --check` 通过。
 
-已执行：提交 `044c52e` 已推送到 `master`，并创建/推送 annotated tag `v0.17.2`。tag workflow run `34093042527` 的契约、API、Web、Chromium E2E 和 API/Web GHCR 多架构镜像发布均为 `success`；Ubuntu 当前继续运行本地 legacy builder 版本，尚未切换为 GHCR 拉取式部署。
+已执行：提交 `044c52e` 已推送到 `master`，并创建/推送 annotated tag `v0.17.2`。tag workflow run `34093042527` 的契约、API、Web、Chromium E2E 和 API/Web GHCR 多架构镜像发布均为 `success`；该历史发布记录之后，Ubuntu 已由 PLAN-0041 切换为 `sha-6a518fc` GHCR 拉取式部署。
 
 回滚：恢复 Compose 的本地 `build` 定义和旧部署命令；若已经使用 GHCR，则优先同时把 `STUDY_API_IMAGE`/`STUDY_WEB_IMAGE` 固定回上一个已验证标签后重新 `pull`/`up -d`。数据库保持前向修复，不 downgrade、不删除学习事实。
 

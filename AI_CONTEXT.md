@@ -14,7 +14,7 @@
 
 ## 2. 当前工作状态
 
-- 2026-09-05/07 服务镜像交付已切换为 GitHub Actions + GHCR：`quality` 仅在全部质量 job 通过后的 `master`/`v*` push 发布 API/Web amd64/arm64 镜像，Compose 的迁移/API/四个 worker 复用同一 API 镜像并取消本地构建。`v0.17.2` tag 的 workflow run `34093042527` 中契约、API、Web、Chromium E2E 和两个 GHCR 发布 job 均成功；正式自用部署应同时固定两个镜像的同一版本或 `sha-*` 标签。Ubuntu 的家长学习记录增量仍按白名单使用 legacy builder 完成部署，尚未切换到 GHCR 运行容器。
+- 2026-09-05/07 服务镜像交付已切换为 GitHub Actions + GHCR：`quality` 仅在全部质量 job 通过后的 `master`/`v*` push 发布 API/Web amd64/arm64 镜像，Compose 的迁移/API/四个 worker 复用同一 API 镜像并取消本地构建。`v0.17.2` tag 的 workflow run `34093042527` 中契约、API、Web、Chromium E2E 和两个 GHCR 发布 job 均成功；2026-09-08 Ubuntu 已完成拉取式切换，API/Web 固定为 `sha-6a518fc`，运行 digest 分别为 `sha256:653444b0d1c2bf9494c54b0793cdfc37824354cea8c6ca221ef85cc4398095da` 和 `sha256:c312f5301efe5fe448c550f9fe54e344c4c324ae66609f761e7eeb02c43dc729`。本次部署先完成备份与隔离恢复验证，再以 `--no-build` 重启；staging/production 仍未建立。
 
 - 2026-09-03 Ubuntu 自用服务器已部署每日 Docker 缓存维护：只清理 7 天前的未使用构建缓存和悬空镜像，不触碰卷、容器、网络或仍有标签的镜像。服务器为 UTC，`cron.service` 已安装并启用，`syin` 的 `16:00 UTC` 任务对应北京时间次日 `00:00`；远端检查与 journal 留痕通过，未提前执行真实清理，Compose 容器未重启。
 
@@ -33,7 +33,7 @@
 - 活动计划：`TASK-0012` 继续跟踪多学科与语文剩余验收；`PLAN-0031` 的隔离 Chromium 登录态 E2E、`PLAN-0032/0033` 的语文复习/古诗/看图写话、`PLAN-0038` 的分学科学习记录及 `PLAN-0039` 的 GHCR 发布均已完成代码和对应自动化。`PLAN-0040` 复核代码、OpenAPI 与文档一致性。正式教研/版权签核、真实 Provider 质量/成本、Ubuntu 真实账号浏览器和完整设备 E2E 仍待完成；英语保持供应商中立锁定框架并排最后。
 - 任务状态：ADR-0018/PLAN-0012 已完成本地与 Ubuntu API/Flutter/Compose/契约迁移；Ubuntu 不再依赖预签名直传，MinIO `9000` 未向宿主/LAN 暴露。最终真机仍未回归。
 - 2026-09-04 iPhone 11：重新签名安装后复现 iOS 本地网络权限未登记导致的 `errno 65`；Flutter/iOS 已在健康检查前用 `NWConnection` 对实际家庭服务器触发授权并等待结果。修复包覆盖安装后，Ubuntu 收到 iPhone `192.168.1.100` 的 `/healthz` 并返回 200。登录、相机/相册、弱网和完整设备生命周期仍未验收。
-- 当前分支：`master`；本地与 Ubuntu API/OpenAPI `0.17.2`、`0038_classical_poem_options` 已完成代码、本机/Ubuntu/Nova 9 验证，并已提交、推送和发布 tag `v0.17.2`。
+- 当前分支：`master`；本地与 Ubuntu API/OpenAPI `0.17.2`、`0038_classical_poem_options` 已完成代码、本机/Ubuntu/Nova 9 验证，并已提交、推送和发布 tag `v0.17.2`。Ubuntu 当前部署载荷为代码提交 `6a518fc` 的 GHCR `sha-*` 镜像。
 - 当前重点：完成正式语文内容具名教研/版权签核、真实 Provider/PDF 质量与成本评测、Ubuntu 真实账号浏览器和设备 E2E；`PLAN-0034/ADR-0028` 的本地 Qwen 路由和 12 GB Ubuntu 部署能力仍保留，但 4 核下 `question-extraction.v1` synthetic 大图 600 秒内不收敛，8 核下耗时 373.128 秒且生成到 2048 token 上限后仍因 `provider_response_schema_invalid` 失败。Ubuntu 已将开关恢复为 `false` 并停止本地模型，当前运行时为 `newapi`；切换后的 synthetic 数学文本 Schema smoke 3.591 秒通过，详见 `docs/local-qwen-evaluation-report-2026-08-24.md`。本轮未连接手机或平板。英语继续排最后。既有数学教材原页/知识审核、推荐详情和学习记录继续按已部署合同运行。
 - 已完成：本地与 Ubuntu 已部署的既有 OpenAPI/迁移、视觉四态候选与确认、可信 VerifiedQuestion → 云端递进 L1/L2 → 完整步骤/答案/验算、Mistake/Review closeout、语文确定性 Content/Attempt/Review、古诗抽查和看图写话引导，以及 PDF 私有原页、分批多模态教材理解、全书知识图谱、家长批准、“批准知识点 + 全部开放错题”的来源受限推荐和 180 天详细学习历史策略；本地新增任务会话位置、容量/未来日期/撤销保护。
 - 2026-08-16 语文 `v0.16.0` 已部署：`0033` 退役六项语文演示并从已审核教材逐行古诗生成抽查；`0034` 增加独立 `picture_writing_guides` 与 `picture-writing-guide.v1`。看图写话只消耗用户确认的脱敏派生图，Provider 只返回观察/提问/句式支架，绝不走数学抽题、生成范文或评分。Ubuntu 对无人物、无文字的合成花园图完成一次真实 Provider Schema 冒烟；不代表儿童图片、质量、成本或完整设备验收。
@@ -51,9 +51,9 @@
 ## 3. 已验证的仓库事实
 
 - 仓库根目录：`/Users/ybh/PycharmProjects/study`。
-- Git：本轮审计基线为 `master`/`origin/master` 的 `17275d8`，开始时工作区干净；当前发布标签为 `v0.17.2`。
+- Git：代码/契约审计基线为 `master`/`origin/master` 的 `17275d8`，随后提交 `6a518fc` 已推送并用于 Ubuntu GHCR 部署；当前发布标签为 `v0.17.2`。
 - 现有内容：根目录上下文文档、`prompts/` 工作流模板、`docs/adr/0000-template.md`、`家庭AI学习助手_架构设计_v1.0.docx`。
-- 已创建并验证：`apps/`、`services/`、`packages/`、`evals/`、`infra/` 的 P0/P1 核心路径、配置、锁文件、测试和 Compose；Flutter Android release APK 与 iOS release 无签名 Runner.app 已构建。Ubuntu VM 上的 amd64 完整栈运行 API/OpenAPI `0.17.2`、迁移 `0038_classical_poem_options`，新流式上传、孩子管理、PDF 解析、错题闭环、私有原页、知识图谱、来源受限推荐、分学科学习记录、语文确定性 Content/Attempt/Review、古诗抽查和看图写话独立引导已部署；GHCR `v0.17.2` 多架构镜像已发布但 Ubuntu 仍运行 legacy-builder 镜像。NewAPI synthetic 完整解答和看图写话 Schema 冒烟已成功，真实 L1/L2/智能规划、真实语文 Provider/PDF 质量仍待实测；ARM 镜像因 PaddlePaddle 3.3.1 无 Linux aarch64 wheel 而不含旧本地 OCR。
+- 已创建并验证：`apps/`、`services/`、`packages/`、`evals/`、`infra/` 的 P0/P1 核心路径、配置、锁文件、测试和 Compose；Flutter Android release APK 与 iOS release 无签名 Runner.app 已构建。Ubuntu VM 上的 amd64 完整栈运行 API/OpenAPI `0.17.2`、迁移 `0038_classical_poem_options`，新流式上传、孩子管理、PDF 解析、错题闭环、私有原页、知识图谱、来源受限推荐、分学科学习记录、语文确定性 Content/Attempt/Review、古诗抽查和看图写话独立引导已部署；2026-09-08 已切换为代码提交 `6a518fc` 对应的 GHCR `sha-*` 镜像。NewAPI synthetic 完整解答和看图写话 Schema 冒烟已成功，真实 L1/L2/智能规划、真实语文 Provider/PDF 质量仍待实测；ARM 镜像因 PaddlePaddle 3.3.1 无 Linux aarch64 wheel 而不含旧本地 OCR。
 - 设计稿：31 个段落、6 个表格、3 页，定义 P0/P1/P2、设备职责、核心实体/API 和发布门槛；本地渲染缺少部分中文字体，但 OOXML 文本可完整提取。
 
 ## 4. 主文档索引
@@ -63,14 +63,14 @@
 | 项目目标、范围、设备、环境 | `PROJECT.md` | Active；目标与现状已分离 |
 | P1 产品需求与验收 | `PRD.md` | Draft；待产品 Owner 审批 |
 | 当前任务 | `TASK.md` | TASK-0012 多学科/语文主线已部署，继续跟踪正式内容、真实 Provider 和设备验收；英语框架保持锁定并排最后 |
-| 复杂任务计划 | `PLANS.md` | PLAN-0040 代码/契约/文档复核进行中；PLAN-0039 已发布 GHCR 镜像但 Ubuntu 尚未切换拉取式部署 |
+| 复杂任务计划 | `PLANS.md` | PLAN-0040 代码/契约/文档复核、PLAN-0041 Ubuntu GHCR 拉取式部署均已完成；正式内容、Provider 和设备验收仍在队列 |
 | 系统结构、数据流、接口 | `ARCHITECTURE.md` | P0/P1 单家庭核心闭环已实现；残余边界明确记录 |
 | 测试命令和质量门槛 | `TESTING.md` | API/Web/Flutter 质量命令已有验证；原生构建结果以最新记录为准 |
 | 儿童数据、权限与 AI 安全 | `SECURITY.md` | 基线草案；生产开放项未决 |
 | 部署、回滚、告警与恢复 | `RUNBOOK.md` | Ubuntu 自用部署与恢复已验证；监控/公网发布未建立 |
 | 架构决策 | `DECISIONS.md`、`docs/adr/` | ADR-0025 供应商中立儿童英语框架、ADR-0020～0023 教材驱动数学主线和 ADR-0018 已 Accepted；替代关系见索引 |
 | 工作队列 | `TODO.md` | 核心实现多已部署；正式内容、真实 Provider 质量/成本、Ubuntu 真实账号和完整设备 E2E 仍在队列 |
-| 已发布变化 | `CHANGELOG.md` | 最新发布版本 `v0.17.2`；本轮一致性修正不部署 Ubuntu |
+| 已发布变化 | `CHANGELOG.md` | 最新发布版本 `v0.17.2`；2026-09-08 已记录 Ubuntu GHCR 部署 |
 | 原始设计基线 | `家庭AI学习助手_架构设计_v1.0.docx` | v1.0；后续 ADR 可替代 |
 
 ## 5. 技术摘要
@@ -93,7 +93,7 @@
 | `services/api` | FastAPI 模块化单体和 Worker | 本地和 Ubuntu `0038` 已部署 subject-aware 教材、语文 Content/Attempt/Review 与分学科学习记录；正式内容与 Ubuntu 真实账号浏览器验收待完成 |
 | `packages/contracts` | OpenAPI、JSON Schema、生成 SDK | 本地和 Ubuntu `0.17.2`；SDK 生成器尚未固定 |
 | `evals` | 固定 AI 质量/安全/成本评测 | 既有数学/隐私 eval 增加 7-case 英语安全 Policy；真实英语 Provider 质量、延迟、成本和儿童安全 eval 待批准后执行 |
-| `infra/compose` | PostgreSQL/Redis/MinIO/API/Web/迁移/worker/可切换本地模型编排 | Ubuntu 当前 `0.17.2`/`0038`，仍使用 legacy-builder 镜像；GHCR `v0.17.2` 已发布但尚未拉取部署，本地模型默认关闭，英语运行态为 `disabled` |
+| `infra/compose` | PostgreSQL/Redis/MinIO/API/Web/迁移/worker/可切换本地模型编排 | Ubuntu 当前 `0.17.2`/`0038`，API/Web/迁移/四个 worker 使用 GHCR `sha-6a518fc`，本地模型开关为 `false`（容器空闲），英语运行态为 `disabled` |
 | `docs/adr` | 架构决策 | ADR-0028 本地 Qwen 路由、ADR-0027 多学科/语文、ADR-0026 学习记录保留、ADR-0025 英语及 ADR-0020～0023 数学主线 Accepted |
 | `prompts` | Codex 工作流启动器 | 已存在 |
 

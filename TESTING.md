@@ -1,16 +1,23 @@
 # TESTING.md
 
+## 2026-09-08 Ubuntu GHCR 拉取式部署
+
+- 部署载荷：代码提交 `6a518fc`；远端 `192.168.1.4` 的 API/Web 固定 `ghcr.io/yubinhong/aistudy-api:sha-6a518fc` 与 `ghcr.io/yubinhong/aistudy-web:sha-6a518fc`。运行 digest 分别为 `sha256:653444b0d1c2bf9494c54b0793cdfc37824354cea8c6ca221ef85cc4398095da` 和 `sha256:c312f5301efe5fe448c550f9fe54e344c4c324ae66609f761e7eeb02c43dc729`，OCI revision 均为 `6a518fc1de39c4f8414a40185a7cae593c6010c2`。
+- 备份与恢复：`/home/syin/study-backups/20260908T074345Z`；隔离恢复报告 `postgres_public_tables=39`、`minio_snapshot_files=715`。旧 Compose 与 `.env` 保存于 `/home/syin/study-source-backups/20260908T074345Z-ghcr/`。
+- 运行验证：`docker compose config --quiet`、GHCR `pull`、`up -d --no-build`、API/Web 本机和 LAN `healthz`、`0038_classical_poem_options (head)`、迁移/API/Web/四个 worker 状态均通过；最近 10 分钟日志无新增错误。`STUDY_LOCAL_MODEL_ENABLED=false` 下 local-model 仅空闲，不计为本地推理验收。
+- 未执行：Ubuntu 真实账号浏览器、四设备完整 E2E、真实 Provider/PDF 质量与成本、staging/production 发布。
+
 ## 2026-09-08 代码/契约/文档一致性复核
 
 - 审计基线：`master`/`origin/master` 为 `17275d8`，工作区开始时干净；API/OpenAPI 为 `0.17.2`，Alembic head 为 `0038_classical_poem_options`。
 - 运行时与规范对比发现两个差异：OCR 候选确认已使用 `/ocr-results/{result_id}/confirmations`，语文已有 `/chinese/poems/publish`，规范分别仍记录旧路径和漏记。OpenAPI 已按真实路由修正为 70 个 path 条目（含一个 WebSocket 扩展）、81 个 HTTP operation、99 个 component schema。
-- 验证通过：API Ruff/Mypy/`258 passed`，Web Prettier/ESLint/TypeScript/`38 passed`/build/Chromium E2E，Flutter format/Analyze/`74 passed`，四套 synthetic eval，OpenAPI/JSON Schema/运行时路由、Alembic head、Compose 静态 config、Markdown 本地链接和最终差异检查。完整命令和未执行项见 `TASK.md` 同日期记录；本轮不部署 Ubuntu，GHCR `v0.17.2` 已发布与 Ubuntu 仍使用 legacy-builder 镜像是两个独立状态。
+- 验证通过：API Ruff/Mypy/`258 passed`，Web Prettier/ESLint/TypeScript/`38 passed`/build/Chromium E2E，Flutter format/Analyze/`74 passed`，四套 synthetic eval，OpenAPI/JSON Schema/运行时路由、Alembic head、Compose 静态 config、Markdown 本地链接和最终差异检查。代码/契约复核本身不部署 Ubuntu；随后部署证据见上方 `2026-09-08 Ubuntu GHCR 拉取式部署`。
 
 ## 2026-09-05 GitHub Actions 服务镜像发布
 
 - Workflow 静态检查：解析 `.github/workflows/ci.yml`，断言镜像发布 job 仅依赖全部质量 job、仅 push 发布、只在 job 级获得 `packages: write`，并覆盖 API/Web 两个 context、`linux/amd64,linux/arm64`、`sha-*`/版本/`latest`、provenance 和 SBOM。
 - Compose 配置：把 `infra/compose/compose.yml` 与脱敏 `.env.example` 复制到临时目录后执行 `docker compose config --quiet`；断言应用服务无 `build`，迁移/API/四个 worker 使用同一 `STUDY_API_IMAGE`，Web 使用 `STUDY_WEB_IMAGE`，且均启用 `pull_policy: always`。
-- 实际结果：Workflow YAML、Compose 展开、镜像映射断言和 `git diff --check` 通过。提交 `044c52e` 和 annotated tag `v0.17.2` 已推送；tag workflow run `34093042527` 的 GitHub runner、契约/API/Web/Chromium E2E 和 API/Web GHCR 多架构 push 均成功，Ubuntu 当前已按 legacy builder 部署并运行 `0.17.2/0038`。
+- 实际结果：Workflow YAML、Compose 展开、镜像映射断言和 `git diff --check` 通过。提交 `044c52e` 和 annotated tag `v0.17.2` 已推送；tag workflow run `34093042527` 的 GitHub runner、契约/API/Web/Chromium E2E 和 API/Web GHCR 多架构 push 均成功；该记录当时的 Ubuntu 仍按 legacy builder 运行，后续 GHCR 切换见本文件顶部的 2026-09-08 部署记录。
 
 ## 2026-09-03 Ubuntu Docker 缓存定时清理
 
@@ -164,7 +171,7 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | 本地模型路由 | `cd services/api && uv run pytest tests/test_newapi_provider.py -q` | Provider、模型或环境路由变更 | 通过（2026-08-24：`24 passed`；覆盖本地/云端互斥、Qwen 关闭 reasoning、2048 输出上限、600 秒本地上限和本地失败不重试） |
 | 本地 Qwen Compose smoke | `docker compose -f infra/compose/compose.yml up -d local-model api image-analysis-worker curriculum-analysis-worker`；检查 `local-model /health`、`/v1/models` 和 synthetic text/vision/schema 请求 | `STUDY_LOCAL_MODEL_ENABLED=true` 或 llama.cpp/GGUF/硬件变更 | 部分通过后关闭（2026-08-24，Ubuntu 12 GB）：镜像、Q4_K_M 权重和 BF16 projector 下载/加载，health、alias、multimodal、`local_qwen` 选择、文本 JSON 和私有端口通过。4 核下 synthetic 大图 600 秒内不收敛；8 核下短文本 1.387 秒，完整视觉请求 373.128 秒、生成 2048 tokens 后以 `provider_response_schema_invalid` 失败，模型约 5.87 GiB、无 Swap。视觉 Schema 门禁未通过，Ubuntu 已恢复云端并停止模型容器；详见 `docs/local-qwen-evaluation-report-2026-08-24.md`，未使用真实儿童数据 |
 | 云端 Provider 回退 smoke | 关闭本地开关，重新创建 API/ImageAnalysis/CurriculumAnalysis worker；检查运行时 Provider 并执行 synthetic 数学文本 Schema 请求 | 本地模型回退云端或云端配置变更 | 通过（2026-08-24，Ubuntu）：运行时 `provider=newapi` 且本地模型容器 `Exited (0)`；不含儿童数据的 synthetic 数学文本在 3.591 秒内返回合法 3 步结构，API/Web/四个 worker 健康，宿主约 10 GiB available、Swap 为 0 |
-| Compose 完整启动 | `docker compose -f infra/compose/compose.yml pull && docker compose -f infra/compose/compose.yml up -d` | API/数据/跨模块变更 | GHCR `v0.17.2` 已发布；Ubuntu 主机拉取、同标签固定和 digest/运行源码核验尚未执行，当前仍运行 `0.17.2/0038` legacy-builder 镜像 |
+| Compose 完整启动 | `docker compose -f infra/compose/compose.yml pull && docker compose -f infra/compose/compose.yml up -d` | API/数据/跨模块变更 | 通过（2026-09-08；Ubuntu 固定 `sha-6a518fc`，备份恢复、digest/OCI revision、迁移、API/Web LAN health 和四个 worker 已核验） |
 | Web 镜像 | `cd apps/web && docker buildx build --platform=linux/arm64 --load -t study-web:arm64-debug .` | Web/Compose 变更 | 通过（2026-09-03，Ubuntu x86_64 legacy builder；Next.js standalone 镜像使用 Node 24.18.0、pnpm 11.7.0，镜像 `d03f4fea…`；Web/API 本机和 LAN health、运行 CSS 标识及其他服务未重启通过） |
 | Web 登录态 E2E | `cd apps/web && pnpm test:e2e:install && pnpm test:e2e` | 认证、Cookie/CSRF、多家庭/多孩子或 Web 路由变更 | 通过（2026-09-03；Chromium `1 passed`，增加 `1280×800` 时间标签不裁切和 `390×844` 无横向溢出断言；隔离内存 API，不读取 Ubuntu 数据；本机 Node 22.23 低于锁定 Node 24.18，仅产生 engines warning） |
 | 集成环境 | `docker compose -f infra/compose/compose.yml up -d postgres minio` | API/数据/跨模块变更 | 当前通过（2026-07-13；旧配置发布 5432/9000）。PLAN-0012 目标要求 MinIO 仅在 Compose 内部网络可达，并增加宿主/LAN `9000` 不开放的断言 |

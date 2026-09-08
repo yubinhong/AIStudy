@@ -42,7 +42,7 @@ AIStudy 是给一个家庭自己使用的小学生学习助手。孩子在平板
 | 英语 | 暂未开放 |
 | 自用部署 | 已在家庭 Ubuntu 服务器运行；不等同于公开网站或商业服务 |
 
-Ubuntu 当前运行 API/OpenAPI `0.17.2`、迁移 `0038_classical_poem_options`。服务器配有 12 GB 内存和 8 个 CPU 核心；本地 `Qwen3.5-4B Q4_K_M` 已完成测试但因视觉质量门禁失败而停止，当前 AI 请求使用现有 NewAPI 云端配置。跨设备任务位置、每天最多 3 项、未来任务保护、家长撤销、语文教材批准后自动古诗出题和看图写话安全降级已由版本标签固化。`v0.17.2` 的 GitHub Actions/GHCR 服务镜像 workflow 已成功完成；Ubuntu 本次仍使用本地 legacy builder 部署，尚未切换到 GHCR。备份、恢复校验、模型测试、健康检查和仍待完成的设备/Provider 验证见 [RUNBOOK.md](RUNBOOK.md) 和 [TESTING.md](TESTING.md)。
+Ubuntu 当前运行 API/OpenAPI `0.17.2`、迁移 `0038_classical_poem_options`。服务器配有 12 GB 内存和 8 个 CPU 核心；本地 `Qwen3.5-4B Q4_K_M` 已完成测试但因视觉质量门禁失败而停止，当前 AI 请求使用现有 NewAPI 云端配置。跨设备任务位置、每天最多 3 项、未来任务保护、家长撤销、语文教材批准后自动古诗出题和看图写话安全降级已由版本标签固化。`v0.17.2` 的 GitHub Actions/GHCR 服务镜像 workflow 已成功完成；2026-09-08 Ubuntu 已切换为代码提交 `6a518fc` 的固定 `sha-6a518fc` GHCR 镜像。备份、恢复校验、模型测试、健康检查和仍待完成的设备/Provider 验证见 [RUNBOOK.md](RUNBOOK.md) 和 [TESTING.md](TESTING.md)。
 
 ## 家庭使用流程
 
