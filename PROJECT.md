@@ -95,10 +95,10 @@
 | 层 | 选型 | 版本 | 说明 |
 | --- | --- | --- | --- |
 | 孩子/移动端 | Flutter（iOS/Android） | Flutter stable `3.44.6`（`ADR-0007` Accepted）；`image_picker 1.2.3`、`crypto 3.0.7`、`flutter_secure_storage 9.2.4`、`sqflite 2.4.3` | iPad 为孩子主端；任务/拍题/提示、安全会话、数学三入口、视觉四态自动候选与人工校正、长文本确认、上传进度、完整解答和账号切换已实现；实际相机闭环与设备回归待完成 |
-| Web/PWA | Next.js + TypeScript | Next.js `16.2.10`（`ADR-0007` Accepted） | 家长后台和 Windows 首版入口；登录/任务/周报已实现。目标增加统一孩子管理、每孩子课程范围、教材导入审核发布和任务建议审批 |
+| Web/PWA | Next.js + TypeScript | Next.js `16.2.10`（`ADR-0007` Accepted） | 家长后台和 Windows 首版入口；登录、统一孩子管理/切换、家庭权限、教材审核发布、任务建议审批、导出及数学/语文学习记录已实现；Ubuntu 真实账号浏览器待验收 |
 | API/Worker | Python + FastAPI + 异步 Worker | Python `3.12.x`、FastAPI `0.136.3`、boto3 `1.43.46`、Pillow `12.3.0`、pdfplumber `0.11.7`、pypdfium2 `5.11.0`、PaddleOCR `3.7.0`、PaddlePaddle CPU `3.3.1` | 模块化单体；PDF 文本辅助解析、私有页图渲染、多模态教材知识图谱、Tutor、Mistake/Review/Recommendation worker 已有本地实现 |
 | 视觉/推理 Provider | Provider Adapter + 固定 JSON Schema / Tutor Policy | `STUDY_LOCAL_MODEL_ENABLED=true` 时使用 Compose 内部 Qwen3.5-4B Q4_K_M；否则使用自用 NewAPI URL/key/model | 图片解析与 Tutor 分离；本地/云端由同一 `NewApiConfig` 选择且不自动跨 Provider 回退；服务端只保存未确认 Extraction，人工确认后才生成 VerifiedQuestion；英语真实 Provider 未接入 |
-| 业务数据 | PostgreSQL + pgvector | PostgreSQL `16.10`（Compose） | PostgreSQL 是业务事实来源；现有保存 Profile/Learning/Capture/Identity/Tutor/Report/Mistake/Review。目标继续增加 CurriculumSnapshot、来源证据和 TaskRecommendation；pgvector 只做已发布知识检索，不替代关系/审批事实 |
+| 业务数据 | PostgreSQL + pgvector | PostgreSQL `16.10`（Compose） | PostgreSQL 是业务事实来源；Profile/Learning/Capture/Identity/Tutor/Report/Mistake/Review、CurriculumSnapshot、来源证据和 TaskRecommendation 已持久化；pgvector 只做已发布知识检索，不替代关系/审批事实 |
 | 缓存/队列 | Redis | `TBD（P0 锁定）` | 不作为长期业务事实来源 |
 | 文件 | 本地 MinIO / S3 兼容 Adapter | MinIO `RELEASE.2025-09-07T16-13-09Z`；boto3 `1.43.46` | 私有 Bucket；API/worker 由内部地址有界流式写入且 MinIO 不暴露 LAN，见 ADR-0018/0011。Ubuntu 已完成成对迁移 |
 | 端侧数据 | SQLite | 随 Flutter 依赖锁定 | 缓存今日任务、学习会话和上传队列 |
@@ -138,7 +138,7 @@ Web 多孩子体验修订（2026-08-16）：PLAN-0013/Proposed ADR-0019 的事�
 
 | 模块/服务 | 目标路径 | 责任 | Owner | 依赖 |
 | --- | --- | --- | --- | --- |
-| 孩子端 | `apps/child_flutter` | 学科/数学三入口、错题讲解、到期复习、今日任务、拍题、SQLite 与待同步 | `TBD` | OpenAPI SDK、`image_picker`、端侧存储；今日任务已将每道指定题干按序带入拍题/确认页，多题共享会话，SQLite 记录重开题号，确认作答/任务完成/复习收口/跳过断网入队后按批次及顺序同步；错题 closeout、ReviewAttempt UI、L1/L2 递进已实现，跨设备题号、真实相机/相册和设备回归仍待完成 |
+| 孩子端 | `apps/child_flutter` | 学科/数学三入口、错题讲解、到期复习、今日任务、拍题、SQLite 与待同步 | `TBD` | OpenAPI、`image_picker`、端侧存储；指定题目按序执行、服务端与 SQLite 跨设备/重开位置、断网事件队列、closeout、ReviewAttempt UI 和 L1/L2 已实现；真实相机/相册与完整设备回归仍待完成 |
 | Web/PWA | `apps/web` | 家长端、统一孩子管理、多孩子工作台、PDF 教材审核发布、任务建议审批与 Windows 首版体验 | `TBD` | 隔离登录态/跨家庭/双孩子 Chromium 已通过；OpenAPI SDK、真实 PDF 流程和 Ubuntu 真实账号浏览器待完成 |
 | 模块化 API | `services/api` | 身份、档案、课程/材料、任务/推荐、捕获/视觉、分模式辅导、错题/复习、报告和通知 | `TBD` | PostgreSQL、Redis、对象存储、AI Provider；Mistake/Review/Curriculum/Recommendation、原子 closeout、解析 worker、grounding、ReviewPolicy 和 Tutor Hint 已有实现，真实 Provider/PDF 质量与设备回归仍待完成 |
 | 跨端契约 | `packages/contracts` | OpenAPI、JSON Schema 和生成 SDK 的唯一契约来源 | `TBD` | API 与所有客户端 |
@@ -174,7 +174,7 @@ Web 多孩子体验修订（2026-08-16）：PLAN-0013/Proposed ADR-0019 的事�
 | 里程碑 | 结果 | 负责人 | 目标日期 | 状态 |
 | --- | --- | --- | --- | --- |
 | P0｜基础 | 建立仓库、OpenAPI、家庭/孩子/设备、锁文件、CI 草案和自用 Compose | `TBD` | `TBD` | 已完成基础实现；完整可观测性仍后置 |
-| P1A｜安全与家庭入口 | 完成 API 流式上传、统一孩子管理和多孩子选择 | `TBD` | `TBD` | PLAN-0012 已部署；PLAN-0013 API/Web 首版已部署，E2E/设备验收待完成 |
+| P1A｜安全与家庭入口 | 完成 API 流式上传、统一孩子管理和多孩子选择 | `TBD` | `TBD` | PLAN-0012/0013 已部署，隔离 Chromium E2E 已通过；Ubuntu 真实账号和设备验收待完成 |
 | P1B｜教材与错题讲解 | 解析/发布孩子教材知识范围；交付数学三入口、作答状态确认、有作答错因讲解、空白从头讲和 L1/L2 语义递进 | `Implemented` | `0.9.x` | PLAN-0016 M3～M4、ADR-0021 Accepted；真实 PDF/Provider/设备质量验收待完成 |
 | P1C｜复习与任务 | 原子沉淀错题，交付 ReviewAttempt 证据化到期复习和有材料来源、家长可控的任务建议 | `Implemented` | `0.9.x` | PLAN-0016 M1/M2/M4；真实设备、并发及时区 E2E 待完成 |
 | P2｜增强 | 交付更复杂掌握度、科目插件、视频/语音和 Python 游戏化模块；插件不修改核心任务/会话模型 | `TBD` | `TBD` | 候选 |
@@ -197,7 +197,7 @@ Web 多孩子体验修订（2026-08-16）：PLAN-0013/Proposed ADR-0019 的事�
 
 - 产品与技术设计基线：`家庭AI学习助手_架构设计_v1.0.docx`
 - 产品需求：`PRD.md`（P1 MVP 草案，待 Owner 审批）
-- 架构：`ARCHITECTURE.md`（目标架构，尚未实现）
+- 架构：`ARCHITECTURE.md`（目标与已实现状态按组件和数据流分别标注）
 - 安全：`SECURITY.md`（基线策略，生产细节仍有开放项）
 - 测试：`TESTING.md`（目标质量门槛；代码初始化后绑定并验证真实命令）
 - 决策：`DECISIONS.md` 与 `docs/adr/`

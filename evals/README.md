@@ -18,8 +18,10 @@ line filtering, mismatched arrays, and control-character rejection. The runner
 does not invoke PaddleOCR, MinIO, a network Provider, or an image file; its
 output is a small aggregate report and records `provider_calls: false`.
 
-Future evals must additionally cover tutor hint levels, refusal to directly
-answer, schema failures, sensitive content, latency, and cost. New fixtures
+Current fixed suites cover OCR normalization, privacy sanitization, provider-free
+Tutor levels/answer refusal, English conversation safety, and selected AI Schema
+boundaries. Remaining acceptance work is real-Provider L1/L2 and curriculum
+quality, latency, token/cost, and device behavior. New fixtures
 must record source/authorization, grade, topic, expected behavior, and
 forbidden behavior without containing child data.
 

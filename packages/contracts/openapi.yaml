@@ -2368,6 +2368,41 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         '409': {$ref: '#/components/responses/InvalidRequest'}
+  /households/{household_id}/children/{child_id}/chinese/poems/publish:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      operationId: publishChinesePoems
+      summary: Publish parent-reviewed private poems into one child's question pool
+      description: Parent owner only. The material must be authorized and the referenced Chinese curriculum snapshot must already be published.
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PublishChinesePoemsRequest'}
+      responses:
+        '201':
+          description: Reviewed poems compiled into deterministic child questions.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [published_questions]
+                properties:
+                  published_questions: {type: integer, minimum: 0}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/InvalidRequest'}
+        '422': {$ref: '#/components/responses/InvalidRequest'}
   /households/{household_id}/children/{child_id}/english-practice/settings:
     parameters:
       - $ref: '#/components/parameters/HouseholdId'
@@ -2568,6 +2603,21 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /households/{household_id}/captures/{capture_id}/ocr-results/{result_id}/confirmations:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: capture_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: result_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
     post:
       operationId: confirmOcrCandidate
       summary: Confirm one OCR candidate as a manual Capture correction
@@ -3678,6 +3728,30 @@ components:
         knowledge_key: {type: string, minLength: 1, maxLength: 120}
         difficulty: {type: string, enum: [basic, standard, advanced]}
         source: {$ref: '#/components/schemas/ChineseContentSource'}
+    ChinesePoemDraft:
+      type: object
+      additionalProperties: false
+      required: [title, page_number, lines]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 160}
+        page_number: {type: integer, minimum: 1, maximum: 400}
+        lines:
+          type: array
+          minItems: 2
+          maxItems: 80
+          items: {type: string, minLength: 1, maxLength: 120}
+    PublishChinesePoemsRequest:
+      type: object
+      additionalProperties: false
+      required: [material_id, snapshot_id, poems]
+      properties:
+        material_id: {type: string, format: uuid}
+        snapshot_id: {type: string, format: uuid}
+        poems:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: {$ref: '#/components/schemas/ChinesePoemDraft'}
     ChineseAttemptRequest:
       type: object
       additionalProperties: false

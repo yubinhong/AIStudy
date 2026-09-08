@@ -1,10 +1,13 @@
 # Child Flutter app
 
-Flutter iOS/Android child learning experience. The current slice implements the
-bright landscape learning-desk, capture input, OCR-confirmation, and thinking-hint UI: one current
-math task, progress, continue learning, camera/gallery entry, OCR candidate review/edit/confirm,
-online state, and an unavailable API state. It uses synthetic-only generated visual assets and
-supports only account/password login with a revocable session stored by
+Flutter iOS/Android child learning experience. The current app provides the
+low-distraction learning desk with explicit math, Chinese, and locked English
+subject boundaries. Math exposes mistake explanation, due review, and one
+current ordered task; Chinese exposes reviewed poem checks and picture-writing
+guidance. Capture input, OCR/extraction confirmation, progressive Tutor hints,
+online/offline state, and unavailable-API states are implemented. It uses
+synthetic-only generated visual assets and supports only account/password login
+with a revocable session stored by
 `flutter_secure_storage`; it has no demo-header fallback. Pending Attempt
 events are persisted in SQLite and scoped by service address plus account.
 Before login, the child can edit the HTTP(S) service address. The validated
@@ -13,8 +16,8 @@ session before any credentials are sent.
 A selected local image passes through the local sanitization preview before the
 confirmed derivative reaches the review screen. The reusable `CaptureApiClient`
 loads real tasks or creates a child-bound ad-hoc StudySession, resumes an active
-session, performs signed private
-MinIO upload, starts ImageAnalysis, polls the bounded Job, displays the
+session, streams the confirmed derivative through the authenticated API,
+starts ImageAnalysis, polls the bounded Job, displays the
 QuestionExtraction and persists explicit edits as a VerifiedQuestion. Tutor
 then sends only the VerifiedQuestion ID; the server reloads the trusted fact
 and persists an append-only TutorTurn. The app
@@ -46,9 +49,9 @@ flutter run -d <device> \
 `STUDY_API_URL` remains only an optional compile-time initial value for the
 editable login field; it is not an authentication bypass or immutable endpoint.
 
-The API and the public MinIO signing endpoint must both be reachable from the
-device. The app never receives storage credentials, and the Provider only sees
-the user-confirmed sanitized derivative. The ImageAnalysis worker must be
+Only the API must be reachable from the device. The app never contacts MinIO
+or receives a storage URL, object key, or storage credentials; the Provider
+only sees the user-confirmed sanitized derivative. The ImageAnalysis worker must be
 running; every extraction stays behind the manual-confirmation gate. Structured
 Attempt retries survive process restarts through SQLite; images, credentials,
 sessions and Provider responses are never stored in that queue.

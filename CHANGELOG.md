@@ -1,5 +1,7 @@
 # Changelog
 
+- 2026-09-08：按可运行代码复核并同步仓库文档与 OpenAPI。规范将 OCR 候选确认登记到真实 `/confirmations` 子资源，并补记家长发布已审核私有古诗的接口/请求 Schema；修正后 OpenAPI `0.17.2` 与 FastAPI 的 81 个 HTTP operation 一致。同步移除模块 README 与当前状态文档中旧预签名 MinIO、旧版本/迁移和已实现能力仍标为待实现的描述。本轮不改变业务代码、数据库或 Compose，不部署 Ubuntu；推送只触发 GitHub Actions，镜像构建结果需与推送状态分开确认。
+
 - 2026-09-07：发布 `v0.17.2`。家长后台学习记录按数学/语文拆分，语文新增家长专用答题记录查询；iPhone 11 本地网络授权修复、GitHub Actions/GHCR 多架构镜像交付配置和普通用户可读的部署说明一并纳入。API/OpenAPI 版本为 `0.17.2`，数据库仍为 `0038_classical_poem_options`；自动质量门槛和 Ubuntu 自用部署证据见 `RUNBOOK.md`。
 
 - 2026-09-05：将家长后台数学/语文学习记录增量部署到 Ubuntu 自用 Compose。保留 `.env` 和数据卷，备份并隔离恢复验证通过；API/Web 使用 legacy builder 重建，迁移仍为 `0038_classical_poem_options`，本机/LAN health 均为 200。未创建新 commit/tag，真实账号和设备回归仍待执行。

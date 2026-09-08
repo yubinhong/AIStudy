@@ -34,14 +34,14 @@
 | TODO-013 | 锁定移动端正式 App ID 与发布签名 | 当前 Android/iOS 仍使用 Flutter `com.example` 标识，Android release 为本地自用使用 debug 签名；擅自改变会生成新 App、清空原 App 安全会话并需要 Owner 证书/keystore | P0（正式分发前） | 项目 Owner + Codex | Owner 确认 Android applicationId、iOS bundle ID、Apple Team 与 Android keystore 安全位置 | Planned |
 | TODO-014 | 将 Capture 改为 API 有界流式上传并关闭 MinIO LAN 入口 | 统一 Session/Household/孩子授权、限速、幂等、文件验证和审计；App 不再持有预签名 URL 或直连对象存储 | P0 / Security | Codex（执行中） | ADR-0018 Accepted；PLAN-0012；API/App 必须成对升级 | In Progress（API/Flutter/契约/Compose 已迁移并部署 Ubuntu；真机、断连/超时/并发现场验收和 Provider 额度恢复后的识别待完成） |
 | TODO-015 | 统一 Web 孩子管理并支持多孩子工作台切换 | 创建孩子时原子创建档案和唯一绑定账号；首页按所选孩子统一过滤任务、档案和周报，消除“两套对象”和永远取第一个孩子的问题 | P0 / Web UX | Codex（执行） | PLAN-0013；ADR-0019；发布匹配 OpenAPI/API/Web 并完成迁移验收 | In Progress（聚合创建/列表/删除、Web 单表单、唯一约束和首页孩子选择已实现并部署 Ubuntu；隔离 Chromium 双孩子已通过，Ubuntu 真实账号/PostgreSQL 浏览器与设备回归待完成） |
-| TODO-016 | 建立孩子 PDF 教材范围、材料导入与知识发布 | 让错题讲解和任务建议基于家长确认的当前年级/学期/PDF 教材，而不是模型无来源记忆 | P0 / Product Foundation | Codex（执行） | ADR-0020～0023 Accepted；PLAN-0018 | In Progress（Ubuntu `0.11.0`/`0025` 已部署 PDF-only、私有原页、分批多模态分析、整本知识图谱和家长批准；真实 118 页 PDF/NewAPI 质量/成本及最终 E2E 待验收） |
+| TODO-016 | 建立孩子 PDF 教材范围、材料导入与知识发布 | 让错题讲解和任务建议基于家长确认的当前年级/学期/PDF 教材，而不是模型无来源记忆 | P0 / Product Foundation | Codex（执行） | ADR-0020～0023 Accepted；PLAN-0018 | In Progress（Ubuntu `0.17.2`/`0038` 已部署 PDF-only、私有原页、分批多模态分析、整本知识图谱和家长批准；真实 118 页 PDF 已完成机器解析并批准，正式版权/教研、Provider 质量/成本及最终 E2E 待验收） |
 | TODO-017 | 重构 Flutter 数学三入口并实现错题详细讲解 | 提供“数学 → 错题讲解/复习错题/今日任务”；拍题同时解析题目和孩子作答，确认 `worked/blank/unclear/answer_area_missing`；有作答定位错步，确认空白从头讲解，并创建错题 | P0 / Core Learning | Codex（执行） | TODO-016；PLAN-0012；ADR-0020；PLAN-0016 M1/M4 | In Progress（三入口、四态、完整解答和 closeout 已实现；真实相机四态与完整错步质量验收待设备/Provider） |
 | TODO-018 | 实现正式错题本与到期复习调度 | 将拍题讲解原子沉淀为错题，提供实际题目、重新作答、追加 ReviewAttempt 和确定性到期/全部逐题过关 | P0 / Retention | Codex（执行） | TODO-017；PLAN-0016 M1/M2；ReviewPolicy v2 | In Progress（closeout、实际题目、ReviewAttempt、服务端判定和无到期项时提前复习全部错题已实现；真实设备/并发/时区 E2E 待验收） |
 | TODO-019 | 实现可解释今日任务建议 | 用到期错题、已批准教材练习和有证据的薄弱知识点提出任务，默认由家长批准 | P1 / Recommendation | Codex（执行） | TODO-016、TODO-018；PLAN-0018/ADR-0022/0023 | In Progress（本地已改为全量开放错题 + 已批准知识图谱，保存具体题/视觉说明/页码/原页/日期/时长并审批下发，残缺页级文字不再进入推荐；真实 Provider/PDF/E2E 与 token/延迟/成本审计待验收） |
 | TODO-020 | 实现 Tutor 第 1/2 级语义渐进提示 | L1 帮助看懂题意/定位疑点，L2 在同一 L1 上增加方法或第一步脚手架；按 worked/blank/review 分支且不泄露最终答案 | P0 / Tutor Quality | Codex（执行） | PLAN-0017；Tutor Hint Schema/Policy；固定数学 eval | In Progress（云端 L1/L2、builds-on、答案/重复/题意门禁、同时经过时间回退和 5-case eval 已在本地实现；真实 Provider/设备质量验收待完成） |
 | TODO-216 | 公开教材复用与引用生命周期 | 对家长显式声明的国家公开教材按完整内容指纹复用私有 PDF/页图/已审核派生结果，同时保持家庭各自审核、发布、知识图谱与学习事实隔离 | P1 / Storage / Privacy | Codex（执行） | PLAN-0019；ADR-0024 | In Progress（`0027` 与本地回归已实现；真实 PostgreSQL 并发删除、浏览器和设备验收待执行） |
 | TODO-217 | 多家庭商业化运营边界 | 已支持管理员开通独立自托管家庭；后续补邀请/移除、账号跨家庭关系、恢复、TLS、限速、审计、公开注册、计费和数据保留，不开放跨家庭学习数据 | P2 / Identity / Security | 项目 Owner + Codex | ADR-0024；PLAN-0019 | Planned（本轮不开放匿名注册或商业化公网服务） |
-| TODO-218 | 英语学科与合规口语练习插件 | 首页提供数学/英语选择，并以家长同意、配额、可撤销会话和供应商中立中继支持三个有界情景 | P1 / Child UX / Privacy | Codex（执行） | PLAN-0022；ADR-0025；合规 Provider 另行批准 | In Progress（本地框架与 fake 自动化完成；真实 Provider、release 构建、PostgreSQL/设备验收未完成，部署默认锁定） |
+| TODO-218 | 英语学科与合规口语练习插件 | 首页提供数学/英语选择，并以家长同意、配额、可撤销会话和供应商中立中继支持三个有界情景 | P1 / Child UX / Privacy | Codex（执行） | PLAN-0022；ADR-0025；合规 Provider 另行批准 | In Progress（供应商中立框架、fake 自动化、双平台 release 构建和默认锁定的 Ubuntu 部署已完成；真实合规 Provider、PostgreSQL 并发/级联和设备验收未完成） |
 
 ## Later — P2 候选，不承诺
 
@@ -67,7 +67,7 @@
 | --- | --- | --- | --- | --- |
 | BLOCK-001 | 使用真实儿童数据或向外部云端发送儿童图片 | 项目 Owner 已明确自用真实数据和本地 NewAPI 可用；仍要求只发送确认且哈希绑定的脱敏副本，不能把本地 NewAPI 配置误当成已完成安全/删除/备份验证 | 技术 Owner | NewAPI 实际联调、人工确认和删除演练前 |
 | BLOCK-002 | staging/production 部署 | 平台、Owner、密钥、SLO/RPO/RTO、Runbook 和授权未确定 | 技术/运维/项目 Owner | P0 可运行后 |
-| BLOCK-003 | 公开开源发布 | 远程仓库和许可证未确认 | 项目 Owner | 首次公开前 |
+| BLOCK-003 | 公开开源发布 | GitHub remote 与 Apache-2.0 `LICENSE` 已存在；仓库公开可见性、发布前安全/隐私审计和 Owner 明确批准仍未确认 | 项目 Owner | 首次公开前 |
 
 ## 发现问题记录规则
 

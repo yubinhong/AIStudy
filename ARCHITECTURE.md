@@ -72,17 +72,17 @@ flowchart LR
 
 | 组件 | 目标路径/服务 | 责任 | 数据所有权 | 上游/下游 | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| 孩子端 | `apps/child_flutter` | 学科/数学三入口、语文确定性练习、锁定英语入口、拍题、SQLite/待同步 | 端侧缓存和待同步操作；答案规范与服务端数据不是本地主真相 | `image_picker`、Capture/Learning/Chinese API | 数学闭环与语文首个句子/阅读纵向切片已实现；真实设备、语文完整复习和内容验收待完成 |
+| 孩子端 | `apps/child_flutter` | 学科/数学三入口、语文确定性练习、锁定英语入口、拍题、SQLite/待同步 | 端侧缓存和待同步操作；答案规范与服务端数据不是本地主真相 | `image_picker`、Capture/Learning/Chinese API | 数学闭环、语文古诗抽查/看图写话与到期复习已实现；正式内容和完整设备验收待完成 |
 | Web/PWA | `apps/web` | 家长登录、统一孩子管理、多孩子选择、PDF 教材上传、审核/发布、任务建议、周报和导出 | 仅选择/草稿编辑状态；业务事实来自 API | OpenAPI SDK、API | 登录态/跨家庭/双孩子隔离 Chromium E2E 已实现；真实 PDF/NewAPI、Ubuntu 真实账号浏览器待完成 |
 | API/BFF | `services/api` | 鉴权、家庭边界、业务编排、契约实现 | PostgreSQL 中 Profile/Learning/Identity 业务事实 | 客户端、数据层、Worker、AI | Compose 默认使用 PostgreSQL 事务仓储和 password 会话认证 |
 | Identity/Profile | `services/api` 内模块 | Household、Account、AuthSession、ChildProfile、Device、孩子管理聚合和权限 | 身份、家庭归属、密码哈希、可撤销会话 | API、所有领域模块 | 认证、事务仓储、原子聚合和唯一约束已实现；隔离 Chromium 登录态/跨家庭/双孩子通过，真实 PostgreSQL 浏览器与设备待完成 |
-| Curriculum/Content | `services/api` 内模块 + parser/analysis worker | PDF 授权/私有上传、文字辅助解析、PDFium 私有页图、NewAPI 页批次理解、全书知识图谱和家长批准 | 原件、页图元数据、页级分析、知识点与版本 | Web、Tutor、Task、Mistake | 本地 `0025` 已实现；Provider 失败/Schema 或来源越界会进入 failed，批准前不能发布 |
+| Curriculum/Content | `services/api` 内模块 + parser/analysis worker | PDF 授权/私有上传、文字辅助解析、PDFium 私有页图、NewAPI 页批次理解、全书知识图谱和家长批准 | 原件、页图元数据、页级分析、知识点与版本 | Web、Tutor、Task、Mistake | 本地与 Ubuntu `0038` 已实现；Provider 失败/Schema 或来源越界会进入 failed，批准前不能发布 |
 | Plan/Task/Session | `services/api` 内模块 | 全量错题/批准知识点排序、来源受限云端规划、家长审批、任务/会话/Attempt | 学习任务与过程记录 | 客户端、Curriculum、Report、Mistake、NewAPI | 不再从页文字正则抽题；具体题来自批准知识点，视觉题携带描述和受鉴权来源页 |
-| Capture / PrivacySanitizer | `services/api` 内模块 | 受限媒体、API 有界流式上传、本地脱敏/手动涂抹；ImageAnalysis、NewAPI 结构化和人工确认 | Capture/脱敏/解析状态；图片在私有 MinIO；Extraction/VerifiedQuestion 在 PostgreSQL | 对象存储、NewAPI Provider、Tutor | 已实现 Session 鉴权流式上传、安全读取/实际 SHA-256、提取/确认和生命周期，并部署 Ubuntu；当前 Provider HTTP `402` 阻断真实 Extraction，自动视觉检测器尚未完成 |
+| Capture / PrivacySanitizer | `services/api` 内模块 | 受限媒体、API 有界流式上传、本地脱敏/手动涂抹；ImageAnalysis、NewAPI 结构化和人工确认 | Capture/脱敏/解析状态；图片在私有 MinIO；Extraction/VerifiedQuestion 在 PostgreSQL | 对象存储、NewAPI Provider、Tutor | 已实现 Session 鉴权流式上传、安全读取/实际 SHA-256、提取/确认和生命周期，并部署 Ubuntu；synthetic NewAPI 已通过，真实儿童图片与自动视觉检测器仍未验收 |
 | Tutor | `services/api` 内模块 | 只消费 VerifiedQuestion；按练习/复习/错题讲解模式执行 Policy、教材 grounding、Schema、确定性校验和成本控制 | 追加写 TutorTurn、Policy/Prompt/模型和来源版本 | Capture、Curriculum、AI Provider、Mistake | 由统一路由选择 `local_qwen` 或 `newapi`；答案/重复/题意门禁失败时回退题型相关本地提示；L3 完整步骤/答案/验算已实现；本地模型质量/成本验收待完成 |
-| Mistake/Review/Report | `services/api` 内模块 | 错题证据、错因、讲解引用、确定性复习调度、周报聚合 | MistakeRecord、ReviewSchedule、复习 Attempt 和报告 | Session/Tutor/Curriculum、家长端 | `0017`、错题创建/到期查询/复习和基础 Web/Flutter 调用已实现；完整 AttemptEvidence 绑定、完整 UI 和教材依据待完成 |
+| Mistake/Review/Report | `services/api` 内模块 | 错题证据、错因、讲解引用、确定性复习调度、周报聚合 | MistakeRecord、ReviewSchedule、复习 Attempt 和报告 | Session/Tutor/Curriculum、家长端 | AttemptEvidence 绑定、closeout、实际题目复习/ReviewAttempt、Web/Flutter 和教材来源已实现；真实设备/Provider 质量验收待完成 |
 | Notification | `services/api` 内模块 | 应用内提醒和可替换推送适配器 | 通知状态 | Report/Task、HMS | 未创建 |
-| 跨端契约 | `packages/contracts` | OpenAPI、AI JSON Schema、生成 SDK | 接口/Schema 的唯一事实来源 | API、Flutter、Web、evals | `0.11.0` 增加私有教材原页、知识图谱、知识点引用和视觉题上下文；SDK 生成器未实现 |
+| 跨端契约 | `packages/contracts` | OpenAPI、AI JSON Schema、生成 SDK | 接口/Schema 的唯一事实来源 | API、Flutter、Web、evals | `0.17.2` 包含 70 个 path 条目、81 个 HTTP operation 和 99 个 component schema；SDK 生成器未实现 |
 | AI 评测 | `evals` | 固定样本与质量/安全/延迟/成本回归 | 合成或脱敏评测数据 | Tutor、CI | OCR、PrivacySanitizer、Tutor Policy 和真实 NewAPI synthetic 大图已实现；自动视觉检测器 eval 待其实现后补充 |
 | 本地基础设施 | `infra/compose` | PostgreSQL、Redis、MinIO、API/Web/Worker 和可切换 llama.cpp/Qwen 服务编排 | 单家庭自用数据与本地模型缓存 | 开发/自托管 | Ubuntu 完整栈、迁移、生命周期 worker、备份和隔离恢复已验证；本地模型首次下载/质量验收待完成 |
 | ADR | `docs/adr` | 不可逆或跨模块决策记录 | 架构决策历史 | `DECISIONS.md` | ADR-0001～0011、0013～0018、0020～0028 Accepted；ADR-0019 Proposed；替代关系见决策索引 |
@@ -119,12 +119,12 @@ PLAN-0013 的目标聚合不改变上述认证边界：家长通过一个带幂�
 
 1. 家长通过 Web/手机创建任务，API 校验 Household 权限后写入 PostgreSQL。
 2. 孩子端同步今日任务到 SQLite，开始 StudySession；断网时将 Attempt、状态变化和上传意图写入追加队列。
-3. Capture 目标上传由 App 携带 Session 和幂等键调用单一 API；API 在读取字节前验证 Household/角色/孩子/StudySession，随后分块限制大小、增量哈希、校验 MIME/文件头/尺寸/像素/完整解码，并通过内部 S3 Adapter 写入 staging 对象；全部成功后返回已确认 Capture，失败中止或删除 staging。当前 `0.8.0` 的预签名 URL + 确认流程是待迁移事实。
+3. Capture 上传由 App 携带 Session 和幂等键调用单一 API；API 在读取字节前验证 Household/角色/孩子/StudySession，随后分块限制大小、增量哈希、校验 MIME/文件头/尺寸/像素/完整解码，并通过内部 S3 Adapter 写入 staging 对象；全部成功后返回已确认 Capture，失败中止或删除 staging。旧 `0.8.0` 的预签名 URL + 确认流程已经由 ADR-0018 替代并完成迁移。
 4. 目标路线由本地 PrivacySanitizer 生成不可逆脱敏副本，用户确认后由单一获批云视觉 Provider 产生 `QuestionExtraction`；任何结果必须人工确认形成 `VerifiedQuestion`，低置信度或失败保留重新裁剪、手动涂抹或手工录入路径。
 5. 重连后客户端按顺序提交，写接口携带 `idempotency-key`；Attempt/AuditEvent 追加写，任务状态使用服务端版本号检测/合并冲突。
 6. API 返回逐项结果；失败项保留可重试和用户可理解状态，不静默丢弃或用最后写入覆盖历史。
 
-任务约束补充（本地 `0.17.0` / `0036_task_session_progress`）：`StudySession.next_exercise_index` 是服务端跨设备恢复事实，Attempt 只能按单步、不可回退地推进；孩子端只在本机 SQLite 保存同一范围的辅助位置并取两者较大值。任务创建按 Household/Child/日期加事务锁限制每天 3 个非撤销任务；未来日期只能只读，过期日期可补做。家长撤销将 Task 和活动 Session 置为 `revoked`，后续 Attempt/完成拒绝，撤销释放该日期名额。Ubuntu 尚未部署这轮变更。
+任务约束补充（本地与 Ubuntu `0.17.2` / `0038_classical_poem_options`）：`StudySession.next_exercise_index` 是服务端跨设备恢复事实，Attempt 只能按单步、不可回退地推进；孩子端只在本机 SQLite 保存同一范围的辅助位置并取两者较大值。任务创建按 Household/Child/日期加事务锁限制每天 3 个非撤销任务；未来日期只能只读，过期日期可补做。家长撤销将 Task 和活动 Session 置为 `revoked`，后续 Attempt/完成拒绝，撤销释放该日期名额。
 
 - 信任边界：账号输入、会话值、客户端时间、离线事件和幂等键均不可信，服务端必须验证会话、家庭、角色、孩子绑定、Schema 和版本。
 - 一致性：学习事实追加写；派生状态可重算；任务状态使用显式版本/冲突策略。
@@ -198,13 +198,13 @@ PLAN-0013 的目标聚合不改变上述认证边界：家长通过一个带幂�
 | 同步事件批次 | Flutter | API | `packages/contracts/schemas` | 每事件有 ID/版本/幂等键；追加新事件类型 | `TBD` |
 | AuditEvent | 所有服务端模块 | 审计/可观测性 | `packages/contracts/schemas` | 稳定事件名；字段按敏感级别控制 | `TBD` |
 
-契约目录和结构检查已建立；SDK 生成器和自动兼容检查命令仍未固定。本地 `0.17.0` / `0036_task_session_progress` 在既有数学/英语合同上增加服务端任务位置、容量/未来日期/撤销保护；Ubuntu 仍为 `0.16.0` / `0035_chinese_poem_skill`。本地与 Ubuntu 已在既有合同上增加 subject-aware 教材、语文内容/Attempt、古诗抽查和看图写话独立入口。数学任务的确认作答和终态事件由端侧 SQLite 按范围隔离并在联网后有序重放；图片上传继续保持单一 Session 流式操作。
+契约目录和结构检查已建立；SDK 生成器和自动兼容检查命令仍未固定。本地与 Ubuntu 均为 API/OpenAPI `0.17.2`、迁移 `0038_classical_poem_options`，包含服务端任务位置、容量/未来日期/撤销保护、subject-aware 教材、语文 Content/Attempt/Review、古诗抽查/发布、看图写话和分学科学习记录。数学任务的确认作答和终态事件由端侧 SQLite 按范围隔离并在联网后有序重放；图片上传继续保持单一 Session 流式操作。
 
 ## 6. 数据架构
 
 | 数据域 | 存储 | 主键/分区 | 保留策略 | 备份/恢复 | 敏感级别 |
 | --- | --- | --- | --- | --- | --- |
-| Household/Account/AuthSession/ChildProfile/Device | PostgreSQL | UUID；全部业务行含 Household 边界；孩子账号复合外键绑定档案，PLAN-0013 目标增加每档案最多一个 child Account 的唯一约束；会话只存 SHA-256 摘要 | 账号期 + 批准的删除策略；会话最长 30 天并可即时撤销 | PostgreSQL custom dump 已完成隔离恢复演练 | Confidential/Restricted |
+| Household/Account/AuthSession/ChildProfile/Device | PostgreSQL | UUID；全部业务行含 Household 边界；孩子账号复合外键绑定档案，每档案最多一个 child Account；会话只存 SHA-256 摘要 | 账号期 + 批准的删除策略；会话最长 30 天并可即时撤销 | PostgreSQL custom dump 已完成隔离恢复演练 | Confidential/Restricted |
 | CurriculumAssignment/Material/Ingestion/Snapshot/Knowledge | PostgreSQL + 私有对象存储 | UUID + Household/Child/Subject/版本；材料随机对象键；Snapshot 发布后不可变 | 原材料/解析草稿/已发布知识精确期限 `TBD`；撤销授权后停止新检索 | 必须纳入 PostgreSQL/对象一致备份与恢复 | Internal/Confidential；教材原文受版权控制 |
 | Plan/TaskRecommendation/Task/Session/Attempt | PostgreSQL | UUID；Attempt/审批事实追加写，Task 保存来源/策略 | 学习记录期限 `TBD`；被拒建议可按短期策略清理 | `TBD` | Confidential |
 | MistakeRecord/ReviewSchedule | PostgreSQL | UUID + Household/Child；错题引用 VerifiedQuestion/Attempt/Snapshot；Review 带 policy version | 开放错题及其题目持续保留；已解决且超过 180 天的错题/派生复习链路由生命周期 worker 分批清理 | PostgreSQL 备份恢复 | Confidential |
@@ -288,10 +288,10 @@ flowchart TD
 | 项目 | 当前影响 | 触发改造的阈值 | 目标方向 | 跟踪 |
 | --- | --- | --- | --- | --- |
 | 教材驱动错题主线仍待发布验收 | Ubuntu 已接通 closeout、ReviewAttempt、PDF 私有原页/多模态知识图谱、批准知识来源、孩子原页和 L1/L2 递进；隔离认证 Chromium 已通过，真实 118 页 PDF、设备/Provider、教材浏览器流程和质量/成本 eval 尚未完成 | 数学首科进入家庭日常使用前 | 完成设备/E2E、固定 eval、备份恢复/删除和成本门槛 | `TODO-016`～`TODO-020`、`ADR-0020～0023` |
-| ADR-0015/0016 新路线仍在联调阶段 | 当前代码保留本地 PaddleOCR 回滚路线；ImageAnalysis 可在 NewAPI 开启时排队、worker 可持久化未确认提取，人工确认和成功/失败派生对象清理已实现，实际 Provider 联调仍未完成 | 自用真实图片进入 NewAPI 前 | 完成真实视觉检测器、NewAPI 联调、失败重试/监控和备份演练，兼容旧 OCR Job | `TODO-008` |
-| ADR-0017 已进入实现验收 | API/Web/Flutter/Compose 已接入 Account/AuthSession、Argon2id、受限引导账号、Cookie/CSRF、孩子账号管理、Flutter 登录前服务地址配置和安全存储；PostgreSQL/浏览器/iPad/备份验收仍未执行 | 自用 Compose 或真实设备切换前 | 完成迁移往返、E2E、真实设备会话生命周期和恢复演练；旧 HMAC/Demo 客户端必须升级 | `TODO-012`、`PLAN-0008` |
-| Web 暴露账号/档案分离且首页固定首个孩子 | 家长需先建档案再绑定账号；两个孩子时首页任务/周报无法选择，易误解数据作用域 | 自用多孩子正式使用前 | 单事务孩子聚合、旧数据审计/唯一约束、首页当前孩子选择和端到端授权过滤 | `TODO-015`、`PLAN-0013` |
-| 核心技术/安全/产品决策已批准、部分未实现 | 实现仍须锁定 SDK/运行时、材料处理依赖并验证安全/质量/成本 | 接入对应边界前 | 按 DECISIONS.md；ADR-0018/0020 实现与 ADR-0019 确认仍待后续 | `TODO-005`、`TODO-014`～`TODO-019` |
+| ADR-0015/0016 路线仍待真实质量验收 | ImageAnalysis、未确认提取、人工确认、派生对象清理和 synthetic Provider 联调已实现；真实儿童图片、自动视觉检测器和质量/成本尚未验收 | 自用真实图片进入 NewAPI 前 | 完成真实视觉检测器、受控质量评测、失败监控和设备闭环，兼容旧 OCR Job | `TODO-008` |
+| ADR-0017 已进入真实环境验收 | API/Web/Flutter/Compose 已接入 Account/AuthSession、Argon2id、受限引导账号、Cookie/CSRF、孩子账号管理、Flutter 服务地址和安全存储；PostgreSQL 集成、隔离浏览器和备份恢复已通过 | 真实家庭账号或完整设备生命周期前 | 完成 Ubuntu 真实账号浏览器与多设备重启/撤销生命周期 | `TODO-012`、`PLAN-0008` |
+| Web 孩子聚合仍待真实账号验收 | 单事务孩子聚合、唯一约束、当前孩子切换和端到端授权过滤已实现并通过隔离 Chromium | 自用多孩子正式使用前 | 使用 Ubuntu 真实账号完成浏览器和设备作用域验收 | `TODO-015`、`PLAN-0013` |
+| 核心技术/安全/产品决策已批准、部分验收未完成 | SDK 生成、正式扫描、材料/Provider 质量成本和法务边界仍未收口 | 接入对应真实边界前 | 按 DECISIONS.md；继续确认 ADR-0019，并完成真实质量、安全与发布门槛 | `TODO-005`、`TODO-014`～`TODO-020` |
 | SLO、容量、RPO/RTO、成本阈值未知 | 无法设置告警和发布门槛 | staging 建立并获得基线 | 用测量值批准目标 | `TODO-004` |
 | 数据保留/法域未决 | 真实儿童数据和生产部署被阻塞 | 任何真实数据进入前 | 完成安全/法务决策和删除/备份策略 | `TODO-005` |
 | DOCX 在当前渲染环境缺少中文字体 | 本地 PNG 视觉审阅缺字，但 OOXML 文本完整 | 需要发布/维护设计稿时 | 嵌入/安装适用中文字体或输出经验证 PDF | `TODO-006` |

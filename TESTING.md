@@ -1,5 +1,11 @@
 # TESTING.md
 
+## 2026-09-08 代码/契约/文档一致性复核
+
+- 审计基线：`master`/`origin/master` 为 `17275d8`，工作区开始时干净；API/OpenAPI 为 `0.17.2`，Alembic head 为 `0038_classical_poem_options`。
+- 运行时与规范对比发现两个差异：OCR 候选确认已使用 `/ocr-results/{result_id}/confirmations`，语文已有 `/chinese/poems/publish`，规范分别仍记录旧路径和漏记。OpenAPI 已按真实路由修正为 70 个 path 条目（含一个 WebSocket 扩展）、81 个 HTTP operation、99 个 component schema。
+- 验证通过：API Ruff/Mypy/`258 passed`，Web Prettier/ESLint/TypeScript/`38 passed`/build/Chromium E2E，Flutter format/Analyze/`74 passed`，四套 synthetic eval，OpenAPI/JSON Schema/运行时路由、Alembic head、Compose 静态 config、Markdown 本地链接和最终差异检查。完整命令和未执行项见 `TASK.md` 同日期记录；本轮不部署 Ubuntu，GHCR `v0.17.2` 已发布与 Ubuntu 仍使用 legacy-builder 镜像是两个独立状态。
+
 ## 2026-09-05 GitHub Actions 服务镜像发布
 
 - Workflow 静态检查：解析 `.github/workflows/ci.yml`，断言镜像发布 job 仅依赖全部质量 job、仅 push 发布、只在 job 级获得 `packages: write`，并覆盖 API/Web 两个 context、`linux/amd64,linux/arm64`、`sha-*`/版本/`latest`、provenance 和 SBOM。
@@ -92,7 +98,7 @@
 
 同日部署复核发现首次同步的 `tutor.py` 路径错误，运行容器仍使用旧路由，导致设备日志中 L1/L2 为 `200` 而 L3 为旧 `409`。已同步到 `services/api/src/study_api/routes/tutor.py`、清除误放的未引用副本并重建 API；远端健康端点、文件检查和容器内 `inspect` 均确认新 `general-solution-policy.v1` 路由已经运行。
 
-- 核心用户路径：家长上传清洁 PDF → 服务端私有渲染原页、分批多模态理解并归纳全书知识图谱 → 家长对照原页批准并发布 → 孩子选择数学/学习模式 → 错题安全拍摄题目+答题区 → 确认题目和作答状态 → L1 看懂题意/L2 找到方法/L3 允许时完整讲解 → 原子 MistakeRecord/ReviewSchedule → 到期或提前加载真实题目、重新作答并追加 ReviewAttempt → 家长审核由错题和已批准知识点生成、包含具体题目/视觉说明/页码/日期/时长的任务 → 孩子执行并可打开教材原页 → 周报。本地和 Ubuntu `0.17.0/0036` 已接通代码和自动化，真实 Provider/PDF/登录态浏览器/设备 E2E 未通过前仍不能判定整条路径完成。
+- 核心用户路径：家长上传清洁 PDF → 服务端私有渲染原页、分批多模态理解并归纳全书知识图谱 → 家长对照原页批准并发布 → 孩子选择数学/学习模式 → 错题安全拍摄题目+答题区 → 确认题目和作答状态 → L1 看懂题意/L2 找到方法/L3 允许时完整讲解 → 原子 MistakeRecord/ReviewSchedule → 到期或提前加载真实题目、重新作答并追加 ReviewAttempt → 家长审核由错题和已批准知识点生成、包含具体题目/视觉说明/页码/日期/时长的任务 → 孩子执行并可打开教材原页 → 周报。本地和 Ubuntu `0.17.2/0038` 已接通代码和自动化；真实 Provider 质量/成本、正式内容、Ubuntu 真实账号浏览器和完整设备 E2E 未通过前仍不能判定整条路径完成。
 - 不可接受的失败：跨家庭越权；原图/未确认脱敏图/儿童数据/密钥泄漏；同一图片被静默发送给多个 Provider；学习记录丢失或被最后写入覆盖；AI 在练习/复习或缺少错题门禁时直接代答、错误结论静默入库；删除请求未执行却报告成功；未记录的成本失控。
 - 覆盖策略：风险驱动，不设脱离代码基线的统一行覆盖率。家庭权限、幂等/离线合并、Tutor Policy/Schema、数据删除和核心 E2E 必须覆盖成功与失败路径；普通模块在 P0 代码基线后批准覆盖阈值。
 
@@ -147,7 +153,7 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | Web Lint | `cd apps/web && pnpm lint` | 每次 Web 变更 | 通过（2026-09-03） |
 | Web 类型 | `cd apps/web && pnpm typecheck` | 每次 Web 变更 | 通过（2026-09-03） |
 | Web 单元 | `cd apps/web && pnpm test` | 每次 Web 变更 | 通过（2026-09-03：37 项） |
-| Web E2E | `cd apps/web && pnpm e2e` | 用户流程变更/P1 门槛 | 不可运行 |
+| Web E2E | `cd apps/web && pnpm test:e2e:install && pnpm test:e2e` | 用户流程变更/P1 门槛 | 通过（2026-09-03；隔离 synthetic API，`1 passed`；Ubuntu 真实账号未执行） |
 | Web 构建 | `cd apps/web && pnpm build` | 合并前 | 通过（2026-09-03；Next 16.2.10 production build 包含动态 `/learning`；本机 Node 22.23/pnpm 9.10 产生 engine warning，锁定容器仍使用 Node 24.18/pnpm 11.7） |
 | API 安装 | `cd services/api && uv sync --locked` | 锁文件变化/干净环境 | 通过（2026-07-15；ARM 镜像内 `uv sync --locked --no-dev` 解析 124 个锁定包并安装 35 个适用包；macOS ARM64/Linux x86_64 保留 PaddleOCR 3.7.0、PaddlePaddle 3.3.1，Linux ARM64 按 marker 排除 Paddle；模型只在 amd64 镜像构建阶段下载） |
 | API 格式 | `cd services/api && uv run ruff format --check .` | 每次 API 变更 | 通过（2026-08-24；全仓 158 files） |
@@ -158,7 +164,7 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | 本地模型路由 | `cd services/api && uv run pytest tests/test_newapi_provider.py -q` | Provider、模型或环境路由变更 | 通过（2026-08-24：`24 passed`；覆盖本地/云端互斥、Qwen 关闭 reasoning、2048 输出上限、600 秒本地上限和本地失败不重试） |
 | 本地 Qwen Compose smoke | `docker compose -f infra/compose/compose.yml up -d local-model api image-analysis-worker curriculum-analysis-worker`；检查 `local-model /health`、`/v1/models` 和 synthetic text/vision/schema 请求 | `STUDY_LOCAL_MODEL_ENABLED=true` 或 llama.cpp/GGUF/硬件变更 | 部分通过后关闭（2026-08-24，Ubuntu 12 GB）：镜像、Q4_K_M 权重和 BF16 projector 下载/加载，health、alias、multimodal、`local_qwen` 选择、文本 JSON 和私有端口通过。4 核下 synthetic 大图 600 秒内不收敛；8 核下短文本 1.387 秒，完整视觉请求 373.128 秒、生成 2048 tokens 后以 `provider_response_schema_invalid` 失败，模型约 5.87 GiB、无 Swap。视觉 Schema 门禁未通过，Ubuntu 已恢复云端并停止模型容器；详见 `docs/local-qwen-evaluation-report-2026-08-24.md`，未使用真实儿童数据 |
 | 云端 Provider 回退 smoke | 关闭本地开关，重新创建 API/ImageAnalysis/CurriculumAnalysis worker；检查运行时 Provider 并执行 synthetic 数学文本 Schema 请求 | 本地模型回退云端或云端配置变更 | 通过（2026-08-24，Ubuntu）：运行时 `provider=newapi` 且本地模型容器 `Exited (0)`；不含儿童数据的 synthetic 数学文本在 3.591 秒内返回合法 3 步结构，API/Web/四个 worker 健康，宿主约 10 GiB available、Swap 为 0 |
-| Compose 完整启动 | `docker compose -f infra/compose/compose.yml pull && docker compose -f infra/compose/compose.yml up -d` | API/数据/跨模块变更 | 待首次 GHCR 发布后运行；此前 2026-08-24 Ubuntu 本地构建链路通过，当前运行态为 `0.17.2/0038`，本轮只完成拉取式 Compose 静态验证 |
+| Compose 完整启动 | `docker compose -f infra/compose/compose.yml pull && docker compose -f infra/compose/compose.yml up -d` | API/数据/跨模块变更 | GHCR `v0.17.2` 已发布；Ubuntu 主机拉取、同标签固定和 digest/运行源码核验尚未执行，当前仍运行 `0.17.2/0038` legacy-builder 镜像 |
 | Web 镜像 | `cd apps/web && docker buildx build --platform=linux/arm64 --load -t study-web:arm64-debug .` | Web/Compose 变更 | 通过（2026-09-03，Ubuntu x86_64 legacy builder；Next.js standalone 镜像使用 Node 24.18.0、pnpm 11.7.0，镜像 `d03f4fea…`；Web/API 本机和 LAN health、运行 CSS 标识及其他服务未重启通过） |
 | Web 登录态 E2E | `cd apps/web && pnpm test:e2e:install && pnpm test:e2e` | 认证、Cookie/CSRF、多家庭/多孩子或 Web 路由变更 | 通过（2026-09-03；Chromium `1 passed`，增加 `1280×800` 时间标签不裁切和 `390×844` 无横向溢出断言；隔离内存 API，不读取 Ubuntu 数据；本机 Node 22.23 低于锁定 Node 24.18，仅产生 engines warning） |
 | 集成环境 | `docker compose -f infra/compose/compose.yml up -d postgres minio` | API/数据/跨模块变更 | 当前通过（2026-07-13；旧配置发布 5432/9000）。PLAN-0012 目标要求 MinIO 仅在 Compose 内部网络可达，并增加宿主/LAN `9000` 不开放的断言 |
@@ -171,7 +177,7 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | OCR 锁定模型 synthetic smoke | `cd services/api && ./.venv/bin/python ../../evals/run_ocr_model_eval.py` | Ubuntu/模型/Provider 变更 | 通过（2026-07-16，远端 x86_64 Debian 13 锁定容器，4/4 cases：普通文本 3、公式 1，CPU；只使用内存 synthetic 图片，无外部 Provider）；真实题型评测仍待执行 |
 | NewAPI synthetic live eval | `docker compose -f infra/compose/compose.yml exec -T api python scripts/run_newapi_live_eval.py` | NewAPI key/model/网络或 worker 变更 | 通过（2026-07-20，Ubuntu x86_64）：纯合成题仅传确认文字，返回 3 个完整步骤、答案 17 只和独立验算；实际拍题四态仍待设备人工验收 |
 | 备份/恢复 | `infra/compose/scripts/backup.sh`；`verify-restore.sh <backup-dir>` | 数据/迁移/发布变更 | 通过（2026-08-24，Ubuntu；`/home/syin/study-backups/20260824T024445Z` 的 PostgreSQL custom dump + MinIO 快照 + SHA-256 清单已隔离恢复，39 个 public tables、353 个 MinIO 文件） |
-| 契约结构/差异 | 结构化解析 `openapi.yaml` 与 `schemas/*.json` 并闭合本地引用 | OpenAPI/Schema 变更 | 通过（2026-07-30；OpenAPI `0.13.0` 可解析，学习详情时间参数与 180 天描述已同步；SDK 生成器仍未决定） |
+| 契约结构/差异 | 结构化解析 `openapi.yaml` 与 `schemas/*.json`、闭合本地引用，并对比 FastAPI 运行时 path/method/version | OpenAPI/Schema 变更 | 通过（2026-09-08；OpenAPI `0.17.2` 为 70 paths/81 HTTP operations/99 schemas，运行时 path/method/version 无差异；SDK 生成器仍未决定） |
 | 安全扫描 | `TBD（按 Flutter/pnpm/uv/镜像工具链建立）` | 合并/发布前 | 阻塞：无依赖/镜像 |
 
 耗时预算必须在命令首次进入 CI 后用实际数据补充，不在无代码阶段猜测。
@@ -216,13 +222,13 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 
 - [x] 依赖按锁文件安装；格式、Lint、类型检查通过。
 - [x] 最小相关测试和受影响套件通过，测试失败不能通过无解释重跑掩盖。
-- [x] OpenAPI/Schema 结构检查通过，生成物无漂移；SDK 生成器仍未选择。
+- [x] OpenAPI/Schema 结构检查通过；运行时 path/method/version 与规范对比纳入本轮复核，SDK 生成器仍未选择。
 - [x] 现有 Household/认证/学习/Capture/Tutor/删除边界的家庭授权、幂等/离线和高风险自动测试通过；不包含 ADR-0020 新能力。
-- [ ] PrivacySanitizer、用户外发确认、单 Provider、云视觉 Schema/人工确认和临时脱敏副本删除门禁通过；未实现前保持图片外发功能关闭。
+- [ ] PrivacySanitizer、用户外发确认、单 Provider、云视觉 Schema/人工确认和临时脱敏副本删除门禁已有 synthetic/自动回归；真实儿童图片、自动视觉检测器和真实 Provider 质量未验收前，不得宣称完整门禁通过。
 - [ ] 无未批准的高危依赖/镜像/密钥扫描问题；SBOM/签名策略在生产前确定。
 - [x] Android/iOS/Web/API 构建产物可生成，迁移与 PostgreSQL/MinIO 备份恢复经过验证。
 - [ ] ADR-0017 认证门槛全部通过：API 认证回归、认证审计、孩子账号反向越权及隔离 synthetic Web Cookie/CSRF/跨家庭/双孩子 Chromium E2E 已通过；Flutter 安全存储真实设备生命周期、PostgreSQL 迁移往返和 Ubuntu 真实账号浏览器验收仍待执行。
-- [ ] PLAN-0016/0017/0018：本地与 Ubuntu `0.11.0`/`0025` 代码/部署门槛已通过；仍需真实 118 页 PDF/NewAPI、固定 Tutor/教材 eval、成本审计、双孩子/设备/E2E、删除和发布安全门槛。
+- [ ] PLAN-0016/0017/0018：本地与 Ubuntu `0.17.2`/`0038` 代码/部署、真实 118 页 PDF 机器解析/批准和隔离 Chromium 已完成；仍需正式版权/教研、真实 Provider 质量/成本、Ubuntu 真实账号、完整设备 E2E 和发布安全门槛。
 - [ ] P1 核心 E2E 全通过，四类设备完成职责内弱网/横竖屏/权限回归。
 - [ ] AI eval、成本告警、周报追溯和儿童数据删除有可审查记录。
 

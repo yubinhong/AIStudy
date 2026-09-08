@@ -4,10 +4,13 @@ This directory is the single source for the public OpenAPI contract and AI JSON
 Schemas. Generated client SDKs belong in build output directories and are not
 hand-maintained in application code.
 
-The current local `0.14.0` contract includes the P0 health endpoint, the synthetic
-household/child/device vertical slice, Capture upload/correction/save/delete,
-local/CI OCR enqueue/result-read/confirmation paths, and a local/CI-only parent child-profile deletion path that requires
-Capture object cascade success before removing the profile. Every Household
+The current `0.17.2` contract contains 70 path entries (including one WebSocket
+extension), 81 HTTP operations, and 99 component schemas. It covers health,
+authentication, household/child/device administration, learning tasks and
+sessions, Capture upload/correction/delete, OCR and image-analysis confirmation,
+Tutor/mistake/review/report/export, private curriculum analysis and approval,
+math/Chinese learning records, and the separately locked English framework.
+Every Household
 business endpoint now declares only the approved revocable SessionCookie or
 BearerSession transports; HMAC and demo-principal schemes have been removed.
 It also includes active-session resume, server-trusted Tutor turns, learning
@@ -29,14 +32,13 @@ uploaded source together with derived parsing facts. A parent-only page reader
 returns a reviewed snapshot's page number, display title, parsed text and
 confidence for the owning child; it never returns the original PDF, object key
 or object-storage URL. Mistake closeout, evidence-backed review attempts,
-page-scoped curriculum sources, and Tutor hint progression metadata are part of
-the `0.9.x` contract.
+page-scoped curriculum sources, and Tutor hint progression metadata remain part
+of the current additive contract.
 
 Capture upload is a single authenticated API stream. The contract does not
 expose presigned URLs, object keys, or a separate upload-confirmation operation;
-the matching API and Flutter implementation are locally verified. The Ubuntu
-deployment must be upgraded as a pair before its old runtime contract is
-considered migrated.
+the matching API and Flutter implementation are locally verified and deployed
+on Ubuntu; final weak-network and full-device lifecycle validation remains open.
 
 Provider-neutral ADR-0015 schemas are versioned under `schemas/`: local
 privacy-sanitization metadata, image-analysis job state, unverified question
@@ -50,8 +52,9 @@ ADR-0027 makes `ChildProfile.subjects` and curriculum material/snapshot records
 explicitly support `math` and `chinese`, with old curriculum rows migrated to
 `math`. Chinese content and attempt endpoints expose versioned prompts and
 scores but never expose the server-side `AnswerSpec`; additive child exports
-include Chinese attempts and review state. Chinese curriculum analysis remains
-blocked until its subject-specific schema and prompt exist.
+include Chinese attempts and review state. Chinese curriculum analysis uses its
+own versioned page/book schemas and prompts; parent-reviewed private poems can
+be published only from an authorized, published Chinese curriculum snapshot.
 
 ADR-0025 adds a separately gated English speaking plugin. English remains after
 Chinese in the product sequence and keeps its independent consent and provider

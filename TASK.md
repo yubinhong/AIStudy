@@ -8,6 +8,16 @@
 - Owner：Codex（执行）；项目 Owner（2026-08-15 明确要求先多学科、再语文、英语最后）
 - 关联：`PLAN-0034`、`PLAN-0031`、`PLAN-0030`、`PLAN-0007`、`ADR-0017`、`ADR-0027`、`ADR-0028`、`docs/deep-research-report.md`
 
+## 2026-09-08 代码、契约与文档一致性复核
+
+- [x] 以可运行代码、锁文件、Compose、迁移头和已验证发布记录为事实源，复核仓库级文档、模块 README 与 OpenAPI；审计开始时 `master`/`origin/master` 同为 `17275d8` 且工作区干净。
+- [x] 修正规范与运行时的两处差异：OCR 候选确认从旧父资源 `POST` 改为真实 `/confirmations` 子资源；补记家长从已授权、已发布语文教材快照发布审核古诗的接口及两个请求 Schema。修正后 OpenAPI `0.17.2` 为 70 个 path 条目（含一个 WebSocket 扩展）、81 个 HTTP operation、99 个 component schema，path/method/version 与 FastAPI 运行时一致。
+- [x] 更新 `AGENTS.md`、`AI_CONTEXT.md`、`PRD.md`、`PROJECT.md`、`ARCHITECTURE.md`、`SECURITY.md`、`TESTING.md`、`RUNBOOK.md`、`TODO.md`、各模块 README、计划和变更记录；删除预签名 MinIO、旧版本/迁移、未实现语文 Schema、未实现浏览器/AI 自动化等已失真的当前描述，同时保留有日期的历史发布记录。
+- [x] 验证：API Ruff format/check、Mypy（63 source files）、非集成测试 `258 passed, 32 deselected`；Web Node `24.19.0` 下 Prettier、ESLint、TypeScript、Vitest `38 passed`、production build、隔离 Chromium E2E `1 passed`；Flutter 格式、Analyze、`74 passed`；OCR/Privacy/Tutor/English synthetic eval 分别 `6/6`、`6/6`、`5/5`、`7/7`；OpenAPI/JSON Schema 解析与引用闭合、运行时路由对比、Alembic `0038` 单 head、Compose 静态 config、66 个 Markdown 本地链接和 `git diff --check` 通过。
+- [x] 本轮变更按 Conventional Commit 提交并推送 `origin/master`；不创建 tag、不触发 Ubuntu 部署、不读取真实账号/儿童数据/教材正文或 Provider 密钥。
+
+未执行：PostgreSQL/MinIO 集成、真实 Provider、实体设备和 Ubuntu 运行验证；本轮没有业务代码、数据库迁移、Compose 行为或部署变更。回滚只需 revert 本次提交；不得回退数据库或删除学习事实。GitHub Actions 的 push workflow 会重新执行质量门槛并构建 `master`/`latest` GHCR 镜像，但“推送触发”不等于镜像构建完成，更不等于 Ubuntu 已拉取部署。
+
 ## 2026-09-05 GitHub Actions 服务镜像发布
 
 - [x] `quality` Workflow 在 `master` 与 `v*` tag push 上运行既有契约、API、Web 和隔离 Chromium 门槛；全部通过后才以 job 级最小 `packages: write` 权限发布镜像，Pull Request 不发布。

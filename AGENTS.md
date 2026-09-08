@@ -117,7 +117,7 @@
 
 ### 标准命令状态
 
-`TESTING.md` 是命令、测试矩阵和质量门槛的唯一事实来源。当前 API、Web、Compose 配置以及 Flutter 格式/分析/单元测试已有实际验证；Flutter Android/iOS 原生构建已通过本地验证，E2E/AI/契约生成/安全扫描仍待后续实现。
+`TESTING.md` 是命令、测试矩阵和质量门槛的唯一事实来源。当前 API、Web、Compose 配置以及 Flutter 格式/分析/单元测试已有实际验证；Flutter Android/iOS 原生构建、隔离 Chromium 登录态 E2E 和固定 synthetic AI eval 已通过。客户端 SDK 生成、正式依赖/镜像安全扫描、真实 Provider 质量评测和完整设备 E2E 仍待后续实现。
 
 P0 创建模块时必须实现并验证 `TESTING.md` 中的目标入口；如实际脚本名称不同，先运行确认，再同步 `TESTING.md`。本文件只保留行为规则，不复制命令表，避免漂移。禁止把未运行、路径不存在或仅作为目标的命令报告为通过。
 

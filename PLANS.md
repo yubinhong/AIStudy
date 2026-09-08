@@ -1,3 +1,29 @@
+# PLANS.md — PLAN-0040 代码与文档一致性复核
+
+## 计划元数据
+
+- 计划 ID：`PLAN-0040`
+- 关联：`TASK-0012`、`packages/contracts/openapi.yaml`、各模块 README、项目状态文档
+- 状态：`COMPLETE`
+- 优先级：`P1 / CONTRACT / DOCUMENTATION`
+- Owner：Codex（复核、修正、验证与推送）
+- 创建：`2026-09-08`
+
+## 目标、边界与里程碑
+
+以当前可运行代码、锁文件、迁移头和已验证发布事实为准，复核 OpenAPI、模块 README 与项目状态文档；只修正文档/契约漂移，不改变业务行为、不部署 Ubuntu。
+
+- [x] M1 — 确认审计基线：`master` 与 `origin/master` 同为 `17275d8`、工作区干净、API/OpenAPI 为 `0.17.2`、迁移头为 `0038_classical_poem_options`。
+- [x] M2 — 修正运行时路由与规范 OpenAPI 的路径/方法差异；OpenAPI 为 70 个 path 条目（含一个 WebSocket 扩展）、81 个 HTTP operation 和 99 个 component schema，运行时集合无差异。
+- [x] M3 — 更新 AI Context、PRD、架构、项目、安全、测试、Runbook、任务、待办、变更记录及模块 README 中已失真的实现/部署状态。
+- [x] M4 — 契约/JSON Schema、API、Web、Flutter、Compose、四套 synthetic eval、Markdown 链接和差异检查通过；变更已按 Conventional Commit 推送 `origin/master`。
+
+## 兼容性、风险与回滚
+
+OpenAPI 只追认已经由 API、Web/Flutter 客户端和回归测试使用的真实路由：OCR 确认使用 `/confirmations` 子资源，并补记家长发布已审核古诗的接口；不改变运行时代码或数据库。回滚可撤销本次文档与 OpenAPI 提交；不会回退迁移、删除学习事实或改变 Ubuntu 当前 legacy-builder 运行状态。
+
+---
+
 # PLANS.md — PLAN-0039 GitHub Actions 容器镜像发布
 
 ## 计划元数据

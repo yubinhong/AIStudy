@@ -189,7 +189,7 @@ STUDY_LOCAL_MODEL_BASE_URL=http://local-model:8080/v1
 - [ ] ADR-0028 本地 Qwen：Ubuntu 已完成首次下载、health/models、文本 JSON、路由、内存和私有端口核验；`question-extraction.v1` synthetic 大图在 600 秒内不收敛，视觉质量门禁失败。模型来源最终核对、chat template/Schema 修复、固定质量评测和真实设备回归尚未完成。
 - [ ] ADR-0018 上传收敛：本地与 Ubuntu OpenAPI/Flutter/API/Compose 已切换为单一有界流式上传；公开 MinIO 配置和 `9000` 映射已删除，相关本地回归及远端端口复核通过；断连/超限/超时/并发现场压测和真机验证待执行。
 - [ ] ADR-0019/PLAN-0013：孩子聚合原子创建/幂等/唯一约束、孩子选择/服务端过滤、反向授权和 API/Web 成对部署已通过；隔离 Chromium 双孩子已通过，旧数据审计、真实 PostgreSQL 浏览器和设备回归仍待执行。
-- [ ] PLAN-0016/0017/0018、ADR-0021/0022/0023：Ubuntu 已实施 `0.11.0`/`0025` 的 PDF-only、错题 closeout/ReviewAttempt、私有原页、多模态知识图谱、家长批准、批准知识点推荐和孩子端原页入口，并完成备份恢复、迁移头、健康和私有端口烟雾。仍须完成真实 Provider/PDF/iPad/浏览器验收、个人信息门禁及 AI 成本观测后才可勾选。
+- [ ] PLAN-0016/0017/0018、ADR-0021/0022/0023：Ubuntu 已实施 `0.17.2`/`0038` 的 PDF-only、错题 closeout/ReviewAttempt、私有原页、多模态知识图谱、家长批准、批准知识点推荐和孩子端原页入口；真实 118 页 PDF 已完成机器解析并批准，备份恢复、迁移头、健康和私有端口烟雾通过。仍须完成正式版权/教研、真实 Provider 质量/成本、Ubuntu 真实账号/iPad/完整设备验收和个人信息门禁后才可勾选。
 - [ ] 发布、停止、回滚和前滚负责人明确，真实数据不来自开发环境。
 
 ### 本地/自用 Compose 流程

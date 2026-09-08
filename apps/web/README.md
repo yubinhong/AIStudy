@@ -1,20 +1,21 @@
 # Web
 
-Next.js App Router parent workspace for the Windows/PWA experience. The first
-vertical slice renders a bright, low-distraction learning overview from the
-shared API contract: children, today's tasks, connected devices, and the local
-privacy boundary. It does not define duplicate domain models, and the demo
-principal adapter has been removed.
+Next.js App Router parent workspace for the Windows/PWA experience. The current
+workspace provides authenticated household administration, atomic child
+account/profile management, current-child switching, family permissions,
+private curriculum PDF review and knowledge-map approval, task recommendation
+approval, device/profile views, exports, and separate math/Chinese learning
+records. It does not define duplicate domain models, and the demo principal
+adapter has been removed.
 
 Users always sign in with a Household username and password at `/login`; the
 server keeps the revocable session in an HttpOnly cookie. There is no demo,
 static bearer-token, or unauthenticated dashboard fallback.
 
-Available synthetic API routes are documented in the contract:
-`GET/POST /households/{household_id}/children`,
-`DELETE /households/{household_id}/children/{child_id}` and
-`GET/POST /households/{household_id}/devices`, plus
-`GET /households/{household_id}/tasks` for the dashboard.
+The browser talks to same-origin App Router handlers, which forward the
+HttpOnly session and CSRF token to the Household-scoped API. The complete route
+surface is documented in `packages/contracts/openapi.yaml`; synthetic accounts
+and in-memory repositories are test-only and are never dashboard fallbacks.
 
 ```bash
 pnpm install --frozen-lockfile
