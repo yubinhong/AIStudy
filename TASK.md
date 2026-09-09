@@ -8,6 +8,26 @@
 - Owner：Codex（执行）；项目 Owner（2026-08-15 明确要求先多学科、再语文、英语最后）
 - 关联：`PLAN-0034`、`PLAN-0031`、`PLAN-0030`、`PLAN-0007`、`ADR-0017`、`ADR-0027`、`ADR-0028`、`docs/deep-research-report.md`
 
+## 2026-09-08 家长学习记录显示拍题图片（PLAN-0042）
+
+- [x] API 增加家长/Household-scoped `GET /households/{household_id}/captures/{capture_id}/media`，复用已确认题目的 `capture_id` 和现有私有对象；孩子角色、跨家庭、上传中、已删除或无对象均拒绝，不把对象键、存储 URL 或图片字节加入学习记录 JSON。
+- [x] Web 增加同源图片代理和数学学习记录详情图片组件；图片仍受原图 24 小时/家长保存策略控制，过期或删除时显示明确的不可用状态，语文学习记录不虚构图片。
+- [x] OpenAPI、契约 README、PRD、PROJECT、ARCHITECTURE、SECURITY、TESTING、AI_CONTEXT、CHANGELOG 和 PLANS 已同步；无数据库迁移、无历史数据改写。
+- [x] 验证通过：API Capture 定向 `7 passed`，API 非集成 `261 passed, 32 deselected`，Ruff/Mypy；Web 媒体代理定向 `1 passed`，全量 `39 passed`，Prettier/ESLint/TypeScript/production build；OpenAPI/JSON Schema/运行时路由对比、引用闭合和 `git diff --check` 通过。
+
+代码阶段未执行：未使用真实家长账号、真实儿童图片或实体设备做浏览器/设备回归；既有真实 Provider/PDF、正式内容和完整四设备验收仍由当前 TASK-0012 范围跟踪。部署记录见下方 PLAN-0043。
+
+回滚：移除 Capture 媒体 GET、Web 同源代理和详情图片组件即可恢复原有学习记录页面；不回滚数据库迁移，不删除 Capture、VerifiedQuestion 或既有学习事实。
+
+## 2026-09-09 家长拍题图片 GitHub/Ubuntu 发布（PLAN-0043）
+
+- [ ] 将 PLAN-0042 的功能代码、契约、测试和文档提交到 `master` 并推送 `origin/master`。
+- [ ] 等待 push-gated GitHub Actions 质量门槛和 API/Web 多架构 GHCR 发布，核对 workflow、镜像标签、commit revision 和 digest。
+- [ ] Ubuntu 发布前创建备份并完成隔离恢复；保留 `.env`/数据卷，固定 API/Web 到同一 `sha-*` 镜像，前向检查迁移并以 `--no-build` 重启。
+- [ ] 验证 API/Web/worker、Alembic head、OpenAPI、媒体路由、容器源码 revision/digest、本机/LAN health 和近期错误日志；真实账号/设备、Provider/PDF 和 staging/production 仍单独未执行。
+
+发布回滚：同时将 `STUDY_API_IMAGE`/`STUDY_WEB_IMAGE` 固定回上一个已验证的 `sha-6a518fc` 并重新 pull/up；不执行数据库 downgrade。
+
 ## 2026-09-08 Ubuntu GHCR 拉取式部署（PLAN-0041）
 
 - [x] 目标代码提交为 `6a518fc`；服务器 `syin@192.168.1.4:/home/syin/study` 已完成 GHCR 登录、API/Web `sha-6a518fc` 拉取和 Compose 配置校验。

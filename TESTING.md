@@ -10,8 +10,8 @@
 ## 2026-09-08 代码/契约/文档一致性复核
 
 - 审计基线：`master`/`origin/master` 为 `17275d8`，工作区开始时干净；API/OpenAPI 为 `0.17.2`，Alembic head 为 `0038_classical_poem_options`。
-- 运行时与规范对比发现两个差异：OCR 候选确认已使用 `/ocr-results/{result_id}/confirmations`，语文已有 `/chinese/poems/publish`，规范分别仍记录旧路径和漏记。OpenAPI 已按真实路由修正为 70 个 path 条目（含一个 WebSocket 扩展）、81 个 HTTP operation、99 个 component schema。
-- 验证通过：API Ruff/Mypy/`258 passed`，Web Prettier/ESLint/TypeScript/`38 passed`/build/Chromium E2E，Flutter format/Analyze/`74 passed`，四套 synthetic eval，OpenAPI/JSON Schema/运行时路由、Alembic head、Compose 静态 config、Markdown 本地链接和最终差异检查。代码/契约复核本身不部署 Ubuntu；随后部署证据见上方 `2026-09-08 Ubuntu GHCR 拉取式部署`。
+- 运行时与规范对比发现两个差异：OCR 候选确认已使用 `/ocr-results/{result_id}/confirmations`，语文已有 `/chinese/poems/publish`，规范分别仍记录旧路径和漏记。OpenAPI 已按真实路由修正为 70 个 path 条目（含一个 WebSocket 扩展）、82 个 HTTP operation、99 个 component schema；本轮再增加家长私有 Capture 媒体流。
+- 验证通过：API Capture 定向 `7 passed`、API 非集成 `261 passed, 32 deselected`、Ruff/Mypy；Web 媒体代理定向 `1 passed`、全量 `39 passed`、Prettier/ESLint/TypeScript/build；OpenAPI/JSON Schema/运行时路由、契约引用闭合和 `git diff --check` 通过。本轮代码/契约复核未部署 Ubuntu，真实账号/设备浏览器仍待执行。
 
 ## 2026-09-05 GitHub Actions 服务镜像发布
 
@@ -28,7 +28,7 @@
 
 ## 1. 当前状态与质量目标
 
-当前仓库已有 P0/P1 依赖清单、三类锁文件、核心测试和 CI 草案。API 的 Household/认证/学习/Capture/可信 Tutor/周报/导出、Mistake/Review closeout、教材 PDF-only 私有原页/多模态知识图谱、作答四态/推荐审批、Web/Flutter 入口、SQLite 任务位置与离线 Attempt/任务终态队列、服务端任务位置/容量/未来日期/撤销保护和 Compose 已验证；Android/iOS 构建及 PostgreSQL/MinIO 恢复已有记录。本地和 Ubuntu API/OpenAPI 均为 `0.17.2`、迁移头 `0038_classical_poem_options`。2026-09-04/05 新增并部署家长后台数学/语文学习记录分栏及语文答题记录投影；完整 API/Web 回归、登录态浏览器 E2E、生产构建、Ubuntu 备份恢复和 LAN health 已通过，真实账号/设备回归仍待执行。剩余是正式语文内容签核、真实 PDF/Provider 质量成本和完整设备 E2E 发布门槛。
+当前仓库已有 P0/P1 依赖清单、三类锁文件、核心测试和 CI 草案。API 的 Household/认证/学习/Capture/可信 Tutor/周报/导出、Mistake/Review closeout、教材 PDF-only 私有原页/多模态知识图谱、作答四态/推荐审批、Web/Flutter 入口、SQLite 任务位置与离线 Attempt/任务终态队列、服务端任务位置/容量/未来日期/撤销保护和 Compose 已验证；Android/iOS 构建及 PostgreSQL/MinIO 恢复已有记录。本地和 Ubuntu API/OpenAPI 均为 `0.17.2`、迁移头 `0038_classical_poem_options`。2026-09-04/05 新增并部署家长后台数学/语文学习记录分栏及语文答题记录投影；2026-09-08 本地新增家长授权的数学拍题原图媒体流和 Web 展示，未新增迁移或部署 Ubuntu。完整 API/Web 回归、生产构建和既有登录态浏览器 E2E 已通过，真实账号/设备回归仍待执行。剩余是正式语文内容签核、真实 PDF/Provider 质量成本和完整设备 E2E 发布门槛。
 
 2026-09-04 iPhone 11 本地网络回归：iOS `26.6.1` 真机在权限列表尚未登记 App 时稳定复现 `/healthz` 的 `errno 65: No route to host`，Ubuntu 未收到请求；API 容器、本机/LAN `8000` 和 Mac 跨网段访问均正常。孩子端现于健康检查前通过原生 `NWConnection` 连接用户填写的实际家庭服务器，等待 iOS 本地网络权限决定后再发 HTTP 请求；修复包以 Personal Team 签名覆盖安装，系统授权后 Ubuntu 记录 `192.168.1.100` 的 `/healthz` 为 `200 OK`。定向 Flutter `37 passed`、完整 Flutter `74 passed`、Analyze 和 iPhone Release 签名构建通过；未输入账号、未读取儿童数据，也未执行登录、相机/相册或弱网 E2E。
 
@@ -184,7 +184,7 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | OCR 锁定模型 synthetic smoke | `cd services/api && ./.venv/bin/python ../../evals/run_ocr_model_eval.py` | Ubuntu/模型/Provider 变更 | 通过（2026-07-16，远端 x86_64 Debian 13 锁定容器，4/4 cases：普通文本 3、公式 1，CPU；只使用内存 synthetic 图片，无外部 Provider）；真实题型评测仍待执行 |
 | NewAPI synthetic live eval | `docker compose -f infra/compose/compose.yml exec -T api python scripts/run_newapi_live_eval.py` | NewAPI key/model/网络或 worker 变更 | 通过（2026-07-20，Ubuntu x86_64）：纯合成题仅传确认文字，返回 3 个完整步骤、答案 17 只和独立验算；实际拍题四态仍待设备人工验收 |
 | 备份/恢复 | `infra/compose/scripts/backup.sh`；`verify-restore.sh <backup-dir>` | 数据/迁移/发布变更 | 通过（2026-08-24，Ubuntu；`/home/syin/study-backups/20260824T024445Z` 的 PostgreSQL custom dump + MinIO 快照 + SHA-256 清单已隔离恢复，39 个 public tables、353 个 MinIO 文件） |
-| 契约结构/差异 | 结构化解析 `openapi.yaml` 与 `schemas/*.json`、闭合本地引用，并对比 FastAPI 运行时 path/method/version | OpenAPI/Schema 变更 | 通过（2026-09-08；OpenAPI `0.17.2` 为 70 paths/81 HTTP operations/99 schemas，运行时 path/method/version 无差异；SDK 生成器仍未决定） |
+| 契约结构/差异 | 结构化解析 `openapi.yaml` 与 `schemas/*.json`、闭合本地引用，并对比 FastAPI 运行时 path/method/version | OpenAPI/Schema 变更 | 通过（2026-09-08；OpenAPI `0.17.2` 为 70 paths/82 HTTP operations/99 schemas，运行时 path/method/version 无差异；SDK 生成器仍未决定） |
 | 安全扫描 | `TBD（按 Flutter/pnpm/uv/镜像工具链建立）` | 合并/发布前 | 阻塞：无依赖/镜像 |
 
 耗时预算必须在命令首次进入 CI 后用实际数据补充，不在无代码阶段猜测。

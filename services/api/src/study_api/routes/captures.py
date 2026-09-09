@@ -594,6 +594,37 @@ def save_capture(
     )
 
 
+@router.get("/captures/{capture_id}/media")
+def get_capture_media(
+    household_id: UUID,
+    capture_id: UUID,
+    principal: Principal,
+    repository: Repository,
+    object_storage: ObjectStorage,
+) -> Response:
+    """Stream one private Capture image to an authorized parent."""
+
+    require_parent(require_household(principal, household_id))
+    try:
+        reference = repository.get_capture_media(household_id, capture_id)
+        image = object_storage.read_object(reference.object_key, max_bytes=8_000_000)
+    except LookupError as error:
+        raise _not_found() from error
+    except ObjectStorageError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="capture image is temporarily unavailable",
+        ) from error
+    return Response(
+        content=image,
+        media_type=reference.media_type,
+        headers={
+            "Cache-Control": "private, max-age=300",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @router.delete("/captures/{capture_id}/media", status_code=status.HTTP_204_NO_CONTENT)
 def delete_capture_media(
     household_id: UUID,

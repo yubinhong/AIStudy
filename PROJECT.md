@@ -95,7 +95,7 @@
 | 层 | 选型 | 版本 | 说明 |
 | --- | --- | --- | --- |
 | 孩子/移动端 | Flutter（iOS/Android） | Flutter stable `3.44.6`（`ADR-0007` Accepted）；`image_picker 1.2.3`、`crypto 3.0.7`、`flutter_secure_storage 9.2.4`、`sqflite 2.4.3` | iPad 为孩子主端；任务/拍题/提示、安全会话、数学三入口、视觉四态自动候选与人工校正、长文本确认、上传进度、完整解答和账号切换已实现；实际相机闭环与设备回归待完成 |
-| Web/PWA | Next.js + TypeScript | Next.js `16.2.10`（`ADR-0007` Accepted） | 家长后台和 Windows 首版入口；登录、统一孩子管理/切换、家庭权限、教材审核发布、任务建议审批、导出及数学/语文学习记录已实现；Ubuntu 真实账号浏览器待验收 |
+| Web/PWA | Next.js + TypeScript | Next.js `16.2.10`（`ADR-0007` Accepted） | 家长后台和 Windows 首版入口；登录、统一孩子管理/切换、家庭权限、教材审核发布、任务建议审批、导出及数学/语文学习记录已实现，数学记录详情可显示仍在保留期内的拍题原图；Ubuntu 真实账号浏览器待验收 |
 | API/Worker | Python + FastAPI + 异步 Worker | Python `3.12.x`、FastAPI `0.136.3`、boto3 `1.43.46`、Pillow `12.3.0`、pdfplumber `0.11.7`、pypdfium2 `5.11.0`、PaddleOCR `3.7.0`、PaddlePaddle CPU `3.3.1` | 模块化单体；PDF 文本辅助解析、私有页图渲染、多模态教材知识图谱、Tutor、Mistake/Review/Recommendation worker 已有本地实现 |
 | 视觉/推理 Provider | Provider Adapter + 固定 JSON Schema / Tutor Policy | `STUDY_LOCAL_MODEL_ENABLED=true` 时使用 Compose 内部 Qwen3.5-4B Q4_K_M；否则使用自用 NewAPI URL/key/model | 图片解析与 Tutor 分离；本地/云端由同一 `NewApiConfig` 选择且不自动跨 Provider 回退；服务端只保存未确认 Extraction，人工确认后才生成 VerifiedQuestion；英语真实 Provider 未接入 |
 | 业务数据 | PostgreSQL + pgvector | PostgreSQL `16.10`（Compose） | PostgreSQL 是业务事实来源；Profile/Learning/Capture/Identity/Tutor/Report/Mistake/Review、CurriculumSnapshot、来源证据和 TaskRecommendation 已持久化；pgvector 只做已发布知识检索，不替代关系/审批事实 |
@@ -115,6 +115,8 @@
 当前事实：Git 位于 `master`；本地和 Ubuntu API/OpenAPI 均为 `0.17.2`、迁移头 `0038_classical_poem_options`，家长首页已移除语文技能报告并只展示上海自然日当天到期错题；独立学习记录页默认近 30 个上海自然日并支持 180 天窗口内单日筛选，更早逾期项仍可从学习记录/复习入口访问。用户已确认并完成远端同一家庭两个孩子的全部学习历史清理，目标学习表和已登记拍题对象均为 0；保留账号、孩子档案、教材/快照/已审核内容、设备设置和审计记录。PostgreSQL 已有私有页图元数据、页级 AI 分析、全书知识图谱、规范化知识点及语文 Content/Attempt/Review；同一孩子可并行发布多份教材，推荐遍历全部已发布且已批准的知识图谱，并继续为每条题目保留确切教材/页码来源。全实例只有一个超级管理员 `super_admin`，它可开通独立亲戚家庭及其普通家长；普通家长只能管理自己名下孩子。只有显式声明为国家公开教材、完整内容指纹匹配且来源图谱已批准的 PDF 可跨家庭复用私有 PDF/页图/解析草稿，目标家庭仍独立审核发布。2026-09-05 已完成 Ubuntu `0.17.2`/`0038` 前向部署，备份与恢复校验、迁移、健康、worker、OpenAPI、古诗题库和局域网 smoke 均通过；隔离 Chromium 已验证跨家庭登录态、Cookie/CSRF/撤销及双孩子学科/切换。孩子英语框架保持关闭，正式教研/版权、真实 Provider/PDF、Ubuntu 真实账号浏览器与设备验收仍未执行。
 
 2026-09-04/05 新增并部署家长后台分学科学习记录：侧栏学习记录展开为数学和语文两个子菜单；数学页继续读取已确认数学题/讲解，语文页通过家长专用查询读取 `chinese_attempts` 并展示孩子答案、对错、错误时正确答案、耗时及复习状态。新增查询为兼容式 API 扩展，API/Web 完整回归、登录态浏览器 E2E、Ubuntu 备份恢复、API/Web health 和运行源码核验已通过；没有数据库迁移。版本 `v0.17.2` 已提交并推送，Ubuntu 真实账号/设备验收仍待执行。
+
+2026-09-08 本地实现家长数学学习记录拍题图片展示：通过新增的家长/Household-scoped 私有 Capture 媒体流和 Web 同源代理显示原图；学习记录 JSON 不返回对象键、存储 URL 或图片字节，图片过期/删除时显示不可用状态，仍遵守原图 24 小时与家长保存策略。API/Web/契约质量门槛已通过，本轮未部署 Ubuntu，无数据库迁移。
 
 2026-09-05/07 交付链路增量：GitHub Actions `quality` 在全部质量 job 通过后发布 GHCR API/Web 多架构镜像，Compose 改为只拉取镜像；迁移/API/四个 worker 使用同一后端产物。`v0.17.2` tag workflow run `34093042527` 的质量和两个 GHCR 发布 job 均成功。2026-09-08 Ubuntu 已切换到代码提交 `6a518fc` 的 `sha-6a518fc` 镜像，API digest 为 `sha256:653444b0d1c2bf9494c54b0793cdfc37824354cea8c6ca221ef85cc4398095da`，Web digest 为 `sha256:c312f5301efe5fe448c550f9fe54e344c4c324ae66609f761e7eeb02c43dc729`；`latest` 仅跟随 `master`。staging/production、签名与漏洞扫描策略仍未完成。
 

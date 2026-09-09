@@ -78,11 +78,11 @@ flowchart LR
 | Identity/Profile | `services/api` 内模块 | Household、Account、AuthSession、ChildProfile、Device、孩子管理聚合和权限 | 身份、家庭归属、密码哈希、可撤销会话 | API、所有领域模块 | 认证、事务仓储、原子聚合和唯一约束已实现；隔离 Chromium 登录态/跨家庭/双孩子通过，真实 PostgreSQL 浏览器与设备待完成 |
 | Curriculum/Content | `services/api` 内模块 + parser/analysis worker | PDF 授权/私有上传、文字辅助解析、PDFium 私有页图、NewAPI 页批次理解、全书知识图谱和家长批准 | 原件、页图元数据、页级分析、知识点与版本 | Web、Tutor、Task、Mistake | 本地与 Ubuntu `0038` 已实现；Provider 失败/Schema 或来源越界会进入 failed，批准前不能发布 |
 | Plan/Task/Session | `services/api` 内模块 | 全量错题/批准知识点排序、来源受限云端规划、家长审批、任务/会话/Attempt | 学习任务与过程记录 | 客户端、Curriculum、Report、Mistake、NewAPI | 不再从页文字正则抽题；具体题来自批准知识点，视觉题携带描述和受鉴权来源页 |
-| Capture / PrivacySanitizer | `services/api` 内模块 | 受限媒体、API 有界流式上传、本地脱敏/手动涂抹；ImageAnalysis、NewAPI 结构化和人工确认 | Capture/脱敏/解析状态；图片在私有 MinIO；Extraction/VerifiedQuestion 在 PostgreSQL | 对象存储、NewAPI Provider、Tutor | 已实现 Session 鉴权流式上传、安全读取/实际 SHA-256、提取/确认和生命周期，并部署 Ubuntu；synthetic NewAPI 已通过，真实儿童图片与自动视觉检测器仍未验收 |
+| Capture / PrivacySanitizer | `services/api` 内模块 | 受限媒体、API 有界流式上传、本地脱敏/手动涂抹；ImageAnalysis、NewAPI 结构化和人工确认；家长记录按授权读取私有原图 | Capture/脱敏/解析状态；图片在私有 MinIO；Extraction/VerifiedQuestion 在 PostgreSQL；学习记录 JSON 不携带对象键/URL/图片字节 | 对象存储、NewAPI Provider、Tutor | 已实现 Session 鉴权流式上传、安全读取/实际 SHA-256、提取/确认和生命周期并部署 Ubuntu；本轮新增的家长 Household-scoped 媒体流已本地验证但尚未部署 Ubuntu；synthetic NewAPI 已通过，真实儿童图片与自动视觉检测器仍未验收 |
 | Tutor | `services/api` 内模块 | 只消费 VerifiedQuestion；按练习/复习/错题讲解模式执行 Policy、教材 grounding、Schema、确定性校验和成本控制 | 追加写 TutorTurn、Policy/Prompt/模型和来源版本 | Capture、Curriculum、AI Provider、Mistake | 由统一路由选择 `local_qwen` 或 `newapi`；答案/重复/题意门禁失败时回退题型相关本地提示；L3 完整步骤/答案/验算已实现；本地模型质量/成本验收待完成 |
 | Mistake/Review/Report | `services/api` 内模块 | 错题证据、错因、讲解引用、确定性复习调度、周报聚合 | MistakeRecord、ReviewSchedule、复习 Attempt 和报告 | Session/Tutor/Curriculum、家长端 | AttemptEvidence 绑定、closeout、实际题目复习/ReviewAttempt、Web/Flutter 和教材来源已实现；真实设备/Provider 质量验收待完成 |
 | Notification | `services/api` 内模块 | 应用内提醒和可替换推送适配器 | 通知状态 | Report/Task、HMS | 未创建 |
-| 跨端契约 | `packages/contracts` | OpenAPI、AI JSON Schema、生成 SDK | 接口/Schema 的唯一事实来源 | API、Flutter、Web、evals | `0.17.2` 包含 70 个 path 条目、81 个 HTTP operation 和 99 个 component schema；SDK 生成器未实现 |
+| 跨端契约 | `packages/contracts` | OpenAPI、AI JSON Schema、生成 SDK | 接口/Schema 的唯一事实来源 | API、Flutter、Web、evals | `0.17.2` 包含 70 个 path 条目、82 个 HTTP operation 和 99 个 component schema；新增家长私有 Capture 媒体流为兼容式 GET；SDK 生成器未实现 |
 | AI 评测 | `evals` | 固定样本与质量/安全/延迟/成本回归 | 合成或脱敏评测数据 | Tutor、CI | OCR、PrivacySanitizer、Tutor Policy 和真实 NewAPI synthetic 大图已实现；自动视觉检测器 eval 待其实现后补充 |
 | 本地基础设施 | `infra/compose` | PostgreSQL、Redis、MinIO、API/Web/Worker 和可切换 llama.cpp/Qwen 服务编排 | 单家庭自用数据与本地模型缓存 | 开发/自托管 | Ubuntu 完整栈、迁移、生命周期 worker、备份和隔离恢复已验证；本地模型首次下载/质量验收待完成 |
 | ADR | `docs/adr` | 不可逆或跨模块决策记录 | 架构决策历史 | `DECISIONS.md` | ADR-0001～0011、0013～0018、0020～0028 Accepted；ADR-0019 Proposed；替代关系见决策索引 |
@@ -171,6 +171,8 @@ PLAN-0013 的目标聚合不改变上述认证边界：家长通过一个带幂�
 6. TaskRecommendation 在家庭边界遍历全部开放错题和最新已发布 Snapshot 的已批准知识点/练习，确定性匹配并统计薄弱频次；只把最多 30 个来源候选交给 NewAPI 规划。模型只能返回来源键、日期/时长和说明，服务端解析回批准原题并执行未知来源、来源覆盖、到期当天和每日 3 项门禁；默认经家长批准才转换成 Task。
 7. WeeklyReport 聚合时间窗口内的任务、错题、复习和 Tutor 事实并保留源引用；失败时显示数据截止时间和缺失原因，不用模型猜测填充。
 
+8. 家长数学学习记录展开详情通过 `GET /households/{household_id}/captures/{capture_id}/media` 读取拍题原图。该接口重新校验家长会话与 Household 归属，复用 Capture 对象保留/删除状态，不改变学习记录 JSON，也不返回对象键或存储 URL；Web 只提供同源代理，图片过期或删除时展示不可用状态。
+
 - 信任边界：错误分类、知识匹配、Tutor 输出、Review 派生状态和推荐都不可信；必须以授权后的发布知识和追加写学习事实为输入。
 - 一致性：MistakeRecord 引用确认题目/已确认 AttemptEvidence（有作答或空白）；ReviewSchedule/报告/推荐可重算，不能覆盖 Attempt/TutorTurn/审批事实。
 - 失败处理：讲解失败仍保留错题候选；复习/推荐失败不删除既有记录或制造任务；无 Provider 时允许手工讲解/复习。
@@ -191,7 +193,7 @@ PLAN-0013 的目标聚合不改变上述认证边界：家长通过一个带幂�
 | `/households/{id}/children`、孩子管理聚合、`/households/{id}/devices` | API | Flutter/Web | `packages/contracts/openapi.yaml` | 孩子聚合创建必须单事务/幂等；现有分离写入的兼容和收缩由 PLAN-0013 在 OpenAPI 差异中确认 | `TBD` |
 | `/curriculum-assignments`、`/materials`、`/material-parse-jobs`、`/curriculum-snapshots` | API/worker | Web、Tutor、Task | OpenAPI + 内容解析 Schema | 原材料/解析草稿/发布版本分离；写请求幂等；已发布 Snapshot 不可变；精确路径以 PLAN-0016 实施差异为准 | `TBD` |
 | `/task-recommendations`、`/tasks`、`/sessions` | API | Flutter/Web | `packages/contracts/openapi` | 推荐与 Task 分离；审批/写请求幂等；来源/策略版本只增不改 | `TBD` |
-| `/captures`、目标单一流式上传、`/privacy-sanitizations`、`/image-analysis-jobs` | API | Flutter/Web | OpenAPI + 图片/脱敏/提取 Schema | ADR-0018 以预发布破坏性版本删除 `upload_url`/独立确认；API/App 成对升级；上传幂等并确认绑定脱敏哈希 | `TBD` |
+| `/captures`、`/captures/{id}/media`、目标单一流式上传、`/privacy-sanitizations`、`/image-analysis-jobs` | API | Flutter/Web | OpenAPI + 图片/脱敏/提取 Schema | ADR-0018 以预发布破坏性版本删除 `upload_url`/独立确认；上传幂等并确认绑定脱敏哈希；媒体 GET 只允许家长读取同一 Household 的私有原图 | `TBD` |
 | `/tutor`（guided/review/mistake_explanation） | API | Flutter | OpenAPI + `packages/contracts/schemas` | mode/Prompt/Policy/Schema/Snapshot 独立版本；L2 绑定 L1；完整讲解要求 VerifiedQuestion + 已确认 `worked` 或 `blank` | `TBD` |
 | `/mistakes`、`mistake-closeout`、`/reviews/due`、`/reviews/{id}/attempts`、`/reports` | API | Flutter/Web | `packages/contracts/openapi` | closeout 原子/幂等；Attempt/ReviewAttempt 追加写；Review/报告按 policy 版本化；精确路径以实施差异为准 | `TBD` |
 | `/content`、`/admin` | API | Web | `packages/contracts/openapi` | 高权限接口分离并审计 | `TBD` |

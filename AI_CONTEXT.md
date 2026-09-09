@@ -21,6 +21,7 @@
 - 2026-09-03 家长后台首轮视觉改版已由提交 `be3bd70` 推送并定向部署 Ubuntu Web：侧栏、顶部栏与主内容区使用新的后台层级，学习记录页修复“时间范围”裁切并压缩空状态。桌面/手机登录态布局断言、完整 Chromium E2E、Web 37 项单元测试、格式/Lint/类型/build 通过；远端锁定 Node 24 镜像、Web/API 本机和 LAN health、运行 CSS 标识通过，API、数据库、MinIO 和四个 worker 未重启。未使用 Ubuntu 真实账号或设备回归。
 
 - 2026-09-04/05 家长后台学习记录已按学科拆分并部署 Ubuntu：侧栏“学习记录”展开“数学学习记录”和“语文学习记录”，旧 `/learning` 保持数学兼容入口。数学继续读取 `verified_questions`/`tutor_turns`；新增家长专用 `/chinese/learning-details` 查询语文 Attempt，显示孩子答案、确定性对错、错误时正确答案、耗时和当前复习状态。API 非集成 `258 passed, 32 deselected`、PostgreSQL 集成 `32 passed`、Web Vitest `38 passed`、TypeScript、ESLint、Prettier、production build、登录态 Chromium E2E `1 passed`、OpenAPI YAML/operation id、Ubuntu 备份恢复和 LAN health 均通过。发布版本为 `v0.17.2`，没有新增数据库迁移，英语仍关闭；Ubuntu 真实账号/设备复核仍待执行。
+- 2026-09-08 家长数学学习记录详情新增拍题原图展示：API 增加家长/Household-scoped 私有 Capture 媒体流，Web 通过同源代理读取，学习记录 JSON 不增加对象键、存储 URL 或图片字节；图片过期/删除时显示不可用状态并继续遵守原图 24 小时与家长保存策略。本地 API/Web 回归、契约、类型、Lint、构建和差异检查通过；本轮未部署 Ubuntu，真实账号/设备浏览器复核仍待执行。
 
 - 2026-08-29/30 已修复古诗抽查把《剪窗花》等童谣/韵文作为古诗的问题：Provider `poem` 只作为候选，`classical-poem-catalog.v2` 对标题、连续题干/答案和全部可见选项确定性验证，发布、读取和提交均失败关闭。Ubuntu `0037` 退役 157 道错误题，`0038` 再将 21 道保留题的 42 个童谣干扰项替换为古诗句；Attempt/Review 不变。Flutter 每次进入前重新读取当前题库，避免驻留页面复用旧题。Nova 9 已覆盖安装并保留登录态，迁移后 12 轮抽查覆盖咏鹅、画、悯农（其二）、江南、古朗月行、风，所有题干/下一句/选项正确且未提交作答。`v0.17.1` 已推送 GitHub，质量与 Android Actions 成功，Release 含 3 个 ABI APK、校验和及构建元数据。
 
@@ -30,7 +31,7 @@
 
 - 2026-08-23 继续实现：数学“今日任务”每道题仍必须有指定题干并将当前题目和教材来源传入拍题/确认页；多题任务在同一会话内按序执行，中间题追加 Attempt、最后一题关闭任务；端侧 SQLite 保存服务端/家庭/孩子范围内的下一题号，进程重开后可继续；已确认作答、任务完成、复习收口和跳过在断网时进入结构化 SQLite 队列，联网后先按最多 50 条批次幂等同步 Attempt，再按顺序重放终态事件；服务端拒绝第二个活动会话。语文首页只保留“古诗抽查”和“看图写话”，古诗题库为空时也显示受限入口。语文 scorer golden 覆盖八类技能，正式原创内容必须有项目 Owner 审核、审核时间和权利凭证摘要才可被孩子读取；古诗抽查先均匀抽取诗目再抽相邻句题；服务端已持久化跨设备题号、每日容量、未来日期/逾期边界和家长撤销规则；教材批准自动生成古诗题、看图写话空句阻断和安全通用降级已补回归；完整 PostgreSQL 集成为 `32 passed`，API 非集成为 `244 passed`，Flutter 为 `70 passed`，Web 为 `35 passed`。本轮不连接手机/平板；真实 Provider/PDF、正式签核、Ubuntu 真实账号浏览器和设备 E2E 仍未完成。
 
-- 活动计划：`TASK-0012` 继续跟踪多学科与语文剩余验收；`PLAN-0031` 的隔离 Chromium 登录态 E2E、`PLAN-0032/0033` 的语文复习/古诗/看图写话、`PLAN-0038` 的分学科学习记录及 `PLAN-0039` 的 GHCR 发布均已完成代码和对应自动化。`PLAN-0040` 复核代码、OpenAPI 与文档一致性。正式教研/版权签核、真实 Provider 质量/成本、Ubuntu 真实账号浏览器和完整设备 E2E 仍待完成；英语保持供应商中立锁定框架并排最后。
+- 活动计划：`TASK-0012` 继续跟踪多学科与语文剩余验收；`PLAN-0031` 的隔离 Chromium 登录态 E2E、`PLAN-0032/0033` 的语文复习/古诗/看图写话、`PLAN-0038` 的分学科学习记录、`PLAN-0039` 的 GHCR 发布、`PLAN-0042` 的家长学习记录拍题图片展示均已完成代码和对应自动化。`PLAN-0040` 复核代码、OpenAPI 与文档一致性。正式教研/版权签核、真实 Provider 质量/成本、Ubuntu 真实账号浏览器和完整设备 E2E 仍待完成；英语保持供应商中立锁定框架并排最后。
 - 任务状态：ADR-0018/PLAN-0012 已完成本地与 Ubuntu API/Flutter/Compose/契约迁移；Ubuntu 不再依赖预签名直传，MinIO `9000` 未向宿主/LAN 暴露。最终真机仍未回归。
 - 2026-09-04 iPhone 11：重新签名安装后复现 iOS 本地网络权限未登记导致的 `errno 65`；Flutter/iOS 已在健康检查前用 `NWConnection` 对实际家庭服务器触发授权并等待结果。修复包覆盖安装后，Ubuntu 收到 iPhone `192.168.1.100` 的 `/healthz` 并返回 200。登录、相机/相册、弱网和完整设备生命周期仍未验收。
 - 当前分支：`master`；本地与 Ubuntu API/OpenAPI `0.17.2`、`0038_classical_poem_options` 已完成代码、本机/Ubuntu/Nova 9 验证，并已提交、推送和发布 tag `v0.17.2`。Ubuntu 当前部署载荷为代码提交 `6a518fc` 的 GHCR `sha-*` 镜像。
@@ -63,7 +64,7 @@
 | 项目目标、范围、设备、环境 | `PROJECT.md` | Active；目标与现状已分离 |
 | P1 产品需求与验收 | `PRD.md` | Draft；待产品 Owner 审批 |
 | 当前任务 | `TASK.md` | TASK-0012 多学科/语文主线已部署，继续跟踪正式内容、真实 Provider 和设备验收；英语框架保持锁定并排最后 |
-| 复杂任务计划 | `PLANS.md` | PLAN-0040 代码/契约/文档复核、PLAN-0041 Ubuntu GHCR 拉取式部署均已完成；正式内容、Provider 和设备验收仍在队列 |
+| 复杂任务计划 | `PLANS.md` | PLAN-0040 代码/契约/文档复核、PLAN-0041 Ubuntu GHCR 拉取式部署、PLAN-0042 家长学习记录拍题图片展示均已完成；正式内容、Provider 和设备验收仍在队列 |
 | 系统结构、数据流、接口 | `ARCHITECTURE.md` | P0/P1 单家庭核心闭环已实现；残余边界明确记录 |
 | 测试命令和质量门槛 | `TESTING.md` | API/Web/Flutter 质量命令已有验证；原生构建结果以最新记录为准 |
 | 儿童数据、权限与 AI 安全 | `SECURITY.md` | 基线草案；生产开放项未决 |
@@ -78,7 +79,7 @@
 - 客户端：Flutter iOS/Android；Next.js + TypeScript Web/PWA；端侧 SQLite。
 - 后端：Python 3.12 + FastAPI 模块化单体 + 异步 Worker。
 - 数据：PostgreSQL 为业务事实源；pgvector 做检索；Redis 做缓存/队列；私有 S3/MinIO 存图片。新链路仅由 API/worker 通过内部网络访问；Ubuntu `0.17.2` 已完成流式上传、教材解析、私有原页、知识图谱、学习历史保留、语文 Content/Attempt/Review、古诗抽查、看图写话引导和私有 MinIO 成对迁移。
-- 契约：`packages/contracts` 本地和 Ubuntu OpenAPI 均为 `0.17.2`；规范现有 70 个 path 条目（含一个 WebSocket 扩展）、81 个 HTTP operation 和 99 个 component schema，覆盖 `math/chinese`、OCR 确认、古诗发布、任务位置和家长撤销；孩子合同不包含 AnswerSpec。SDK 生成器尚未选择。
+- 契约：`packages/contracts` 本地 OpenAPI 为 `0.17.2`；规范现有 70 个 path 条目（含一个 WebSocket 扩展）、82 个 HTTP operation 和 99 个 component schema，覆盖 `math/chinese`、OCR 确认、古诗发布、家长学习记录拍题图片流、任务位置和家长撤销；孩子合同不包含 AnswerSpec。SDK 生成器尚未选择，Ubuntu 尚未部署本轮新增接口。
 - AI：本地 PrivacySanitizer、固定 OCR/脱敏/Tutor eval、Provider Adapter、ImageAnalysis/CurriculumAnalysis worker、QuestionExtraction/VerifiedQuestion 和服务端可信 TutorTurn 已实现；`STUDY_LOCAL_MODEL_ENABLED=true` 时统一路由到 Compose 内部 llama.cpp 的 Qwen3.5-4B Q4_K_M，关闭时选择现有 NewAPI 云端配置，不自动跨 Provider 回退。教材页图有界分批后形成待家长批准的知识图谱，L1/L2 使用已确认文字和最小已批准教材片段，推荐由当前选定 Provider 在本地来源候选上规划。孩子英语只保留供应商中立接口、`disabled` 和测试注入的 `fake`，没有真实语音 Provider；本地 Qwen/云端教材、提示和推荐的真实质量/成本验收仍未完成。
 - 交付：Ubuntu 自用 Compose 已部署并完成迁移、健康、NewAPI synthetic 和 PostgreSQL/MinIO 恢复验收；OpenTelemetry、正式告警和公网发布未实现。
 - 认证：ADR-0017 已实现代码目标：同一 Household 内家长/孩子账号密码 + 可撤销不透明会话；Web 用 HttpOnly Cookie/CSRF，Flutter 用平台安全存储；不接入短信、邮箱、社交登录、OIDC 或 MFA，也不保留 HMAC/Demo 兼容。

@@ -5,7 +5,7 @@ Schemas. Generated client SDKs belong in build output directories and are not
 hand-maintained in application code.
 
 The current `0.17.2` contract contains 70 path entries (including one WebSocket
-extension), 81 HTTP operations, and 99 component schemas. It covers health,
+extension), 82 HTTP operations, and 99 component schemas. It covers health,
 authentication, household/child/device administration, learning tasks and
 sessions, Capture upload/correction/delete, OCR and image-analysis confirmation,
 Tutor/mistake/review/report/export, private curriculum analysis and approval,
@@ -35,10 +35,13 @@ or object-storage URL. Mistake closeout, evidence-backed review attempts,
 page-scoped curriculum sources, and Tutor hint progression metadata remain part
 of the current additive contract.
 
-Capture upload is a single authenticated API stream. The contract does not
-expose presigned URLs, object keys, or a separate upload-confirmation operation;
-the matching API and Flutter implementation are locally verified and deployed
-on Ubuntu; final weak-network and full-device lifecycle validation remains open.
+Capture upload is a single authenticated API stream, and parent learning records
+can read an authorized private Capture image through an API media stream. The
+contract does not expose presigned URLs, object keys, or a separate
+upload-confirmation operation. The upload API and Flutter implementation are
+locally verified and deployed on Ubuntu; the parent media-stream addition is
+locally verified but is not deployed in this change. Final weak-network and
+full-device lifecycle validation remains open.
 
 Provider-neutral ADR-0015 schemas are versioned under `schemas/`: local
 privacy-sanitization metadata, image-analysis job state, unverified question

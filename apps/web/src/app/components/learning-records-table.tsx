@@ -1,6 +1,7 @@
 import { ClockCounterClockwise } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
 
+import { CaptureImage } from "@/app/components/capture-image";
 import {
   readArray,
   readNumber,
@@ -88,6 +89,7 @@ export function LearningRecordsTable({ records }: { records: unknown[] }) {
               </span>
             </summary>
             <div className="record-expanded">
+              <CaptureImage captureId={readString(question, "capture_id")} />
               <div className="record-question-full">
                 <strong>题目</strong>
                 <p>{readString(question, "question_text") ?? "已确认数学题"}</p>

@@ -1082,6 +1082,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+    get:
+      operationId: getCaptureMedia
+      summary: Read one parent-authorized private Capture image
+      description: Parent-only Household-scoped image stream. The response contains image bytes only; object keys, storage URLs, and image data are never returned by learning-history JSON.
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      responses:
+        '200':
+          description: Private JPEG or PNG Capture image.
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          description: Private Capture storage is temporarily unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /households/{household_id}/sessions/{session_id}/captures/upload:
     parameters:
       - $ref: '#/components/parameters/HouseholdId'

@@ -8,7 +8,11 @@ from sqlalchemy import MetaData, Table, create_engine, func, insert, select, upd
 from sqlalchemy.engine import Connection, Engine, RowMapping
 
 from study_api.database import database_url
-from study_api.domain.capture_repository import CaptureStateError, PendingCaptureUpload
+from study_api.domain.capture_repository import (
+    CaptureMediaReference,
+    CaptureStateError,
+    PendingCaptureUpload,
+)
 from study_api.domain.learning_repository import ChildAssignmentError, ResourceVersionConflictError
 from study_api.domain.models import (
     AuditEvent,
@@ -177,6 +181,22 @@ class PostgresCaptureRepository:
     def get_capture(self, household_id: UUID, capture_id: UUID, child_id: UUID) -> Capture:
         with self._engine.connect() as connection:
             return self._capture_for_child(connection, household_id, capture_id, child_id)
+
+    def get_capture_media(self, household_id: UUID, capture_id: UUID) -> CaptureMediaReference:
+        with self._engine.connect() as connection:
+            row = self._capture_row_for_household(connection, household_id, capture_id)
+        if (
+            row["object_key"] is None
+            or row["status"] == CaptureStatus.UPLOAD_PENDING.value
+            or row["deletion_status"]
+            not in {DeletionStatus.ACTIVE.value, DeletionStatus.FAILED.value}
+            or (not row["parent_saved"] and row["expires_at"] <= datetime.now(UTC))
+        ):
+            raise LookupError
+        return CaptureMediaReference(
+            object_key=row["object_key"],
+            media_type=row["media_type"],
+        )
 
     def confirm_capture_upload(
         self,

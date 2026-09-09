@@ -1,5 +1,7 @@
 # Changelog
 
+- 2026-09-08：家长数学学习记录展开详情现在显示对应的拍题原图。新增家长/Household-scoped 私有 Capture 媒体流和 Web 同源代理；学习记录 JSON 不暴露对象键、存储 URL 或图片字节，图片过期/删除时显示不可用状态。API/Web/契约测试、类型、Lint、构建和运行时路由对比通过；本轮未部署 Ubuntu，也未新增数据库迁移。
+
 - 2026-09-08：按用户授权完成 Ubuntu 自用 Compose 的 GHCR 拉取式切换。部署载荷为代码提交 `6a518fc` 的 `sha-6a518fc` API/Web 镜像；部署前备份 `/home/syin/study-backups/20260908T074345Z` 并通过隔离恢复（39 张 PostgreSQL public 表、715 个 MinIO 快照文件），迁移仍为 `0038_classical_poem_options`。API/Web 本机与局域网 health、四个 worker、运行 digest 和 OCI revision 均通过；没有数据库迁移或业务数据删除。真实账号/设备、真实 Provider/PDF、staging/production 仍未验收。
 
 - 2026-09-08：按可运行代码复核并同步仓库文档与 OpenAPI。规范将 OCR 候选确认登记到真实 `/confirmations` 子资源，并补记家长发布已审核私有古诗的接口/请求 Schema；修正后 OpenAPI `0.17.2` 与 FastAPI 的 81 个 HTTP operation 一致。同步移除模块 README 与当前状态文档中旧预签名 MinIO、旧版本/迁移和已实现能力仍标为待实现的描述。本轮不改变业务代码、数据库或 Compose，不部署 Ubuntu；推送只触发 GitHub Actions，镜像构建结果需与推送状态分开确认。

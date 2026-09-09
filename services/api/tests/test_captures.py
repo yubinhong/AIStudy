@@ -1,6 +1,8 @@
-from datetime import date
+import base64
+from collections.abc import AsyncIterable
+from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from auth_helpers import session_headers
 from fastapi.testclient import TestClient
@@ -11,6 +13,29 @@ HOUSEHOLD_A = "00000000-0000-0000-0000-000000000001"
 HOUSEHOLD_B = "00000000-0000-0000-0000-000000000002"
 CHILD_A = "00000000-0000-0000-0000-000000000101"
 CHILD_B = "00000000-0000-0000-0000-000000000102"
+PNG_1X1 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+)
+
+
+class CaptureMediaStorage:
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+
+    async def stream_capture_upload(
+        self,
+        object_key: str,
+        content_type: str,
+        byte_size: int,
+        content_sha256: str,
+        chunks: AsyncIterable[bytes],
+    ) -> None:
+        del content_type, byte_size, content_sha256
+        self.objects[object_key] = b"".join([chunk async for chunk in chunks])
+
+    def read_object(self, object_key: str, max_bytes: int) -> bytes:
+        assert max_bytes == 8_000_000
+        return self.objects[object_key]
 
 
 def _principal(
@@ -80,6 +105,87 @@ def test_capture_requires_bound_child_and_starts_with_manual_correction() -> Non
     assert parent_attempt.status_code == 403
     assert capture["status"] == "needs_correction"
     assert capture["version"] == 1
+
+
+def test_parent_can_read_capture_media_with_household_scope() -> None:
+    storage = CaptureMediaStorage()
+    client = TestClient(create_app(object_storage=storage))
+    session = _session(client)
+    digest = sha256(PNG_1X1).hexdigest()
+    uploaded = client.post(
+        f"/households/{HOUSEHOLD_A}/sessions/{session['id']}/captures/upload",
+        headers={
+            **_principal(client, role="child", child_id=CHILD_A),
+            "Idempotency-Key": "capture-upload-media-001",
+            "X-Capture-Media-Type": "image/png",
+            "X-Capture-Byte-Size": str(len(PNG_1X1)),
+            "X-Capture-Content-SHA256": digest,
+        },
+        content=PNG_1X1,
+    )
+    assert uploaded.status_code == 201
+    capture_id = uploaded.json()["id"]
+
+    parent = client.get(
+        f"/households/{HOUSEHOLD_A}/captures/{capture_id}/media",
+        headers=_principal(client),
+    )
+    child = client.get(
+        f"/households/{HOUSEHOLD_A}/captures/{capture_id}/media",
+        headers=_principal(client, role="child", child_id=CHILD_A),
+    )
+    other_household = client.get(
+        f"/households/{HOUSEHOLD_B}/captures/{capture_id}/media",
+        headers=_principal(client),
+    )
+
+    assert parent.status_code == 200
+    assert parent.headers["content-type"] == "image/png"
+    assert parent.headers["cache-control"] == "private, max-age=300"
+    assert parent.content == PNG_1X1
+    assert child.status_code == 403
+    assert other_household.status_code == 404
+
+
+def test_capture_media_returns_not_found_when_no_uploaded_object_exists() -> None:
+    client = TestClient(create_app())
+    capture = _create_capture(client, str(_session(client)["id"]))
+
+    response = client.get(
+        f"/households/{HOUSEHOLD_A}/captures/{capture['id']}/media",
+        headers=_principal(client),
+    )
+
+    assert response.status_code == 404
+
+
+def test_capture_media_rejects_expired_image_before_lifecycle_cleanup() -> None:
+    storage = CaptureMediaStorage()
+    client = TestClient(create_app(object_storage=storage))
+    session = _session(client)
+    digest = sha256(PNG_1X1).hexdigest()
+    uploaded = client.post(
+        f"/households/{HOUSEHOLD_A}/sessions/{session['id']}/captures/upload",
+        headers={
+            **_principal(client, role="child", child_id=CHILD_A),
+            "Idempotency-Key": "capture-upload-expired-001",
+            "X-Capture-Media-Type": "image/png",
+            "X-Capture-Byte-Size": str(len(PNG_1X1)),
+            "X-Capture-Content-SHA256": digest,
+        },
+        content=PNG_1X1,
+    )
+    assert uploaded.status_code == 201
+    capture_id = UUID(uploaded.json()["id"])
+    repository = client.app.state.capture_repository
+    repository._expires_at[capture_id] = datetime.now(UTC) - timedelta(seconds=1)
+
+    response = client.get(
+        f"/households/{HOUSEHOLD_A}/captures/{capture_id}/media",
+        headers=_principal(client),
+    )
+
+    assert response.status_code == 404
 
 
 def test_capture_correction_is_append_only_idempotent_and_versioned() -> None:

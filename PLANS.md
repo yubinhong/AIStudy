@@ -1,3 +1,54 @@
+# PLANS.md — PLAN-0043 家长拍题图片 GitHub/Ubuntu 发布
+
+## 计划元数据
+
+- 计划 ID：`PLAN-0043`
+- 关联：`TASK-0012`、`PLAN-0042`、`RUNBOOK.md`、`.github/workflows/ci.yml`、`infra/compose/compose.yml`
+- 状态：`IN_PROGRESS`
+- 优先级：`P1 / RELEASE / SELF-HOSTED DEPLOYMENT`
+- Owner：Codex（提交、推送、备份、部署和验收）
+- 创建：`2026-09-09`
+
+## 目标、边界与里程碑
+
+将 PLAN-0042 的家长拍题图片展示代码提交并推送 GitHub，等待 push-gated GHCR API/Web 镜像发布后，以同一 `sha-*` 载荷部署 Ubuntu 自用 Compose。保留远端 `.env`、数据卷和学习事实；本次不新增数据库迁移、不删除数据、不创建 tag，也不把自用部署描述为公网/商业生产。
+
+- [ ] M1 — 完成本地最终差异审查、提交并推送 `master`。
+- [ ] M2 — 等待并核对 GitHub Actions `quality`、API/Web 多架构 GHCR 发布及 commit/OCI revision。
+- [ ] M3 — 远端备份与隔离恢复验证，固定 API/Web 同一 `sha-*` 镜像，执行 pull、迁移检查和 Compose 重启。
+- [ ] M4 — 验证容器、digest、源码 revision、API/Web 本机/LAN health、worker、OpenAPI/媒体路由和近期错误日志，更新发布文档与回滚信息。
+
+## 兼容性、风险与回滚
+
+本次是现有 `0.17.2` 的向后兼容 API/Web 增量；数据库保持 `0038_classical_poem_options`，不执行 downgrade。部署失败时恢复上一个已验证的 API/Web `sha-6a518fc` 镜像并重新 pull/up；只有确认数据损坏才使用本次备份恢复，不能通过回滚代码删除或覆盖学习事实。
+
+---
+
+# PLANS.md — PLAN-0042 家长学习记录展示拍题图片
+
+## 计划元数据
+
+- 计划 ID：`PLAN-0042`
+- 关联：`TASK-0012`、`PLAN-0038`、`ADR-0011`、`ADR-0018`、`packages/contracts/openapi.yaml`
+- 状态：`COMPLETE`
+- 优先级：`P1 / WEB / API / PRIVATE MEDIA`
+- Owner：Codex（实现与验证）
+- 创建：`2026-09-08`
+
+## 目标、边界与里程碑
+
+让家长数学学习记录的展开详情显示对应的拍题原图，帮助家长核对题目。复用 `VerifiedQuestion.capture_id` 和现有私有 Capture 对象，不新增数据库迁移，不返回对象键、存储 URL 或图片字节到学习记录 JSON；图片通过家长授权的同源流接口读取，继续遵守现有 Capture 保留/删除策略。语文学习记录不关联拍题 Capture，本计划不改变其内容记录。
+
+- [x] M1 — 增加 Household/Parent-scoped Capture media stream、OpenAPI 记录和 API 回归；覆盖图片存在、跨家庭、孩子角色、上传中/已删除状态。
+- [x] M2 — 增加 Web 同源图片代理和数学学习记录展开区；图片不可用时显示保留策略对应的明确状态。
+- [x] M3 — 运行 API/Web 相关单元、契约、类型、Lint、构建和差异检查，更新任务/状态/变更文档。
+
+## 兼容性、风险与回滚
+
+这是向后兼容的新增 `GET` 媒体读取接口，既有学习记录 JSON 不变，不涉及迁移或历史数据改写。图片仍由现有 24 小时原图保留和家长保存规则决定；删除或过期后页面显示图片不可用而不伪造内容。回滚可移除媒体读取路由、Web 代理和详情展示，不删除 Capture 或学习事实。
+
+---
+
 # PLANS.md — PLAN-0041 Ubuntu GHCR 拉取式部署
 
 ## 计划元数据
@@ -211,7 +262,7 @@ UI 回滚只恢复首页组件和旧筛选，不改数据库。数据清理不�
 
 - 计划 ID：`PLAN-0033`
 - 关联：`TASK-0012`、`PLAN-0032`、`ADR-0015`、`ADR-0027`
-- 状态：`IN_PROGRESS`
+- 状态：`COMPLETE`
 - 优先级：`P0 / CHINESE / CHILD SAFETY`
 - Owner：Codex（实现）；项目 Owner（2026-08-16 明确授权儿童图片 Provider 与公开教材跨家庭复用）
 - 创建：`2026-08-16`

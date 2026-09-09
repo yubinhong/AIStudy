@@ -55,6 +55,10 @@ class CaptureRepository(Protocol):
 
     def get_capture(self, household_id: UUID, capture_id: UUID, child_id: UUID) -> Capture: ...
 
+    def get_capture_media(
+        self, household_id: UUID, capture_id: UUID
+    ) -> "CaptureMediaReference": ...
+
     def confirm_capture_upload(
         self,
         household_id: UUID,
@@ -108,6 +112,14 @@ class PendingCaptureUpload:
 
     capture: Capture
     object_key: str
+
+
+@dataclass(frozen=True)
+class CaptureMediaReference:
+    """Internal reference used to stream a private Capture object."""
+
+    object_key: str
+    media_type: str
 
 
 class CaptureStateError(Exception):
@@ -238,6 +250,21 @@ class InMemoryCaptureRepository:
 
     def get_capture(self, household_id: UUID, capture_id: UUID, child_id: UUID) -> Capture:
         return self._capture_for_child(household_id, capture_id, child_id)
+
+    def get_capture_media(self, household_id: UUID, capture_id: UUID) -> CaptureMediaReference:
+        capture = self._capture_for_household(household_id, capture_id)
+        object_key = self._object_keys.get(capture_id)
+        if (
+            object_key is None
+            or capture.status is CaptureStatus.UPLOAD_PENDING
+            or self._deletion_status.get(capture_id, DeletionStatus.ACTIVE)
+            not in {DeletionStatus.ACTIVE, DeletionStatus.FAILED}
+            or (
+                capture_id not in self._parent_saved and self._expires_at[capture_id] <= self._now()
+            )
+        ):
+            raise LookupError
+        return CaptureMediaReference(object_key=object_key, media_type=capture.media_type)
 
     def confirm_capture_upload(
         self,
