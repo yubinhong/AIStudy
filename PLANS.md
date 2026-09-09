@@ -4,7 +4,7 @@
 
 - 计划 ID：`PLAN-0043`
 - 关联：`TASK-0012`、`PLAN-0042`、`RUNBOOK.md`、`.github/workflows/ci.yml`、`infra/compose/compose.yml`
-- 状态：`IN_PROGRESS`
+- 状态：`COMPLETE`
 - 优先级：`P1 / RELEASE / SELF-HOSTED DEPLOYMENT`
 - Owner：Codex（提交、推送、备份、部署和验收）
 - 创建：`2026-09-09`
@@ -13,14 +13,16 @@
 
 将 PLAN-0042 的家长拍题图片展示代码提交并推送 GitHub，等待 push-gated GHCR API/Web 镜像发布后，以同一 `sha-*` 载荷部署 Ubuntu 自用 Compose。保留远端 `.env`、数据卷和学习事实；本次不新增数据库迁移、不删除数据、不创建 tag，也不把自用部署描述为公网/商业生产。
 
-- [ ] M1 — 完成本地最终差异审查、提交并推送 `master`。
-- [ ] M2 — 等待并核对 GitHub Actions `quality`、API/Web 多架构 GHCR 发布及 commit/OCI revision。
-- [ ] M3 — 远端备份与隔离恢复验证，固定 API/Web 同一 `sha-*` 镜像，执行 pull、迁移检查和 Compose 重启。
-- [ ] M4 — 验证容器、digest、源码 revision、API/Web 本机/LAN health、worker、OpenAPI/媒体路由和近期错误日志，更新发布文档与回滚信息。
+- [x] M1 — 本地最终差异审查通过；提交 `f6ae9a2` 已推送 `master`。
+- [x] M2 — GitHub Actions `quality` run `34301914666` 的 API、Web、contracts、browser-e2e 和两个 GHCR 发布 job 均成功；API/Web OCI revision 均为 `f6ae9a2f8a891c7ffeeec05391c9c933f104f627`。
+- [x] M3 — 备份 `/home/syin/study-backups/20260909T021709Z` 已隔离恢复验证（39 张 PostgreSQL public 表、739 个 MinIO 快照文件）；固定 API/Web `sha-f6ae9a2`，`pull`、迁移检查和 `up -d --no-build` 成功。
+- [x] M4 — API/Web/worker、digest、运行时 revision、API/Web 本机/LAN health、OpenAPI 媒体路由、Alembic head、MinIO 私有端口和近期错误计数均通过；发布文档与回滚信息已更新。
 
 ## 兼容性、风险与回滚
 
 本次是现有 `0.17.2` 的向后兼容 API/Web 增量；数据库保持 `0038_classical_poem_options`，不执行 downgrade。部署失败时恢复上一个已验证的 API/Web `sha-6a518fc` 镜像并重新 pull/up；只有确认数据损坏才使用本次备份恢复，不能通过回滚代码删除或覆盖学习事实。
+
+发布载荷：API digest `sha256:32066c2a6056d53821844c3a47b38560cdfab21ff96ab50059a6161c9a476261`，Web digest `sha256:e7b2292978c3948d2dda985822cf84d6309688091dbb717be9b4cef92424d554`。部署后 API/Web health 均为 200，四个 worker running，迁移为 `0038_classical_poem_options (head)`；后续文档提交只记录部署事实，不替换服务器运行载荷。
 
 ---
 

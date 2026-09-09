@@ -2,7 +2,7 @@
 
 这套 Compose 适合单家庭、自用部署，包含 PostgreSQL、Redis、私有 MinIO、FastAPI API、家长 Web、数据库迁移一次性服务、AI worker、可切换的 llama.cpp 本地模型服务和数据生命周期 worker。Compose 会从同目录的 `.env` 注入服务变量，不需要在启动命令中传入 `--env-file`。API/worker 和 Web 直接拉取 GitHub Actions 发布到 GHCR 的多架构镜像，不在部署主机本地构建。云端 NewAPI 仍由部署者单独提供；API 通过 OpenAI-compatible `/v1/chat/completions` 访问。
 
-当前本地和 Ubuntu 服务端状态：API `0.17.2`、迁移头 `0038_classical_poem_options`；2026-09-08 Ubuntu 已切换到代码提交 `6a518fc` 对应的 GHCR `sha-6a518fc`，API/Web/迁移/四个 worker 均为拉取式部署，详细备份和验收记录见根目录 `RUNBOOK.md`。账号密码/可撤销会话、PostgreSQL 业务事实、MinIO、ImageAnalysis/VerifiedQuestion/TutorTurn、独立 `picture_writing_guides`、周报/导出、家长 Web、worker 和备份恢复脚本已实现。真实自动视觉检测器、正式监控、真实账号和四设备回归仍未完成，因此本文件提供的是自用部署说明，不是公网或商业生产发布证明。
+当前本地和 Ubuntu 服务端状态：API `0.17.2`、迁移头 `0038_classical_poem_options`；2026-09-09 Ubuntu 已切换到代码提交 `f6ae9a2` 对应的 GHCR `sha-f6ae9a2`，API/Web/迁移/四个 worker 均为拉取式部署，详细备份和验收记录见根目录 `RUNBOOK.md`。账号密码/可撤销会话、PostgreSQL 业务事实、MinIO、ImageAnalysis/VerifiedQuestion/TutorTurn、独立 `picture_writing_guides`、周报/导出、家长 Web、worker 和备份恢复脚本已实现。真实自动视觉检测器、正式监控、真实账号和四设备回归仍未完成，因此本文件提供的是自用部署说明，不是公网或商业生产发布证明。
 
 ## 1. 前置条件
 

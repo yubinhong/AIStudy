@@ -21,10 +21,12 @@
 
 ## 2026-09-09 家长拍题图片 GitHub/Ubuntu 发布（PLAN-0043）
 
-- [ ] 将 PLAN-0042 的功能代码、契约、测试和文档提交到 `master` 并推送 `origin/master`。
-- [ ] 等待 push-gated GitHub Actions 质量门槛和 API/Web 多架构 GHCR 发布，核对 workflow、镜像标签、commit revision 和 digest。
-- [ ] Ubuntu 发布前创建备份并完成隔离恢复；保留 `.env`/数据卷，固定 API/Web 到同一 `sha-*` 镜像，前向检查迁移并以 `--no-build` 重启。
-- [ ] 验证 API/Web/worker、Alembic head、OpenAPI、媒体路由、容器源码 revision/digest、本机/LAN health 和近期错误日志；真实账号/设备、Provider/PDF 和 staging/production 仍单独未执行。
+- [x] 将 PLAN-0042 的功能代码、契约、测试和文档提交为 `f6ae9a2` 并推送 `origin/master`。
+- [x] GitHub Actions `quality` run `34301914666` 的质量 job 与 API/Web 多架构 GHCR 发布均成功；API/Web 标签为 `sha-f6ae9a2`，OCI revision 为 `f6ae9a2f8a891c7ffeeec05391c9c933f104f627`。
+- [x] Ubuntu 发布前创建并隔离恢复验证备份 `/home/syin/study-backups/20260909T021709Z`（39 张 PostgreSQL public 表、739 个 MinIO 快照文件）；保留 `.env`/数据卷，固定 API/Web 到同一 `sha-f6ae9a2`，迁移检查和 `--no-build` 重启成功。
+- [x] API/Web/worker、Alembic head、OpenAPI 媒体路由、容器 revision/digest、本机/LAN health、MinIO 私有端口和近期错误计数均通过；真实账号/设备、Provider/PDF 和 staging/production 仍单独未执行。
+
+部署证据：远端 API digest 为 `sha256:32066c2a6056d53821844c3a47b38560cdfab21ff96ab50059a6161c9a476261`，Web digest 为 `sha256:e7b2292978c3948d2dda985822cf84d6309688091dbb717be9b4cef92424d554`；API/Web 本机与 LAN health 均返回 200，API OpenAPI `0.17.2` 包含 `/households/{household_id}/captures/{capture_id}/media`，四个 worker running，`0038_classical_poem_options (head)`，最近 10 分钟应用错误计数为 0。备份前保存的旧 `.env`/Compose 位于 `/home/syin/study-source-backups/20260909T021709Z-capture-images/`。
 
 发布回滚：同时将 `STUDY_API_IMAGE`/`STUDY_WEB_IMAGE` 固定回上一个已验证的 `sha-6a518fc` 并重新 pull/up；不执行数据库 downgrade。
 

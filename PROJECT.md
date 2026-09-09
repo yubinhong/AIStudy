@@ -116,9 +116,9 @@
 
 2026-09-04/05 新增并部署家长后台分学科学习记录：侧栏学习记录展开为数学和语文两个子菜单；数学页继续读取已确认数学题/讲解，语文页通过家长专用查询读取 `chinese_attempts` 并展示孩子答案、对错、错误时正确答案、耗时及复习状态。新增查询为兼容式 API 扩展，API/Web 完整回归、登录态浏览器 E2E、Ubuntu 备份恢复、API/Web health 和运行源码核验已通过；没有数据库迁移。版本 `v0.17.2` 已提交并推送，Ubuntu 真实账号/设备验收仍待执行。
 
-2026-09-08 本地实现家长数学学习记录拍题图片展示：通过新增的家长/Household-scoped 私有 Capture 媒体流和 Web 同源代理显示原图；学习记录 JSON 不返回对象键、存储 URL 或图片字节，图片过期/删除时显示不可用状态，仍遵守原图 24 小时与家长保存策略。API/Web/契约质量门槛已通过，本轮未部署 Ubuntu，无数据库迁移。
+2026-09-08/09 实现并部署家长数学学习记录拍题图片展示：通过新增的家长/Household-scoped 私有 Capture 媒体流和 Web 同源代理显示原图；学习记录 JSON 不返回对象键、存储 URL 或图片字节，图片过期/删除时显示不可用状态，仍遵守原图 24 小时与家长保存策略。API/Web/契约质量门槛及 Ubuntu `sha-f6ae9a2` 运行验证已通过，无数据库迁移。
 
-2026-09-05/07 交付链路增量：GitHub Actions `quality` 在全部质量 job 通过后发布 GHCR API/Web 多架构镜像，Compose 改为只拉取镜像；迁移/API/四个 worker 使用同一后端产物。`v0.17.2` tag workflow run `34093042527` 的质量和两个 GHCR 发布 job 均成功。2026-09-08 Ubuntu 已切换到代码提交 `6a518fc` 的 `sha-6a518fc` 镜像，API digest 为 `sha256:653444b0d1c2bf9494c54b0793cdfc37824354cea8c6ca221ef85cc4398095da`，Web digest 为 `sha256:c312f5301efe5fe448c550f9fe54e344c4c324ae66609f761e7eeb02c43dc729`；`latest` 仅跟随 `master`。staging/production、签名与漏洞扫描策略仍未完成。
+2026-09-05/09 交付链路增量：GitHub Actions `quality` 在全部质量 job 通过后发布 GHCR API/Web 多架构镜像，Compose 改为只拉取镜像；迁移/API/四个 worker 使用同一后端产物。`v0.17.2` tag workflow run `34093042527` 和拍题图片提交 workflow run `34301914666` 的质量与 GHCR 发布 job 均成功。2026-09-09 Ubuntu 已切换到代码提交 `f6ae9a2` 的 `sha-f6ae9a2` 镜像，API digest 为 `sha256:32066c2a6056d53821844c3a47b38560cdfab21ff96ab50059a6161c9a476261`，Web digest 为 `sha256:e7b2292978c3948d2dda985822cf84d6309688091dbb717be9b4cef92424d554`；`latest` 仅跟随 `master`。staging/production、签名与漏洞扫描策略仍未完成。
 
 上传架构修订（2026-07-17）：项目 Owner 接受 ADR-0018，以 Session 鉴权的 API 有界流式上传替代 ADR-0010/0014 的 App 预签名直传。目标合同合并申请/PUT/确认并只返回已确认 Capture，移除 `upload_url`、`OBJECT_STORAGE_PUBLIC_ENDPOINT_URL` 和 MinIO `9000` LAN 暴露。API/Flutter/OpenAPI/Compose 已迁移，Ubuntu 已成对部署；最终设备回归和 Provider 额度恢复后的真实识别由 TASK-0009 跟踪。
 

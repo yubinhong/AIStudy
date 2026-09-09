@@ -1,6 +1,8 @@
 # Changelog
 
-- 2026-09-08：家长数学学习记录展开详情现在显示对应的拍题原图。新增家长/Household-scoped 私有 Capture 媒体流和 Web 同源代理；学习记录 JSON 不暴露对象键、存储 URL 或图片字节，图片过期/删除时显示不可用状态。API/Web/契约测试、类型、Lint、构建和运行时路由对比通过；本轮未部署 Ubuntu，也未新增数据库迁移。
+- 2026-09-09：按用户授权将家长拍题图片展示提交 `f6ae9a2` 推送 GitHub 并部署 Ubuntu。GitHub Actions `quality` run `34301914666` 及 API/Web GHCR 发布成功；远端固定 `sha-f6ae9a2`，部署前备份 `/home/syin/study-backups/20260909T021709Z` 已通过隔离恢复，API/Web、四个 worker、迁移、媒体 OpenAPI 路由和本机/LAN health 均通过。没有数据库迁移或业务数据删除；真实账号/设备、真实 Provider/PDF、staging/production 仍未验收。
+
+- 2026-09-08：家长数学学习记录展开详情现在显示对应的拍题原图。新增家长/Household-scoped 私有 Capture 媒体流和 Web 同源代理；学习记录 JSON 不暴露对象键、存储 URL 或图片字节，图片过期/删除时显示不可用状态。API/Web/契约测试、类型、Lint、构建和运行时路由对比通过；该功能已于 2026-09-09 随 `sha-f6ae9a2` 部署 Ubuntu，未新增数据库迁移。
 
 - 2026-09-08：按用户授权完成 Ubuntu 自用 Compose 的 GHCR 拉取式切换。部署载荷为代码提交 `6a518fc` 的 `sha-6a518fc` API/Web 镜像；部署前备份 `/home/syin/study-backups/20260908T074345Z` 并通过隔离恢复（39 张 PostgreSQL public 表、715 个 MinIO 快照文件），迁移仍为 `0038_classical_poem_options`。API/Web 本机与局域网 health、四个 worker、运行 digest 和 OCI revision 均通过；没有数据库迁移或业务数据删除。真实账号/设备、真实 Provider/PDF、staging/production 仍未验收。
 

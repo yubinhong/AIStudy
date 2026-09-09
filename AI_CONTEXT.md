@@ -10,18 +10,19 @@
 - 主要用户：小学阶段孩子与家长/监护人；辅助角色为家庭内容维护者和项目维护者。
 - 生产状态：`SELF_HOSTED_DEPLOYED`（Ubuntu 自用 Compose 运行 API/OpenAPI `0.17.2`/`0038_classical_poem_options`；本地 Qwen 因视觉质量门禁失败已停止，当前 AI 路由为现有 NewAPI 云端配置；API/Web、迁移和四个常驻 worker 健康，不等同于公网/商业生产批准）
 - 当前版本：本地和 Ubuntu API/OpenAPI 均为 `0.17.2`、迁移头 `0038_classical_poem_options`；本次发布 tag 为 `v0.17.2`。
-- 最近更新：`2026-09-08`
+- 最近更新：`2026-09-09`
 
 ## 2. 当前工作状态
 
 - 2026-09-05/07 服务镜像交付已切换为 GitHub Actions + GHCR：`quality` 仅在全部质量 job 通过后的 `master`/`v*` push 发布 API/Web amd64/arm64 镜像，Compose 的迁移/API/四个 worker 复用同一 API 镜像并取消本地构建。`v0.17.2` tag 的 workflow run `34093042527` 中契约、API、Web、Chromium E2E 和两个 GHCR 发布 job 均成功；2026-09-08 Ubuntu 已完成拉取式切换，API/Web 固定为 `sha-6a518fc`，运行 digest 分别为 `sha256:653444b0d1c2bf9494c54b0793cdfc37824354cea8c6ca221ef85cc4398095da` 和 `sha256:c312f5301efe5fe448c550f9fe54e344c4c324ae66609f761e7eeb02c43dc729`。本次部署先完成备份与隔离恢复验证，再以 `--no-build` 重启；staging/production 仍未建立。
+- 2026-09-09 PLAN-0043 已将家长拍题图片展示提交 `f6ae9a2` 推送并部署到 Ubuntu。GitHub Actions `quality` run `34301914666` 的质量与 API/Web GHCR 发布 job 均成功；API/Web 固定为 `sha-f6ae9a2`，远端 index digest 分别为 `sha256:32066c2a6056d53821844c3a47b38560cdfab21ff96ab50059a6161c9a476261` 和 `sha256:e7b2292978c3948d2dda985822cf84d6309688091dbb717be9b4cef92424d554`，OCI revision 均为完整提交 `f6ae9a2f8a891c7ffeeec05391c9c933f104f627`。部署前备份 `/home/syin/study-backups/20260909T021709Z` 已隔离恢复（39 张 public 表、739 个 MinIO 快照文件），API/Web 本机与 LAN health、迁移、四个 worker、媒体 OpenAPI 路由和近期日志均通过；staging/production 仍未建立。
 
 - 2026-09-03 Ubuntu 自用服务器已部署每日 Docker 缓存维护：只清理 7 天前的未使用构建缓存和悬空镜像，不触碰卷、容器、网络或仍有标签的镜像。服务器为 UTC，`cron.service` 已安装并启用，`syin` 的 `16:00 UTC` 任务对应北京时间次日 `00:00`；远端检查与 journal 留痕通过，未提前执行真实清理，Compose 容器未重启。
 
 - 2026-09-03 家长后台首轮视觉改版已由提交 `be3bd70` 推送并定向部署 Ubuntu Web：侧栏、顶部栏与主内容区使用新的后台层级，学习记录页修复“时间范围”裁切并压缩空状态。桌面/手机登录态布局断言、完整 Chromium E2E、Web 37 项单元测试、格式/Lint/类型/build 通过；远端锁定 Node 24 镜像、Web/API 本机和 LAN health、运行 CSS 标识通过，API、数据库、MinIO 和四个 worker 未重启。未使用 Ubuntu 真实账号或设备回归。
 
 - 2026-09-04/05 家长后台学习记录已按学科拆分并部署 Ubuntu：侧栏“学习记录”展开“数学学习记录”和“语文学习记录”，旧 `/learning` 保持数学兼容入口。数学继续读取 `verified_questions`/`tutor_turns`；新增家长专用 `/chinese/learning-details` 查询语文 Attempt，显示孩子答案、确定性对错、错误时正确答案、耗时和当前复习状态。API 非集成 `258 passed, 32 deselected`、PostgreSQL 集成 `32 passed`、Web Vitest `38 passed`、TypeScript、ESLint、Prettier、production build、登录态 Chromium E2E `1 passed`、OpenAPI YAML/operation id、Ubuntu 备份恢复和 LAN health 均通过。发布版本为 `v0.17.2`，没有新增数据库迁移，英语仍关闭；Ubuntu 真实账号/设备复核仍待执行。
-- 2026-09-08 家长数学学习记录详情新增拍题原图展示：API 增加家长/Household-scoped 私有 Capture 媒体流，Web 通过同源代理读取，学习记录 JSON 不增加对象键、存储 URL 或图片字节；图片过期/删除时显示不可用状态并继续遵守原图 24 小时与家长保存策略。本地 API/Web 回归、契约、类型、Lint、构建和差异检查通过；本轮未部署 Ubuntu，真实账号/设备浏览器复核仍待执行。
+- 2026-09-08/09 家长数学学习记录详情新增并部署拍题原图展示：API 增加家长/Household-scoped 私有 Capture 媒体流，Web 通过同源代理读取，学习记录 JSON 不增加对象键、存储 URL 或图片字节；图片过期/删除时显示不可用状态并继续遵守原图 24 小时与家长保存策略。本地 API/Web 回归、契约、类型、Lint、构建和差异检查，以及 Ubuntu `sha-f6ae9a2` 运行验证通过；真实账号/设备浏览器复核仍待执行。
 
 - 2026-08-29/30 已修复古诗抽查把《剪窗花》等童谣/韵文作为古诗的问题：Provider `poem` 只作为候选，`classical-poem-catalog.v2` 对标题、连续题干/答案和全部可见选项确定性验证，发布、读取和提交均失败关闭。Ubuntu `0037` 退役 157 道错误题，`0038` 再将 21 道保留题的 42 个童谣干扰项替换为古诗句；Attempt/Review 不变。Flutter 每次进入前重新读取当前题库，避免驻留页面复用旧题。Nova 9 已覆盖安装并保留登录态，迁移后 12 轮抽查覆盖咏鹅、画、悯农（其二）、江南、古朗月行、风，所有题干/下一句/选项正确且未提交作答。`v0.17.1` 已推送 GitHub，质量与 Android Actions 成功，Release 含 3 个 ABI APK、校验和及构建元数据。
 
@@ -34,7 +35,7 @@
 - 活动计划：`TASK-0012` 继续跟踪多学科与语文剩余验收；`PLAN-0031` 的隔离 Chromium 登录态 E2E、`PLAN-0032/0033` 的语文复习/古诗/看图写话、`PLAN-0038` 的分学科学习记录、`PLAN-0039` 的 GHCR 发布、`PLAN-0042` 的家长学习记录拍题图片展示均已完成代码和对应自动化。`PLAN-0040` 复核代码、OpenAPI 与文档一致性。正式教研/版权签核、真实 Provider 质量/成本、Ubuntu 真实账号浏览器和完整设备 E2E 仍待完成；英语保持供应商中立锁定框架并排最后。
 - 任务状态：ADR-0018/PLAN-0012 已完成本地与 Ubuntu API/Flutter/Compose/契约迁移；Ubuntu 不再依赖预签名直传，MinIO `9000` 未向宿主/LAN 暴露。最终真机仍未回归。
 - 2026-09-04 iPhone 11：重新签名安装后复现 iOS 本地网络权限未登记导致的 `errno 65`；Flutter/iOS 已在健康检查前用 `NWConnection` 对实际家庭服务器触发授权并等待结果。修复包覆盖安装后，Ubuntu 收到 iPhone `192.168.1.100` 的 `/healthz` 并返回 200。登录、相机/相册、弱网和完整设备生命周期仍未验收。
-- 当前分支：`master`；本地与 Ubuntu API/OpenAPI `0.17.2`、`0038_classical_poem_options` 已完成代码、本机/Ubuntu/Nova 9 验证，并已提交、推送和发布 tag `v0.17.2`。Ubuntu 当前部署载荷为代码提交 `6a518fc` 的 GHCR `sha-*` 镜像。
+- 当前分支：`master`；本地与 Ubuntu API/OpenAPI `0.17.2`、`0038_classical_poem_options` 已完成代码、本机/Ubuntu/Nova 9 验证，并已提交、推送和发布 tag `v0.17.2`。Ubuntu 当前部署载荷为代码提交 `f6ae9a2` 的 GHCR `sha-*` 镜像；后续文档提交只记录部署事实。
 - 当前重点：完成正式语文内容具名教研/版权签核、真实 Provider/PDF 质量与成本评测、Ubuntu 真实账号浏览器和设备 E2E；`PLAN-0034/ADR-0028` 的本地 Qwen 路由和 12 GB Ubuntu 部署能力仍保留，但 4 核下 `question-extraction.v1` synthetic 大图 600 秒内不收敛，8 核下耗时 373.128 秒且生成到 2048 token 上限后仍因 `provider_response_schema_invalid` 失败。Ubuntu 已将开关恢复为 `false` 并停止本地模型，当前运行时为 `newapi`；切换后的 synthetic 数学文本 Schema smoke 3.591 秒通过，详见 `docs/local-qwen-evaluation-report-2026-08-24.md`。本轮未连接手机或平板。英语继续排最后。既有数学教材原页/知识审核、推荐详情和学习记录继续按已部署合同运行。
 - 已完成：本地与 Ubuntu 已部署的既有 OpenAPI/迁移、视觉四态候选与确认、可信 VerifiedQuestion → 云端递进 L1/L2 → 完整步骤/答案/验算、Mistake/Review closeout、语文确定性 Content/Attempt/Review、古诗抽查和看图写话引导，以及 PDF 私有原页、分批多模态教材理解、全书知识图谱、家长批准、“批准知识点 + 全部开放错题”的来源受限推荐和 180 天详细学习历史策略；本地新增任务会话位置、容量/未来日期/撤销保护。
 - 2026-08-16 语文 `v0.16.0` 已部署：`0033` 退役六项语文演示并从已审核教材逐行古诗生成抽查；`0034` 增加独立 `picture_writing_guides` 与 `picture-writing-guide.v1`。看图写话只消耗用户确认的脱敏派生图，Provider 只返回观察/提问/句式支架，绝不走数学抽题、生成范文或评分。Ubuntu 对无人物、无文字的合成花园图完成一次真实 Provider Schema 冒烟；不代表儿童图片、质量、成本或完整设备验收。
@@ -94,7 +95,7 @@
 | `services/api` | FastAPI 模块化单体和 Worker | 本地和 Ubuntu `0038` 已部署 subject-aware 教材、语文 Content/Attempt/Review 与分学科学习记录；正式内容与 Ubuntu 真实账号浏览器验收待完成 |
 | `packages/contracts` | OpenAPI、JSON Schema、生成 SDK | 本地和 Ubuntu `0.17.2`；SDK 生成器尚未固定 |
 | `evals` | 固定 AI 质量/安全/成本评测 | 既有数学/隐私 eval 增加 7-case 英语安全 Policy；真实英语 Provider 质量、延迟、成本和儿童安全 eval 待批准后执行 |
-| `infra/compose` | PostgreSQL/Redis/MinIO/API/Web/迁移/worker/可切换本地模型编排 | Ubuntu 当前 `0.17.2`/`0038`，API/Web/迁移/四个 worker 使用 GHCR `sha-6a518fc`，本地模型开关为 `false`（容器空闲），英语运行态为 `disabled` |
+| `infra/compose` | PostgreSQL/Redis/MinIO/API/Web/迁移/worker/可切换本地模型编排 | Ubuntu 当前 `0.17.2`/`0038`，API/Web/迁移/四个 worker 使用 GHCR `sha-f6ae9a2`，本地模型开关为 `false`（容器空闲），英语运行态为 `disabled` |
 | `docs/adr` | 架构决策 | ADR-0028 本地 Qwen 路由、ADR-0027 多学科/语文、ADR-0026 学习记录保留、ADR-0025 英语及 ADR-0020～0023 数学主线 Accepted |
 | `prompts` | Codex 工作流启动器 | 已存在 |
 

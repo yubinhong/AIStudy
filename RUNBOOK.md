@@ -3,7 +3,7 @@
 ## 1. 服务概览
 
 - 服务：家庭 AI 学习助手（目标包括 Flutter 孩子端、Web/PWA、FastAPI/Worker、PostgreSQL、Redis、S3/MinIO 和 AI Provider）。
-- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.17.2`/`0038_classical_poem_options`；API/Web/worker 健康，已审核语文教材只保留标题、连续诗句和全部选项均通过确定性目录的六首 21 道古诗题。2026-09-08 已切换到代码提交 `6a518fc` 的 GHCR `sha-6a518fc` 镜像。没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
+- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.17.2`/`0038_classical_poem_options`；API/Web/worker 健康，已审核语文教材只保留标题、连续诗句和全部选项均通过确定性目录的六首 21 道古诗题。2026-09-09 已切换到代码提交 `f6ae9a2` 的 GHCR `sha-f6ae9a2` 镜像。没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
 - Owner/值班：`TBD（项目 Owner/运维负责人在 staging 前确认）`。
 
 ## 2026-09-05 GitHub Actions 服务镜像发布
@@ -13,6 +13,14 @@
 - 部署：先完成备份恢复验证，在远端 `.env` 将 `STUDY_API_IMAGE` 和 `STUDY_WEB_IMAGE` 固定到同一次发布的相同版本或 `sha-*` 标签，再运行 `docker compose pull` 与 `docker compose up -d`。私有 Package 只允许部署主机使用 `read:packages` 凭据登录 GHCR。
 - 回滚：同时固定回上一个已验证的 API/Web 标签并重新拉取、启动；数据库仍只前向修复，不 downgrade、不删除 Attempt/AuditEvent 或其他学习事实。
 - 当前状态：`v0.17.2` tag 已推送并触发 workflow run `34093042527`；契约、API、Web、Chromium E2E 和 API/Web 两个 GHCR 多架构镜像发布 job 均成功。Ubuntu 后续切换记录见下方 `2026-09-08 Ubuntu GHCR 拉取式部署`。
+
+## 2026-09-09 家长拍题图片 Ubuntu GHCR 拉取式部署
+
+- 载荷：代码提交 `f6ae9a2` 已推送 `master`；GitHub Actions `quality` run `34301914666` 的 contracts、API、Web、browser-e2e 和 API/Web GHCR 发布 job 均成功。远端 API/Web 固定 `ghcr.io/yubinhong/aistudy-api:sha-f6ae9a2` 与 `ghcr.io/yubinhong/aistudy-web:sha-f6ae9a2`，运行 index digest 分别为 `sha256:32066c2a6056d53821844c3a47b38560cdfab21ff96ab50059a6161c9a476261` 和 `sha256:e7b2292978c3948d2dda985822cf84d6309688091dbb717be9b4cef92424d554`，OCI revision 均为 `f6ae9a2f8a891c7ffeeec05391c9c933f104f627`。
+- 备份：`/home/syin/study-backups/20260909T021709Z`；`verify-restore.sh` 隔离恢复报告 `postgres_public_tables=39`、`minio_snapshot_files=739`。旧 Compose 与 `.env` 保存在 `/home/syin/study-source-backups/20260909T021709Z-capture-images/`。
+- 发布：保留远端 `.env` 与数据卷，更新两个镜像变量后通过 `docker compose config --quiet`、`docker compose pull` 和 `docker compose up -d --no-build`；迁移容器正常退出，API、Web 和四个 worker 使用同一后端镜像，未执行数据库迁移或业务数据删除。
+- 验收：API/Web 本机及 `192.168.1.4` LAN `healthz` 均返回 200；OpenAPI `0.17.2` 包含 `/households/{household_id}/captures/{capture_id}/media`；Alembic 为 `0038_classical_poem_options (head)`；API/Web/四个 worker running，MinIO `HostConfig.PortBindings={}`，近 10 分钟 API、Web、迁移和 worker 错误计数均为 0。
+- 未执行与回滚：Ubuntu 真实账号浏览器、四设备完整 E2E、真实 Provider/PDF 质量成本、staging/production 仍未验收。回滚优先同时固定 `STUDY_API_IMAGE`/`STUDY_WEB_IMAGE` 回已验证 `sha-6a518fc` 并重新 pull/up；数据库不 downgrade。后续文档提交只记录事实，不替换服务器运行镜像。
 
 ## 2026-09-08 Ubuntu GHCR 拉取式部署
 
