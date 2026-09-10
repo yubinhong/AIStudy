@@ -8,16 +8,27 @@
 - Owner：Codex（执行）；项目 Owner（2026-08-15 明确要求先多学科、再语文、英语最后）
 - 关联：`PLAN-0034`、`PLAN-0031`、`PLAN-0030`、`PLAN-0007`、`ADR-0017`、`ADR-0027`、`ADR-0028`、`docs/deep-research-report.md`
 
-## 2026-09-09/10 家长后台选择并加载 SmartEdu 电子教材（PLAN-0044）
+## 2026-09-10 提交、tag 与 GHCR Ubuntu 修复（PLAN-0045）
+
+- [x] 提交 `a7454a89bf7e83b847671de8b46460ecdb422840` 已推送 `origin/master`，annotated tag `v0.17.3` 已推送。
+- [x] tag quality run `34425077122` 的 contracts、API、Web、browser-e2e 和 API/Web GHCR 发布均成功；Android run `34425077166` 和 master quality run `34425029726` 也成功。API/Web OCI revision 均为 `a7454a89bf7e83b847671de8b46460ecdb422840`。
+- [x] Ubuntu `/home/syin/study` 已从远端本地构建切换为 `ghcr.io/yubinhong/aistudy-api:sha-a7454a8` / `ghcr.io/yubinhong/aistudy-web:sha-a7454a8`；API digest 为 `sha256:b3ec72fb3949bc14987b2407ef9499fb2be025f578f0c49652b0c68470563fcf`，Web digest 为 `sha256:ca2be9204745ae50f934db6af69e68841a0389d0195c5b95bf3d16ece6c275a6`。Compose 已恢复 `pull_policy: always`，迁移容器 `Exited (0)`。
+- [x] 切换前备份 `/home/syin/study-backups/20260910T012805Z` 已隔离恢复验证（39 张 PostgreSQL public 表、739 个 MinIO 快照文件）；当前 `.env`/Compose 回滚副本位于 `/home/syin/study-source-backups/20260910T012805Z-ghcr/`。API `0.17.3` 与 Web 本机/LAN health 均通过，迁移为 `0039_smartedu_curriculum_source (head)`，四个 worker running，SmartEdu 两个运行时路由、下载边界、近期 5 分钟应用错误计数 0 和 MinIO `9000` 私有端口均通过。
+
+未执行：真实 SmartEdu 目录/登录要求/PDF 正文下载、版权和教研签核、真实 Provider 质量与成本、真实账号浏览器和四端设备回归、staging/production 发布验收。自用 Ubuntu 已确认使用 GHCR，不等同于公网或商业生产批准。
+
+回滚：保留 PostgreSQL/MinIO/Redis 卷和 `0039` 版本；优先把 API/Web 固定回已验证的 GHCR `sha-f6ae9a2`，重新 `pull/up` 并跳过旧 `migrate` 的 downgrade；若旧应用不兼容，恢复 `sha-a7454a8` 并以前向修复处理。不要删除教材、解析事实、学习记录或审计记录。
+
+## 2026-09-09/10 家长后台选择并加载 SmartEdu 电子教材（PLAN-0044 实现与本地构建阶段）
 
 - [x] 增加受控 SmartEdu 目录/详情/PDF 适配器：只接受资源 ID，固定 HTTPS 主机，限制响应大小和 PDF 文件头，计算 SHA-256，不接收 Access Token 或向客户端返回第三方直链。
 - [x] 家长 Web 增加年级/学科目录筛选和“加载为草稿”入口；下载文件进入现有私有 MinIO、`uploaded` 草稿、解析队列、家长审核和发布门禁，原有本地 PDF 上传保留。
 - [x] 增加 `0039_smartedu_curriculum_source` 来源元数据迁移、OpenAPI、API/Web BFF、授权/幂等回归和 ADR-0029；来源只记录 `smartedu` 与资源 ID。
 - [x] 验证通过：SmartEdu/API 定向回归、API 非集成全量、API Ruff/Mypy、Web Vitest `41` 项、Prettier/ESLint/TypeScript/production build、迁移离线 SQL、契约路由检查和 `git diff --check`。
 
-部署记录：2026-09-10 已部署到 `syin@192.168.1.4:/home/syin/study`。部署前备份 `/home/syin/study-backups/20260910T004753Z` 已隔离恢复验证（39 张 PostgreSQL public 表、739 个 MinIO 快照文件）；远端 x86_64 以当前工作区构建 API/Web 镜像，镜像分别为 `study-local-api:smartedu-20260910`（`sha256:e4e41ce1f391178cab9807ea90573c212a2746716e9478ef1a8cf2454d27c11b`）和 `study-local-web:smartedu-20260910`（`sha256:f7ea872d12a03b73b4b755f220d8c20f161157518a85ff7bb3bd25839cadb67e`）。远端 `.env` 先备份到 `/home/syin/study-source-backups/20260910T005300Z-smartedu/.env`，持久化 Compose 继续保留数据卷和密钥边界；迁移为 `0039_smartedu_curriculum_source (head)`，API/Web 本机与 LAN health 均返回 200，四个 worker running，SmartEdu 运行时路由和适配器边界检查通过，最近 100 行应用日志错误计数为 0，MinIO `9000` 未映射宿主端口。
+部署记录：2026-09-10 已完成远端本地构建阶段，随后由 PLAN-0045 切换为 GHCR。部署前备份 `/home/syin/study-backups/20260910T004753Z` 已隔离恢复验证（39 张 PostgreSQL public 表、739 个 MinIO 快照文件）；远端 x86_64 本地构建载荷及配置副本仍保留在 `/home/syin/study-source-backups/20260910T005300Z-smartedu/`。该阶段迁移为 `0039_smartedu_curriculum_source (head)`，API/Web 本机与 LAN health、四个 worker、SmartEdu 运行时路由和适配器边界检查均通过；当前运行载荷和 GHCR 证据见 PLAN-0045。
 
-未执行：真实 SmartEdu 目录/登录要求/PDF 正文下载、版权和教研签核、真实 Provider 质量与成本、真实账号浏览器和四端设备回归、GHCR 发布。远端使用本地构建标签而非 GHCR，当前 Git 工作区仍有未提交改动。
+未执行（实现阶段记录）：真实 SmartEdu 目录/登录要求/PDF 正文下载、版权和教研签核、真实 Provider 质量与成本、真实账号浏览器和四端设备回归；GHCR 发布与 Ubuntu 拉取式切换已由 PLAN-0045 完成。
 
 回滚：停止使用 SmartEdu 目录和导入路由，保留本地 PDF 上传及已导入教材；数据库采用前向修复清理来源字段，不执行 downgrade，不删除教材、解析事实或学习记录。
 

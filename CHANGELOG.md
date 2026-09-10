@@ -1,6 +1,8 @@
 # Changelog
 
-- 2026-09-10：按用户要求将 SmartEdu 家长教材目录选择和私有 PDF 草稿加载部署到 Ubuntu `192.168.1.4`。部署前备份 `/home/syin/study-backups/20260910T004753Z` 已通过隔离恢复；远端 x86_64 本地构建 API/Web 镜像，前滚至 `0039_smartedu_curriculum_source`，API/Web、四个 worker、SmartEdu 运行时路由、本机/LAN health 和近期日志检查均通过。远端 `.env` 与 Compose 已保留备份，旧 GHCR 镜像仍可作为回滚载荷；本次未提交/推送 GitHub、未发布 GHCR，真实 SmartEdu PDF、Provider、版权/教研、账号浏览器和设备验收仍未执行。
+- 2026-09-10：提交 `a7454a8` 已推送 `master`，并创建/推送 `v0.17.3`。tag quality run `34425077122`、Android run `34425077166` 和 master quality run `34425029726` 均成功，API/Web GHCR 多架构镜像发布完成。Ubuntu `192.168.1.4` 已从远端本地构建切换为 `sha-a7454a8`，备份 `/home/syin/study-backups/20260910T012805Z` 已隔离恢复验证，迁移为 `0039_smartedu_curriculum_source`，API/Web、四个 worker、SmartEdu 路由、本机/LAN health、运行时 revision 和近期日志检查均通过；真实 SmartEdu PDF、Provider、版权/教研、账号浏览器和设备验收仍未执行。
+
+- 2026-09-10（实现阶段）：按用户要求将 SmartEdu 家长教材目录选择和私有 PDF 草稿加载部署到 Ubuntu `192.168.1.4`。部署前备份 `/home/syin/study-backups/20260910T004753Z` 已通过隔离恢复；远端 x86_64 本地构建 API/Web 镜像，前滚至 `0039_smartedu_curriculum_source`，API/Web、四个 worker、SmartEdu 运行时路由、本机/LAN health 和近期日志检查均通过。随后已由 `v0.17.3` GHCR 载荷替换；本记录保留初始本地构建阶段，不代表当前运行来源。
 
 - 2026-09-09：家长后台新增 SmartEdu 电子教材目录选择和“加载为草稿”。API 通过受控资源 ID 下载固定主机上的 PDF，校验大小/文件头并写入家庭私有 MinIO，沿用现有解析、家长审核和发布门禁；Web 保留本地 PDF 上传备用，不暴露 Access Token、第三方直链或对象键。新增 `0039_smartedu_curriculum_source`，本轮仅完成本地实现与回归，未部署 Ubuntu，也未完成真实教材、Provider、版权/教研和设备验收。
 

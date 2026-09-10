@@ -2,7 +2,7 @@
 
 这套 Compose 适合单家庭、自用部署，包含 PostgreSQL、Redis、私有 MinIO、FastAPI API、家长 Web、数据库迁移一次性服务、AI worker、可切换的 llama.cpp 本地模型服务和数据生命周期 worker。Compose 会从同目录的 `.env` 注入服务变量，不需要在启动命令中传入 `--env-file`。API/worker 和 Web 直接拉取 GitHub Actions 发布到 GHCR 的多架构镜像，不在部署主机本地构建。云端 NewAPI 仍由部署者单独提供；API 通过 OpenAI-compatible `/v1/chat/completions` 访问。
 
-当前本地和 Ubuntu 服务端状态：API `0.17.2`、迁移头 `0039_smartedu_curriculum_source`；2026-09-10 Ubuntu 已部署 SmartEdu 家长教材加载增量，使用远端 x86_64 本地构建的 `study-local-api:smartedu-20260910`/`study-local-web:smartedu-20260910`，应用服务 `pull_policy` 为 `never`，详细备份和验收记录见根目录 `RUNBOOK.md`。该载荷未推送 GHCR；后续标准发布仍应使用同一 CI 产生的固定 GHCR 标签。账号密码/可撤销会话、PostgreSQL 业务事实、MinIO、ImageAnalysis/VerifiedQuestion/TutorTurn、独立 `picture_writing_guides`、周报/导出、家长 Web、worker 和备份恢复脚本已实现。真实自动视觉检测器、正式监控、真实账号和四设备回归仍未完成，因此本文件提供的是自用部署说明，不是公网或商业生产发布证明。
+当前本地和 Ubuntu 服务端状态：API `0.17.3`、迁移头 `0039_smartedu_curriculum_source`；2026-09-10 Ubuntu 已将 SmartEdu 家长教材加载增量切换为 GHCR `ghcr.io/yubinhong/aistudy-api:sha-a7454a8`/`ghcr.io/yubinhong/aistudy-web:sha-a7454a8`，应用服务 `pull_policy` 为 `always`，详细备份和验收记录见根目录 `RUNBOOK.md`。账号密码/可撤销会话、PostgreSQL 业务事实、MinIO、ImageAnalysis/VerifiedQuestion/TutorTurn、独立 `picture_writing_guides`、周报/导出、家长 Web、worker 和备份恢复脚本已实现。真实自动视觉检测器、正式监控、真实账号和四设备回归仍未完成，因此本文件提供的是自用部署说明，不是公网或商业生产发布证明。
 
 ## 1. 前置条件
 
@@ -141,7 +141,7 @@ docker compose -f infra/compose/compose.yml down
 docker volume ls | grep study
 ```
 
-升级步骤：先备份 PostgreSQL 和 MinIO 数据，把 `.env` 中两个应用镜像固定到同一个已批准版本或 `sha-*` 标签，再运行 `config`、`pull` 和 `up -d`，确认 `migrate` 成功和 `/healthz` 正常。当前 Ubuntu head 为 `0039_smartedu_curriculum_source`；当前 SmartEdu 载荷是远端本地构建镜像，标准后续发布仍应切换到同一次 CI 产生的固定 GHCR 标签。回退应用时保留 `0039` 及新增表、列和索引，不在正式数据上执行 downgrade；不让不认识 `0039` 的旧 `migrate` 镜像执行迁移。发生学习历史范围异常时先设置 `LEARNING_HISTORY_CLEANUP_ENABLED=false` 并重启 DataLifecycle worker，再前向修复；已经按策略删除的数据不能靠应用回滚恢复。发生 Provider 问题时关闭 NewAPI 开关并停止 ImageAnalysis worker；不得破坏性回滚 Profile、Account、Attempt 或 AuditEvent。
+升级步骤：先备份 PostgreSQL 和 MinIO 数据，把 `.env` 中两个应用镜像固定到同一个已批准版本或 `sha-*` 标签，再运行 `config`、`pull` 和 `up -d`，确认 `migrate` 成功和 `/healthz` 正常。当前 Ubuntu head 为 `0039_smartedu_curriculum_source`；当前 SmartEdu 载荷是 GHCR `sha-a7454a8`。回退应用时保留 `0039` 及新增表、列和索引，不在正式数据上执行 downgrade；不让不认识 `0039` 的旧 `migrate` 镜像执行迁移。发生学习历史范围异常时先设置 `LEARNING_HISTORY_CLEANUP_ENABLED=false` 并重启 DataLifecycle worker，再前向修复；已经按策略删除的数据不能靠应用回滚恢复。发生 Provider 问题时关闭 NewAPI 开关并停止 ImageAnalysis worker；不得破坏性回滚 Profile、Account、Attempt 或 AuditEvent。
 
 ### 备份与恢复验证
 

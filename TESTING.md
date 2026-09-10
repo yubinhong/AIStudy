@@ -5,8 +5,8 @@
 - API：`services/api/.venv/bin/pytest -q services/api/tests/test_smartedu_source.py` 定向通过；`services/api/.venv/bin/pytest -q services/api/tests -m 'not integration'` 全量通过；Ruff format/check 和 Mypy 通过。回归覆盖目录标签筛选、固定主机边界、详情 PDF 来源、畸形 URL、非受信主机、SHA-256、家长授权、私有对象写入、解析队列和来源元数据。
 - Web：`cd apps/web && pnpm test` 通过（23 个文件、41 项）；`pnpm typecheck`、`pnpm lint`、`pnpm format:check`、`pnpm build` 通过。本机 Node `20.17.0` 低于项目锁定的 `24.18.0`，仅产生已有 engine warning。
 - 契约/迁移：OpenAPI YAML/JSON Schema 解析与运行时新增 SmartEdu 路由检查通过；`services/api/.venv/bin/alembic -c services/api/alembic.ini upgrade head --sql` 通过，生成 `0039_smartedu_curriculum_source` 的可空来源字段、约束、索引和版本前移 SQL；`git diff --check` 通过。
-- Ubuntu 部署：备份 `/home/syin/study-backups/20260910T004753Z` 隔离恢复通过（39 张 PostgreSQL public 表、739 个 MinIO 快照文件）；远端 x86_64 构建 API/Web 本地镜像，`0039_smartedu_curriculum_source (head)`、Compose、API/Web 本机和 LAN health、SmartEdu 运行时路由/适配器检查、四个 worker 和最近 100 行应用日志错误计数均通过。MinIO `9000` 未映射宿主端口，旧 GHCR `sha-f6ae9a2` 镜像保留回滚。
-- 未执行：真实 SmartEdu 目录和 PDF、平台登录/条款、真实 Provider/PDF 质量与成本、真实家长浏览器、四端设备和完整 Web E2E。GHCR 未发布；本次使用远端本地构建镜像。既有本地上传流程未受影响。
+- Ubuntu 部署：备份 `/home/syin/study-backups/20260910T012805Z` 隔离恢复通过（39 张 PostgreSQL public 表、739 个 MinIO 快照文件）；远端 x86_64 已拉取 GHCR API/Web `sha-a7454a8`，`0039_smartedu_curriculum_source (head)`、Compose、API/Web 本机和 LAN health、SmartEdu 运行时路由/适配器检查、四个 worker 和最近 5 分钟应用日志错误计数均通过。API digest 为 `sha256:b3ec72fb3949bc14987b2407ef9499fb2be025f578f0c49652b0c68470563fcf`，Web digest 为 `sha256:ca2be9204745ae50f934db6af69e68841a0389d0195c5b95bf3d16ece6c275a6`，OCI revision 均为 `a7454a89bf7e83b847671de8b46460ecdb422840`；MinIO `9000` 未映射宿主端口。
+- 未执行：真实 SmartEdu 目录和 PDF、平台登录/条款、真实 Provider/PDF 质量与成本、真实家长浏览器、四端设备和完整 Web E2E。v0.17.3 GHCR 已发布并部署；既有本地上传流程未受影响。
 
 ## 2026-09-09 家长拍题图片 GitHub/Ubuntu 发布
 
@@ -43,7 +43,7 @@
 
 ## 1. 当前状态与质量目标
 
-当前仓库已有 P0/P1 依赖清单、三类锁文件、核心测试和 CI 草案。API 的 Household/认证/学习/Capture/可信 Tutor/周报/导出、Mistake/Review closeout、教材 PDF-only 私有原页/多模态知识图谱、作答四态/推荐审批、Web/Flutter 入口、SQLite 任务位置与离线 Attempt/任务终态队列、服务端任务位置/容量/未来日期/撤销保护和 Compose 已验证；Android/iOS 构建及 PostgreSQL/MinIO 恢复已有记录。本地与 Ubuntu API/OpenAPI 均为 `0.17.2`、迁移头为 `0039_smartedu_curriculum_source`。2026-09-09/10 已新增并部署家长 SmartEdu 目录选择、私有 PDF 加载和来源元数据；完整 API/Web 回归、Ubuntu 备份恢复/前滚/健康通过，真实目录/PDF、Provider 质量成本、真实账号/设备回归仍待执行。
+当前仓库已有 P0/P1 依赖清单、三类锁文件、核心测试和 CI 草案。API 的 Household/认证/学习/Capture/可信 Tutor/周报/导出、Mistake/Review closeout、教材 PDF-only 私有原页/多模态知识图谱、作答四态/推荐审批、Web/Flutter 入口、SQLite 任务位置与离线 Attempt/任务终态队列、服务端任务位置/容量/未来日期/撤销保护和 Compose 已验证；Android/iOS 构建及 PostgreSQL/MinIO 恢复已有记录。本地与 Ubuntu API/OpenAPI 均为 `0.17.3`、迁移头为 `0039_smartedu_curriculum_source`。2026-09-09/10 已新增并部署家长 SmartEdu 目录选择、私有 PDF 加载和来源元数据；完整 API/Web 回归、Ubuntu 备份恢复/前滚/健康及 GHCR 拉取式切换通过，真实目录/PDF、Provider 质量成本、真实账号/设备回归仍待执行。
 
 2026-09-04 iPhone 11 本地网络回归：iOS `26.6.1` 真机在权限列表尚未登记 App 时稳定复现 `/healthz` 的 `errno 65: No route to host`，Ubuntu 未收到请求；API 容器、本机/LAN `8000` 和 Mac 跨网段访问均正常。孩子端现于健康检查前通过原生 `NWConnection` 连接用户填写的实际家庭服务器，等待 iOS 本地网络权限决定后再发 HTTP 请求；修复包以 Personal Team 签名覆盖安装，系统授权后 Ubuntu 记录 `192.168.1.100` 的 `/healthz` 为 `200 OK`。定向 Flutter `37 passed`、完整 Flutter `74 passed`、Analyze 和 iPhone Release 签名构建通过；未输入账号、未读取儿童数据，也未执行登录、相机/相册或弱网 E2E。
 
@@ -120,7 +120,7 @@
 
 同日部署复核发现首次同步的 `tutor.py` 路径错误，运行容器仍使用旧路由，导致设备日志中 L1/L2 为 `200` 而 L3 为旧 `409`。已同步到 `services/api/src/study_api/routes/tutor.py`、清除误放的未引用副本并重建 API；远端健康端点、文件检查和容器内 `inspect` 均确认新 `general-solution-policy.v1` 路由已经运行。
 
-- 核心用户路径：家长上传清洁 PDF → 服务端私有渲染原页、分批多模态理解并归纳全书知识图谱 → 家长对照原页批准并发布 → 孩子选择数学/学习模式 → 错题安全拍摄题目+答题区 → 确认题目和作答状态 → L1 看懂题意/L2 找到方法/L3 允许时完整讲解 → 原子 MistakeRecord/ReviewSchedule → 到期或提前加载真实题目、重新作答并追加 ReviewAttempt → 家长审核由错题和已批准知识点生成、包含具体题目/视觉说明/页码/日期/时长的任务 → 孩子执行并可打开教材原页 → 周报。本地和 Ubuntu `0.17.2/0039` 已接通代码和自动化；真实 Provider 质量/成本、正式内容、Ubuntu 真实账号浏览器和完整设备 E2E 未通过前仍不能判定整条路径完成。
+- 核心用户路径：家长上传清洁 PDF → 服务端私有渲染原页、分批多模态理解并归纳全书知识图谱 → 家长对照原页批准并发布 → 孩子选择数学/学习模式 → 错题安全拍摄题目+答题区 → 确认题目和作答状态 → L1 看懂题意/L2 找到方法/L3 允许时完整讲解 → 原子 MistakeRecord/ReviewSchedule → 到期或提前加载真实题目、重新作答并追加 ReviewAttempt → 家长审核由错题和已批准知识点生成、包含具体题目/视觉说明/页码/日期/时长的任务 → 孩子执行并可打开教材原页 → 周报。本地和 Ubuntu `0.17.3/0039` 已接通代码和自动化；真实 Provider 质量/成本、正式内容、Ubuntu 真实账号浏览器和完整设备 E2E 未通过前仍不能判定整条路径完成。
 - 不可接受的失败：跨家庭越权；原图/未确认脱敏图/儿童数据/密钥泄漏；同一图片被静默发送给多个 Provider；学习记录丢失或被最后写入覆盖；AI 在练习/复习或缺少错题门禁时直接代答、错误结论静默入库；删除请求未执行却报告成功；未记录的成本失控。
 - 覆盖策略：风险驱动，不设脱离代码基线的统一行覆盖率。家庭权限、幂等/离线合并、Tutor Policy/Schema、数据删除和核心 E2E 必须覆盖成功与失败路径；普通模块在 P0 代码基线后批准覆盖阈值。
 
@@ -186,7 +186,7 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | 本地模型路由 | `cd services/api && uv run pytest tests/test_newapi_provider.py -q` | Provider、模型或环境路由变更 | 通过（2026-08-24：`24 passed`；覆盖本地/云端互斥、Qwen 关闭 reasoning、2048 输出上限、600 秒本地上限和本地失败不重试） |
 | 本地 Qwen Compose smoke | `docker compose -f infra/compose/compose.yml up -d local-model api image-analysis-worker curriculum-analysis-worker`；检查 `local-model /health`、`/v1/models` 和 synthetic text/vision/schema 请求 | `STUDY_LOCAL_MODEL_ENABLED=true` 或 llama.cpp/GGUF/硬件变更 | 部分通过后关闭（2026-08-24，Ubuntu 12 GB）：镜像、Q4_K_M 权重和 BF16 projector 下载/加载，health、alias、multimodal、`local_qwen` 选择、文本 JSON 和私有端口通过。4 核下 synthetic 大图 600 秒内不收敛；8 核下短文本 1.387 秒，完整视觉请求 373.128 秒、生成 2048 tokens 后以 `provider_response_schema_invalid` 失败，模型约 5.87 GiB、无 Swap。视觉 Schema 门禁未通过，Ubuntu 已恢复云端并停止模型容器；详见 `docs/local-qwen-evaluation-report-2026-08-24.md`，未使用真实儿童数据 |
 | 云端 Provider 回退 smoke | 关闭本地开关，重新创建 API/ImageAnalysis/CurriculumAnalysis worker；检查运行时 Provider 并执行 synthetic 数学文本 Schema 请求 | 本地模型回退云端或云端配置变更 | 通过（2026-08-24，Ubuntu）：运行时 `provider=newapi` 且本地模型容器 `Exited (0)`；不含儿童数据的 synthetic 数学文本在 3.591 秒内返回合法 3 步结构，API/Web/四个 worker 健康，宿主约 10 GiB available、Swap 为 0 |
-| Compose 完整启动 | `docker compose -f infra/compose/compose.yml pull && docker compose -f infra/compose/compose.yml up -d` | API/数据/跨模块变更 | 通过（2026-09-10；Ubuntu 使用远端本地构建 `study-local-*:smartedu-20260910`，备份恢复、0039 前滚、API/Web LAN health、SmartEdu 运行时路由和四个 worker 已核验；GHCR 未发布） |
+| Compose 完整启动 | `docker compose -f infra/compose/compose.yml pull && docker compose -f infra/compose/compose.yml up -d` | API/数据/跨模块变更 | 通过（2026-09-10；Ubuntu 使用 GHCR `sha-a7454a8`，备份恢复、0039 前滚、API/Web LAN health、SmartEdu 运行时路由和四个 worker 已核验） |
 | Web 镜像 | `cd apps/web && docker buildx build --platform=linux/arm64 --load -t study-web:arm64-debug .` | Web/Compose 变更 | 通过（2026-09-03，Ubuntu x86_64 legacy builder；Next.js standalone 镜像使用 Node 24.18.0、pnpm 11.7.0，镜像 `d03f4fea…`；Web/API 本机和 LAN health、运行 CSS 标识及其他服务未重启通过） |
 | Web 登录态 E2E | `cd apps/web && pnpm test:e2e:install && pnpm test:e2e` | 认证、Cookie/CSRF、多家庭/多孩子或 Web 路由变更 | 通过（2026-09-03；Chromium `1 passed`，增加 `1280×800` 时间标签不裁切和 `390×844` 无横向溢出断言；隔离内存 API，不读取 Ubuntu 数据；本机 Node 22.23 低于锁定 Node 24.18，仅产生 engines warning） |
 | 集成环境 | `docker compose -f infra/compose/compose.yml up -d postgres minio` | API/数据/跨模块变更 | 当前通过（2026-07-13；旧配置发布 5432/9000）。PLAN-0012 目标要求 MinIO 仅在 Compose 内部网络可达，并增加宿主/LAN `9000` 不开放的断言 |
@@ -251,7 +251,7 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 - [ ] 无未批准的高危依赖/镜像/密钥扫描问题；SBOM/签名策略在生产前确定。
 - [x] Android/iOS/Web/API 构建产物可生成，迁移与 PostgreSQL/MinIO 备份恢复经过验证。
 - [ ] ADR-0017 认证门槛全部通过：API 认证回归、认证审计、孩子账号反向越权及隔离 synthetic Web Cookie/CSRF/跨家庭/双孩子 Chromium E2E 已通过；Flutter 安全存储真实设备生命周期、PostgreSQL 迁移往返和 Ubuntu 真实账号浏览器验收仍待执行。
-- [ ] PLAN-0016/0017/0018：本地与 Ubuntu `0.17.2`/`0039` 代码/部署、SmartEdu 私有草稿加载、真实 118 页 PDF 机器解析/批准和隔离 Chromium 已完成；仍需正式版权/教研、真实 Provider 质量/成本、Ubuntu 真实账号、完整设备 E2E 和发布安全门槛。
+- [ ] PLAN-0016/0017/0018：本地与 Ubuntu `0.17.3`/`0039` 代码/部署、SmartEdu 私有草稿加载、真实 118 页 PDF 机器解析/批准和隔离 Chromium 已完成；仍需正式版权/教研、真实 Provider 质量/成本、Ubuntu 真实账号、完整设备 E2E 和发布安全门槛。
 - [ ] P1 核心 E2E 全通过，四类设备完成职责内弱网/横竖屏/权限回归。
 - [ ] AI eval、成本告警、周报追溯和儿童数据删除有可审查记录。
 

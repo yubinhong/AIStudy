@@ -4,7 +4,7 @@
 
 - 计划 ID：`PLAN-0045`
 - 关联：`PLAN-0044`、`TASK-0012`、`RUNBOOK.md`、`.github/workflows/ci.yml`、`infra/compose/compose.yml`
-- 状态：`IN_PROGRESS`
+- 状态：`COMPLETE`
 - 优先级：`P1 / RELEASE / SELF-HOSTED DEPLOYMENT`
 - Owner：Codex（提交、推送、发布、备份、部署和验收）
 - 创建：`2026-09-10`
@@ -13,14 +13,14 @@
 
 将 PLAN-0044 的 SmartEdu 家长教材目录与私有 PDF 草稿加载作为 `v0.17.3` 发布，推送 `master` 和 annotated tag，等待 GitHub Actions 质量门槛及 GHCR API/Web 镜像发布成功，再把 Ubuntu 自用 Compose 从远端本地构建切换为同一提交的 GHCR 镜像。保留远端 `.env`、数据卷和学习事实；不进行数据库 downgrade、真实教材导入、版权/教研签核或设备回归。
 
-- [ ] M1 — 版本、代码、契约、迁移、测试和文档完成最终审查；仅提交本轮相关文件。
-- [ ] M2 — `master`、`v0.17.3` 已推送，GitHub Actions `quality` 的质量 job 与 API/Web GHCR 发布均成功；两镜像使用同一提交 revision。
-- [ ] M3 — Ubuntu 切换前完成备份与隔离恢复验证；Compose 恢复 `pull_policy: always`，API/Web 固定到同一 GHCR `sha-*` 标签并 `pull`/`up --no-build`。
-- [ ] M4 — 迁移、容器状态、API/Web 本机与 LAN health、运行时 revision、SmartEdu 路由、worker、日志和 MinIO 私有端口检查通过；更新任务、发布和部署文档。
+- [x] M1 — 版本、代码、契约、迁移、测试和文档完成最终审查；提交仅包含本轮相关文件，保留无关 iOS 工程改动未提交。
+- [x] M2 — 提交 `a7454a89bf7e83b847671de8b46460ecdb422840`、`master` 和 `v0.17.3` annotated tag 已推送；tag quality run `34425077122` 的 contracts、API、Web、browser-e2e 和两个 GHCR 发布 job 均成功，Android run `34425077166` 也成功；两镜像 OCI revision 均为该完整提交。
+- [x] M3 — Ubuntu 切换前备份与隔离恢复验证完成；Compose 恢复 `pull_policy: always`，API/Web 固定为同一 GHCR `sha-a7454a8` 标签，`pull`/`up -d --no-build` 成功。
+- [x] M4 — 迁移、容器状态、API/Web 本机与 LAN health、运行时 revision、SmartEdu 路由、worker、日志和 MinIO 私有端口检查通过；任务、发布和部署文档已更新。
 
 ## 兼容性、风险与回滚
 
-本次为 `0.17.2` 的向后兼容 API/Web 增量，新增可空来源字段迁移 `0039_smartedu_curriculum_source`。部署失败时恢复此前已验证的 GHCR `sha-f6ae9a2` API/Web 组合；数据库保留 `0039`，不让不认识该迁移的旧 `migrate` 镜像执行 downgrade。若 GHCR 发布失败，Ubuntu 保持当前本地构建载荷，不宣称已完成拉取式部署。
+本次为 `0.17.2` 的向后兼容 API/Web 增量，新增可空来源字段迁移 `0039_smartedu_curriculum_source`。当前载荷为 API `ghcr.io/yubinhong/aistudy-api:sha-a7454a8`（`sha256:b3ec72fb3949bc14987b2407ef9499fb2be025f578f0c49652b0c68470563fcf`）和 Web `ghcr.io/yubinhong/aistudy-web:sha-a7454a8`（`sha256:ca2be9204745ae50f934db6af69e68841a0389d0195c5b95bf3d16ece6c275a6`），OCI revision 均为 `a7454a89bf7e83b847671de8b46460ecdb422840`。部署失败时恢复此前已验证的 GHCR `sha-f6ae9a2` API/Web 组合；数据库保留 `0039`，不让不认识该迁移的旧 `migrate` 镜像执行 downgrade。若回滚旧应用遇到兼容性问题，立即恢复本次镜像并以前向修复处理。
 
 ---
 
