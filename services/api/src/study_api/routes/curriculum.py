@@ -50,6 +50,7 @@ from study_api.smartedu_source import (
     SMARTEDU_PROVIDER,
     DownloadedSmartEduTextbook,
     ImportSmartEduCurriculumRequest,
+    SmartEduCredentials,
     SmartEduSource,
     SmartEduSourceError,
     SmartEduTextbook,
@@ -122,6 +123,22 @@ def _smartedu_http_error(error: SmartEduSourceError) -> HTTPException:
     else:
         code = status.HTTP_422_UNPROCESSABLE_CONTENT
     return HTTPException(status_code=code, detail=error.code)
+
+
+def _matches_smartedu_import(
+    result: CurriculumImportResult,
+    request: ImportSmartEduCurriculumRequest,
+) -> bool:
+    material = result.material
+    snapshot = result.snapshot
+    return (
+        material.source_provider == SMARTEDU_PROVIDER
+        and material.source_resource_id == request.resource_id
+        and material.subject is request.subject
+        and material.authorization_statement == request.authorization_statement
+        and material.is_public_reusable is request.is_public_reusable
+        and snapshot.grade == request.grade
+    )
 
 
 async def _document_bytes(data: bytes):
@@ -416,9 +433,31 @@ async def import_smartedu_curriculum(
     require_parent(require_household(principal, household_id))
     _require_child(principal, app_request, household_id, child_id)
     _require_subject_enabled(app_request, household_id, child_id, request.subject)
+    replay = repository.find_import_replay(household_id, child_id, idempotency_key)
+    if replay is not None:
+        if not _matches_smartedu_import(replay, request):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="idempotency key reused with a different payload",
+            )
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content=replay.model_dump(mode="json"),
+            headers={"Idempotency-Replayed": "true"},
+        )
+    credentials: SmartEduCredentials | None = None
+    if request.smartedu_credentials_json is not None:
+        try:
+            credentials = SmartEduCredentials.from_json(request.smartedu_credentials_json)
+        except ValueError as error:
+            raise _smartedu_http_error(
+                SmartEduSourceError("smartedu_credentials_invalid")
+            ) from error
     try:
         downloaded: DownloadedSmartEduTextbook = await asyncio.to_thread(
-            source.download_pdf, request.resource_id
+            source.download_pdf,
+            request.resource_id,
+            credentials=credentials,
         )
     except SmartEduSourceError as error:
         raise _smartedu_http_error(error) from error
@@ -453,9 +492,6 @@ async def import_smartedu_curriculum(
         f"curriculum/{household_id}/{child_id}/"
         f"{downloaded.content_sha256}-{resource.resource_id[:32]}"
     )
-    file_key = sha256(
-        f"{idempotency_key}:{resource.resource_id}:{downloaded.content_sha256}".encode()
-    ).hexdigest()
     try:
         reusable_source = (
             repository.find_public_reusable_snapshot(import_request)
@@ -475,12 +511,12 @@ async def import_smartedu_curriculum(
                 household_id,
                 child_id,
                 import_request,
-                file_key,
+                idempotency_key,
                 object_key=reusable_source.material.object_key,
                 reused_from_snapshot_id=reusable_source.snapshot.id,
             )
             if not replayed:
-                repository.clone_parsed_content(reusable_source.snapshot.id, result)
+                result = repository.clone_parsed_content(reusable_source.snapshot.id, result)
                 knowledge_repository.clone_approved_public_map(
                     reusable_source.snapshot.id,
                     result.material.id,
@@ -488,18 +524,6 @@ async def import_smartedu_curriculum(
                     household_id,
                     child_id,
                 )
-            result = result.model_copy(
-                update={
-                    "material": result.material.model_copy(update={"status": "needs_review"}),
-                    "snapshot": result.snapshot.model_copy(
-                        update={
-                            "sections": reusable_source.snapshot.sections,
-                            "textbook_version": reusable_source.snapshot.textbook_version,
-                            "term": reusable_source.snapshot.term,
-                        }
-                    ),
-                }
-            )
             return JSONResponse(
                 status_code=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
                 content=result.model_dump(mode="json"),
@@ -516,7 +540,7 @@ async def import_smartedu_curriculum(
             household_id,
             child_id,
             import_request,
-            file_key,
+            idempotency_key,
             object_key=object_key,
         )
         if not replayed:

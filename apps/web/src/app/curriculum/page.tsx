@@ -26,7 +26,15 @@ import {
   canRetryCurriculumAnalysis,
   curriculumPublishMessage,
   curriculumUploadMessage,
+  smartEduImportErrorMessage,
 } from "./curriculum-actions";
+import {
+  clearSmartEduCredentials,
+  clearSmartEduImport,
+  getOrCreateSmartEduImportIdempotencyKey,
+  readSmartEduCredentials,
+  writeSmartEduCredentials,
+} from "./smartedu-session";
 
 type Child = {
   id: string;
@@ -147,6 +155,7 @@ function CurriculumPageContent() {
   const [uploading, setUploading] = useState(false);
   const [smartEduBooks, setSmartEduBooks] = useState<SmartEduTextbook[]>([]);
   const [smartEduQuery, setSmartEduQuery] = useState("");
+  const [smartEduCredentialsJson, setSmartEduCredentialsJson] = useState("");
   const [smartEduLoading, setSmartEduLoading] = useState(false);
   const [smartEduImporting, setSmartEduImporting] = useState(false);
   const [smartEduRightsConfirmed, setSmartEduRightsConfirmed] = useState(false);
@@ -251,12 +260,16 @@ function CurriculumPageContent() {
       `确认加载“${book.title}”到${child.display_name}的教材草稿吗？\n\n请确认你有权使用该公开教材，且不会对外分发，并确认本次仅用于家庭学习。`,
     );
     if (!confirmed) return;
+    const requestIdempotencyKey = getOrCreateSmartEduImportIdempotencyKey(
+      childId,
+      book.resource_id,
+    );
     setSmartEduImporting(true);
     try {
       const response = await fetch(`/api/curriculum/${childId}/smartedu`, {
         method: "POST",
         headers: {
-          "Idempotency-Key": idempotencyKey("web-curriculum-smartedu"),
+          "Idempotency-Key": requestIdempotencyKey,
           "Content-Type": "application/json",
           ...csrfHeaders(),
         },
@@ -267,26 +280,34 @@ function CurriculumPageContent() {
           authorization_statement:
             "家庭自用教材，已确认公开来源和使用授权，并确认文件不含儿童姓名、个人批注或其他个人信息",
           is_public_reusable: smartEduPublicReusable,
+          ...(smartEduCredentialsJson.trim()
+            ? { smartedu_credentials_json: smartEduCredentialsJson.trim() }
+            : {}),
         }),
       });
-      const failure = (await response.json().catch(() => null)) as {
-        detail?: string;
-        message?: string;
-      } | null;
+      const failure: unknown = await response.json().catch(() => null);
       setMessage(
         response.ok
           ? `已加载“${book.title}”，教材正在本地解析，完成后请审核并发布。`
-          : failure?.detail === "smartedu_source_requires_authentication"
-            ? "该教材暂时需要平台登录凭据，AIStudy 不接收此类凭据；请改用有权使用的本地 PDF 上传。"
-            : "教材加载失败，请稍后重试或使用本地 PDF 上传。",
+          : smartEduImportErrorMessage(failure),
       );
-      if (response.ok) await loadData(childId);
+      if (response.ok) {
+        await loadData(childId);
+      }
     } catch {
       setMessage("教材加载失败，请检查服务连接后重试。");
     } finally {
       setSmartEduImporting(false);
     }
   }
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const savedCredentials = readSmartEduCredentials();
+      if (savedCredentials) setSmartEduCredentialsJson(savedCredentials);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadChildren(), 0);
@@ -612,6 +633,97 @@ function CurriculumPageContent() {
             目录只展示国家中小学智慧教育平台的公开教材元数据；选择后由服务端取得
             PDF，仍会进入本地解析、家长审核和发布流程。
           </p>
+          <div className="smartedu-credentials-panel">
+            <div className="smartedu-credentials-heading">
+              <label htmlFor="smartedu-credentials-json">
+                登录凭据 JSON <span className="field-optional">（可选）</span>
+              </label>
+              {smartEduCredentialsJson ? (
+                <button
+                  className="smartedu-credentials-clear"
+                  type="button"
+                  onClick={() => {
+                    clearSmartEduCredentials();
+                    clearSmartEduImport();
+                    setSmartEduCredentialsJson("");
+                  }}
+                >
+                  <Trash size={14} />
+                  清除
+                </button>
+              ) : null}
+            </div>
+            <textarea
+              id="smartedu-credentials-json"
+              name="smartedu_credentials_json"
+              rows={4}
+              maxLength={8192}
+              value={smartEduCredentialsJson}
+              onChange={(event) => {
+                const value = event.target.value;
+                setSmartEduCredentialsJson(value);
+                writeSmartEduCredentials(value);
+              }}
+              placeholder={'{"access_token":"..."}'}
+              autoComplete="off"
+              spellCheck={false}
+              disabled={smartEduImporting}
+            />
+            <p className="upload-boundary-note">
+              默认免配置，先直接加载。只有页面提示需要凭据时才填写；凭据会暂存在当前标签页，刷新后可继续重试，手动清除、退出登录或关闭标签页后清除。
+            </p>
+            <details className="smartedu-credentials-help">
+              <summary>如何获取</summary>
+              <ol>
+                <li>
+                  在同一个浏览器打开
+                  <code>https://auth.smartedu.cn/uias/login</code>，登录后再打开
+                  <code>https://basic.smartedu.cn/</code>。
+                </li>
+                <li>
+                  按 <kbd>F12</kbd> 或 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+
+                  <kbd>I</kbd> 打开开发者工具（Mac 使用 <kbd>Cmd</kbd>+
+                  <kbd>Option</kbd>+<kbd>I</kbd>），切换到 Console（控制台）。
+                </li>
+                <li>
+                  将下面脚本粘贴到控制台并运行；若浏览器阻止粘贴，先手动输入
+                  <code>allow pasting</code> 后回车，再粘贴脚本：
+                  <pre>{`(() => {
+  const key = Object.keys(localStorage).find((item) =>
+    /^ND_UC_AUTH-[^&]+&[^&]+&token$/.test(item),
+  );
+  if (!key) {
+    console.error("未找到凭据，请先登录国家中小学智慧教育平台");
+    return;
+  }
+  let saved;
+  let token;
+  try {
+    saved = JSON.parse(localStorage.getItem(key) || "{}");
+    token = typeof saved.value === "string" ? JSON.parse(saved.value) : saved;
+  } catch {
+    console.error("凭据内容无法解析，请重新登录后再试");
+    return;
+  }
+  if (!token || typeof token.access_token !== "string" || !token.access_token.trim()) {
+    console.error("未找到有效 access_token，请重新登录后再试");
+    return;
+  }
+  const result = { access_token: token.access_token };
+  if (token.mac_key) result.mac_key = token.mac_key;
+  if (token.diff !== undefined) result.diff = token.diff;
+  console.log(JSON.stringify(result));
+})();`}</pre>
+                </li>
+                <li>
+                  复制控制台最后输出的一整行
+                  JSON，粘贴到上面的输入框后重试。不要复制
+                  <code>sdk_cache</code>
+                  ，也不要把凭据发到聊天或工单；凭据过期后重新获取。
+                </li>
+              </ol>
+            </details>
+          </div>
           <label className="check-row">
             <input
               type="checkbox"

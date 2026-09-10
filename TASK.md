@@ -8,6 +8,17 @@
 - Owner：Codex（执行）；项目 Owner（2026-08-15 明确要求先多学科、再语文、英语最后）
 - 关联：`PLAN-0034`、`PLAN-0031`、`PLAN-0030`、`PLAN-0007`、`ADR-0017`、`ADR-0027`、`ADR-0028`、`docs/deep-research-report.md`
 
+## 2026-09-10 SmartEdu 私有 CDN 签名修复（PLAN-0046）
+
+- [x] 修复真实教材 PDF 私有 CDN 的 URL 绑定 `X-ND-AUTH` MAC 签名；默认免配置，家长可在页面粘贴一次性 JSON，`access_token` 必填，`mac_key` 和 `diff` 可省略。
+- [x] 对无凭据、JSON 无效、过期/拒绝和一般上游故障给出稳定错误，凭据不进入数据库、日志、提交或镜像；Web 将凭据临时保存在当前标签页 `sessionStorage` 供刷新和连续加载，手动清除/退出登录/关闭标签页清除，保留本地 PDF 上传回退。
+- [x] 同一孩子/SmartEdu 资源的重试复用浏览器缓存中的幂等键；API 在下载前回放已有结果，避免网络重试造成重复 PDF 下载。
+- [x] 定向/全量 API/Web 测试、格式、Lint、类型、构建、脱敏 Compose 展开和文档同步通过；API/OpenAPI 前移为 `0.17.4`，新增可选 `smartedu_credentials_json` 请求字段，无数据库迁移。
+- [x] 提交并推送 `v0.17.4` 代码，创建带中文说明的 GitHub Release。
+- [ ] 发布 GHCR、部署 Ubuntu，并在项目 Owner 明确授权后完成真实私有草稿与解析队列验证；当前 Ubuntu 仍为 `0.17.3`/`sha-a7454a8`。
+
+诊断证据：Ubuntu 的目录和教材详情请求成功；人教版二年级上册 PDF 的 SmartEdu 私有 CDN 在占位 `MAC id="0",nonce="0",mac="0"` 下返回 `HTTP 400 InvalidArgument`，现有适配器将其折叠为 `smartedu_source_requires_authentication` 并对 Web 返回 `422`。失败发生在私有对象和草稿写入之前。缓存凭据和同资源幂等重试修复已随 `v0.17.4` 提交并发布，尚待 GHCR/Ubuntu 真实 PDF 验证。
+
 ## 2026-09-10 提交、tag 与 GHCR Ubuntu 修复（PLAN-0045）
 
 - [x] 提交 `a7454a89bf7e83b847671de8b46460ecdb422840` 已推送 `origin/master`，annotated tag `v0.17.3` 已推送。
@@ -21,7 +32,7 @@
 
 ## 2026-09-09/10 家长后台选择并加载 SmartEdu 电子教材（PLAN-0044 实现与本地构建阶段）
 
-- [x] 增加受控 SmartEdu 目录/详情/PDF 适配器：只接受资源 ID，固定 HTTPS 主机，限制响应大小和 PDF 文件头，计算 SHA-256，不接收 Access Token 或向客户端返回第三方直链。
+- [x] 增加受控 SmartEdu 目录/详情/PDF 适配器：只接受受控资源 ID，固定 HTTPS 主机，限制响应大小和 PDF 文件头，计算 SHA-256；默认免配置，登录时只接收家长页面的一次性 JSON，不向客户端返回第三方直链。
 - [x] 家长 Web 增加年级/学科目录筛选和“加载为草稿”入口；下载文件进入现有私有 MinIO、`uploaded` 草稿、解析队列、家长审核和发布门禁，原有本地 PDF 上传保留。
 - [x] 增加 `0039_smartedu_curriculum_source` 来源元数据迁移、OpenAPI、API/Web BFF、授权/幂等回归和 ADR-0029；来源只记录 `smartedu` 与资源 ID。
 - [x] 验证通过：SmartEdu/API 定向回归、API 非集成全量、API Ruff/Mypy、Web Vitest `41` 项、Prettier/ESLint/TypeScript/production build、迁移离线 SQL、契约路由检查和 `git diff --check`。

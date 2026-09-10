@@ -12,11 +12,18 @@ Household routes require a revocable session created by `/auth/login` with a
 username and password. Web sends the session as an HttpOnly cookie; Flutter
 sends the same opaque session type as a Bearer token.
 
-Parent curriculum routes include a bounded SmartEdu catalog/source adapter.
+Parent curriculum routes include a bounded SmartEdu catalog/source adapter. The
+SmartEdu import route is anonymous by default and accepts an optional one-time
+JSON credential payload from the parent only when a private PDF requires it;
+the payload is not persisted or returned.
 It accepts only a catalog resource ID, stores the verified PDF in private
-MinIO, and reuses the existing local parser and parent approval flow. It never
-accepts or returns a SmartEdu Access Token, source URL, object key, or storage
-URL; local PDF upload remains available when the public source requires login.
+MinIO, and reuses the existing local parser and parent approval flow. Strict
+private-CDN resources accept URL-bound credentials from the parent page only
+for the current API request; the browser may keep the pasted JSON in its
+current tab session storage for a retry, but the API never persists or returns
+those credentials, a source URL, object key, or storage URL. Local PDF upload
+remains available when credentials are absent or rejected. A completed import
+with the same child/resource idempotency key is replayed before downloading.
 
 Example local request:
 

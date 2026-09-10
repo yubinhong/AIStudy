@@ -6,7 +6,7 @@
 - Owner：`TBD（技术负责人确认）`
 - 最后更新：`2026-09-10`
 - 设计基线：`家庭AI学习助手_架构设计_v1.0.docx`
-- 相关决策：`DECISIONS.md`（ADR-0001～0011、0013～0018、0020～0023 已 Accepted，ADR-0019、ADR-0029 Proposed；ADR-0012 已被 ADR-0015 替代。ADR-0017 已替代 ADR-0005 的孩子 PIN/设备凭证默认方案和 ADR-0016 的 HMAC 认证部分；NewAPI 决策继续有效）
+- 相关决策：`DECISIONS.md`（ADR-0001～0011、0013～0018、0020～0023、0029 已 Accepted，ADR-0019 Proposed；ADR-0012 已被 ADR-0015 替代。ADR-0017 已替代 ADR-0005 的孩子 PIN/设备凭证默认方案和 ADR-0016 的 HMAC 家庭认证部分；NewAPI 决策继续有效）
 
 ## 1. 架构目标
 
@@ -82,7 +82,7 @@ flowchart LR
 | Tutor | `services/api` 内模块 | 只消费 VerifiedQuestion；按练习/复习/错题讲解模式执行 Policy、教材 grounding、Schema、确定性校验和成本控制 | 追加写 TutorTurn、Policy/Prompt/模型和来源版本 | Capture、Curriculum、AI Provider、Mistake | 由统一路由选择 `local_qwen` 或 `newapi`；答案/重复/题意门禁失败时回退题型相关本地提示；L3 完整步骤/答案/验算已实现；本地模型质量/成本验收待完成 |
 | Mistake/Review/Report | `services/api` 内模块 | 错题证据、错因、讲解引用、确定性复习调度、周报聚合 | MistakeRecord、ReviewSchedule、复习 Attempt 和报告 | Session/Tutor/Curriculum、家长端 | AttemptEvidence 绑定、closeout、实际题目复习/ReviewAttempt、Web/Flutter 和教材来源已实现；真实设备/Provider 质量验收待完成 |
 | Notification | `services/api` 内模块 | 应用内提醒和可替换推送适配器 | 通知状态 | Report/Task、HMS | 未创建 |
-| 跨端契约 | `packages/contracts` | OpenAPI、AI JSON Schema、生成 SDK | 接口/Schema 的唯一事实来源 | API、Flutter、Web、evals | `0.17.3` 包含 72 个 path 条目、84 个 HTTP operation 和 101 个 component schema；包含 SmartEdu 目录/导入与家长私有 Capture 媒体流等兼容式扩展；SDK 生成器未实现 |
+| 跨端契约 | `packages/contracts` | OpenAPI、AI JSON Schema、生成 SDK | 接口/Schema 的唯一事实来源 | API、Flutter、Web、evals | 本地 `0.17.4` 包含 72 个 path 条目、84 个 HTTP operation 和 101 个 component schema；包含 SmartEdu 目录/导入与家长私有 Capture 媒体流等兼容式扩展；Ubuntu 仍为 `0.17.3`，SDK 生成器未实现 |
 | AI 评测 | `evals` | 固定样本与质量/安全/延迟/成本回归 | 合成或脱敏评测数据 | Tutor、CI | OCR、PrivacySanitizer、Tutor Policy 和真实 NewAPI synthetic 大图已实现；自动视觉检测器 eval 待其实现后补充 |
 | 本地基础设施 | `infra/compose` | PostgreSQL、Redis、MinIO、API/Web/Worker 和可切换 llama.cpp/Qwen 服务编排 | 单家庭自用数据与本地模型缓存 | 开发/自托管 | Ubuntu 完整栈、迁移、生命周期 worker、备份和隔离恢复已验证；本地模型首次下载/质量验收待完成 |
 | ADR | `docs/adr` | 不可逆或跨模块决策记录 | 架构决策历史 | `DECISIONS.md` | ADR-0001～0011、0013～0018、0020～0028 Accepted；ADR-0019、0029 Proposed；替代关系见决策索引 |
@@ -149,7 +149,7 @@ PLAN-0013 的目标聚合不改变上述认证边界：家长通过一个带幂�
 ### 4.3 教材导入与知识发布（ADR-0020；PLAN-0016 / ADR-0021 Accepted）
 
 1. 当前首版以孩子作用域的授权 PDF 上传代表 Assignment，记录数学、学期、年级、教材版本、来源声明和 SHA-256；完整 Assignment 实体后续补齐。
-2. 家长也可从 SmartEdu 目录选择资源：API 只接收资源 ID，适配器固定上游主机并把有界下载结果转成同样的私有 PDF 草稿；来源只保存提供方和资源 ID，不保存第三方直链或令牌。
+2. 家长也可从 SmartEdu 目录选择资源：业务 API 接收目录资源 ID，并可接收页面主动粘贴的一次性 `smartedu_credentials_json`；适配器固定上游主机并把有界下载结果转成同样的私有 PDF 草稿。凭据默认为空，JSON 至少含 `access_token`，`mac_key`/`diff` 可选，仅在当前下载内存中按 URL 签名；Web 只在当前标签页 `sessionStorage` 临时缓存以支持刷新重试，来源记录只保存提供方和资源 ID，不保存第三方直链、令牌、MAC key 或签名。同一孩子/资源的幂等回放在下载前执行。
 3. Web/OpenAPI/API 已成对收缩为 PDF-only；既有非 PDF 对象只保留用于兼容/删除，不得解析或发布。
 4. ADR-0021 的隔离 worker 生成页级辅助文字；无文字层页面也保留并标记文字完整度为 0，不再阻断后续视觉理解。加密/危险或超限 PDF 继续失败/隔离。
 5. ADR-0023 使用 pypdfium2 逐页有界渲染私有 JPEG；每批最多 4 页图像和辅助文字交给单一 NewAPI，严格 Schema 形成页级观察，再以来源键归纳全书章节/知识点。原件、对象键和 MinIO URL 不外发。
@@ -201,7 +201,7 @@ PLAN-0013 的目标聚合不改变上述认证边界：家长通过一个带幂�
 | 同步事件批次 | Flutter | API | `packages/contracts/schemas` | 每事件有 ID/版本/幂等键；追加新事件类型 | `TBD` |
 | AuditEvent | 所有服务端模块 | 审计/可观测性 | `packages/contracts/schemas` | 稳定事件名；字段按敏感级别控制 | `TBD` |
 
-契约目录和结构检查已建立；SDK 生成器和自动兼容检查命令仍未固定。本地与 Ubuntu API/OpenAPI `0.17.3` 均已前移到迁移 `0039_smartedu_curriculum_source`；两者均包含服务端任务位置、容量/未来日期/撤销保护、subject-aware 教材、语文 Content/Attempt/Review、古诗抽查/发布、看图写话和分学科学习记录，且已部署 SmartEdu 目录选择/私有 PDF 草稿加载。数学任务的确认作答和终态事件由端侧 SQLite 按范围隔离并在联网后有序重放；图片上传继续保持单一 Session 流式操作。
+契约目录和结构检查已建立；SDK 生成器和自动兼容检查命令仍未固定。本地 API/OpenAPI `0.17.4` 与 Ubuntu `0.17.3` 均使用迁移 `0039_smartedu_curriculum_source`；两者均包含服务端任务位置、容量/未来日期/撤销保护、subject-aware 教材、语文 Content/Attempt/Review、古诗抽查/发布、看图写话和分学科学习记录，Ubuntu 尚未部署 `0.17.4` 的 SmartEdu 私有 CDN 签名修复。数学任务的确认作答和终态事件由端侧 SQLite 按范围隔离并在联网后有序重放；图片上传继续保持单一 Session 流式操作。
 
 ## 6. 数据架构
 

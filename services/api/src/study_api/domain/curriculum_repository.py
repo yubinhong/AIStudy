@@ -121,6 +121,10 @@ class CurriculumImportResult(BaseModel):
 
 
 class CurriculumRepository(Protocol):
+    def find_import_replay(
+        self, household_id: UUID, child_id: UUID, idempotency_key: str
+    ) -> CurriculumImportResult | None: ...
+
     def import_draft(
         self,
         household_id: UUID,
@@ -137,7 +141,7 @@ class CurriculumRepository(Protocol):
 
     def clone_parsed_content(
         self, source_snapshot_id: UUID, target: CurriculumImportResult
-    ) -> None: ...
+    ) -> CurriculumImportResult: ...
 
     def has_other_material_reference(self, object_key: str, material_id: UUID) -> bool: ...
 
@@ -189,6 +193,19 @@ class InMemoryCurriculumRepository:
         self._materials: dict[UUID, CurriculumMaterial] = {}
         self._snapshots: dict[UUID, CurriculumSnapshot] = {}
         self._receipts: dict[tuple[UUID, str, str], tuple[str, UUID]] = {}
+
+    def find_import_replay(
+        self, household_id: UUID, child_id: UUID, idempotency_key: str
+    ) -> CurriculumImportResult | None:
+        existing = self._receipts.get(
+            (household_id, f"curriculum_import:{child_id}", idempotency_key)
+        )
+        if existing is None:
+            return None
+        snapshot = self._snapshots[existing[1]]
+        return CurriculumImportResult(
+            material=self._materials[snapshot.material_id], snapshot=snapshot
+        )
 
     def import_draft(
         self,
@@ -277,18 +294,19 @@ class InMemoryCurriculumRepository:
 
     def clone_parsed_content(
         self, source_snapshot_id: UUID, target: CurriculumImportResult
-    ) -> None:
+    ) -> CurriculumImportResult:
         source = self._snapshots[source_snapshot_id]
-        self._snapshots[target.snapshot.id] = target.snapshot.model_copy(
+        snapshot = target.snapshot.model_copy(
             update={
                 "sections": source.sections,
                 "textbook_version": source.textbook_version,
                 "term": source.term,
             }
         )
-        self._materials[target.material.id] = target.material.model_copy(
-            update={"status": "needs_review"}
-        )
+        material = target.material.model_copy(update={"status": "needs_review"})
+        self._snapshots[target.snapshot.id] = snapshot
+        self._materials[target.material.id] = material
+        return CurriculumImportResult(material=material, snapshot=snapshot)
 
     def has_other_material_reference(self, object_key: str, material_id: UUID) -> bool:
         return any(
@@ -444,6 +462,20 @@ class PostgresCurriculumRepository:
             snapshot=self._snapshot(dict(snapshot_row)),
         )
 
+    def find_import_replay(
+        self, household_id: UUID, child_id: UUID, idempotency_key: str
+    ) -> CurriculumImportResult | None:
+        operation = f"curriculum_import:{child_id}"
+        with self._engine.connect() as connection:
+            snapshot_id = connection.execute(
+                select(self._idempotency.c.resource_id).where(
+                    self._idempotency.c.household_id == household_id,
+                    self._idempotency.c.operation == operation,
+                    self._idempotency.c.idempotency_key == idempotency_key,
+                )
+            ).scalar_one_or_none()
+            return self._read(connection, snapshot_id) if snapshot_id is not None else None
+
     def import_draft(
         self,
         household_id: UUID,
@@ -571,7 +603,7 @@ class PostgresCurriculumRepository:
 
     def clone_parsed_content(
         self, source_snapshot_id: UUID, target: CurriculumImportResult
-    ) -> None:
+    ) -> CurriculumImportResult:
         """Copy text facts into a new tenant snapshot without another PDF parse."""
 
         now = datetime.now(UTC)
@@ -615,6 +647,7 @@ class PostgresCurriculumRepository:
                 .where(self._materials.c.id == target.material.id)
                 .values(status="needs_review")
             )
+            return self._read(connection, target.snapshot.id)
 
     def has_other_material_reference(self, object_key: str, material_id: UUID) -> bool:
         with self._engine.connect() as connection:

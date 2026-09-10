@@ -22,3 +22,22 @@ export function canRetryCurriculumAnalysis(status: string | undefined) {
 export function canApproveCurriculumAnalysis(status: string | undefined) {
   return status === "needs_review";
 }
+
+export function smartEduImportErrorMessage(error: unknown) {
+  if (typeof error === "object" && error !== null) {
+    const record = error as Record<string, unknown>;
+    const message =
+      typeof record.message === "string"
+        ? record.message
+        : typeof record.detail === "string"
+          ? record.detail
+          : null;
+    if (message === "smartedu_source_requires_authentication") {
+      return "该教材需要登录凭据，请按页面“如何获取”复制 JSON 后重试；也可改用有权使用的本地 PDF 上传。";
+    }
+    if (message === "smartedu_credentials_invalid") {
+      return "凭据 JSON 格式不正确，请按页面“如何获取”重新复制 access_token 后重试。";
+    }
+  }
+  return "教材加载失败，请稍后重试或使用本地 PDF 上传。";
+}

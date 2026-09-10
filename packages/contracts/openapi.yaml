@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 家庭 AI 学习助手 API
-  version: 0.17.3
+  version: 0.17.4
   description: Self-hosted Household account/session, multi-subject learning, Chinese practice, and gated English speaking contracts.
 servers:
   - url: http://localhost:8000
@@ -1890,7 +1890,7 @@ paths:
     post:
       operationId: importSmartEduCurriculum
       summary: Load one SmartEdu textbook as a parent-reviewable draft
-      description: The server resolves the selected resource ID, validates a fixed SmartEdu HTTPS source, downloads one bounded PDF into private storage, and queues the existing local parser. It does not accept or return an Access Token or source URL.
+      description: The server resolves the selected resource ID, validates a fixed SmartEdu HTTPS source, downloads one bounded PDF into private storage, and queues the existing local parser. The request may include an optional one-time JSON credential copied from the parent's SmartEdu login session; it is never stored or returned. The API never returns a source URL.
       security:
         - SessionCookie: []
         - BearerSession: []
@@ -3009,7 +3009,7 @@ components:
           const: study-api
         version:
           type: string
-          const: 0.17.3
+          const: 0.17.4
     CreateChildRequest:
       type: object
       additionalProperties: false
@@ -4037,6 +4037,7 @@ components:
         grade: {type: integer, minimum: 1, maximum: 6}
         authorization_statement: {type: string, minLength: 1, maxLength: 500}
         is_public_reusable: {type: boolean, default: false}
+        smartedu_credentials_json: {type: string, maxLength: 8192, nullable: true, description: Optional one-time JSON from the parent's SmartEdu login session. It is used only for this download and is never stored or returned. access_token is required inside the JSON; mac_key and diff are optional.}
     CurriculumMaterial:
       type: object
       additionalProperties: false

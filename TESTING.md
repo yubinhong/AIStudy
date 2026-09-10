@@ -1,5 +1,12 @@
 # TESTING.md
 
+## 2026-09-10 SmartEdu 私有 CDN 签名修复
+
+- API：SmartEdu 定向 `17 passed`，非集成全量 `278 passed, 32 deselected`；Ruff format/check 与 Mypy 通过。覆盖匿名默认路径、仅 `access_token` 的上游 JSON、可选 `mac_key`/`diff`、URL/查询绑定、动态 nonce、控制字符/超限输入防护、私有 CDN `400/401/403` 分类、API 标准错误信封，以及请求凭据不进入教材记录/响应。
+- Web：Vitest `24` 个文件、`44` 项通过；Prettier、ESLint、TypeScript 和 production build 通过。错误解析优先读取 API 的 `{code,message}`，同时兼容旧 `{detail}`；默认免配置，凭据 JSON 输入和获取步骤可见，凭据在当前标签页临时缓存并可手动清除，保留本地 PDF 上传。
+- 契约/Compose：API/OpenAPI 已前移为 `0.17.4`，仍为 72 paths、84 HTTP operations、101 schemas；新增可选 `smartedu_credentials_json` 请求字段，无数据库迁移。脱敏临时目录 `docker compose config --quiet` 通过，Compose 不再挂载 SmartEdu 专用环境文件。
+- 未执行：服务器端 SmartEdu 凭据配置、GHCR 发布、Ubuntu 部署和真实 `PDF -> 私有草稿 -> 解析队列`。Ubuntu 当前仍运行 `0.17.3`/`sha-a7454a8`，不得把本地自动化描述为运行修复。
+
 ## 2026-09-09/10 家长后台选择并加载 SmartEdu 电子教材
 
 - API：`services/api/.venv/bin/pytest -q services/api/tests/test_smartedu_source.py` 定向通过；`services/api/.venv/bin/pytest -q services/api/tests -m 'not integration'` 全量通过；Ruff format/check 和 Mypy 通过。回归覆盖目录标签筛选、固定主机边界、详情 PDF 来源、畸形 URL、非受信主机、SHA-256、家长授权、私有对象写入、解析队列和来源元数据。
@@ -43,7 +50,9 @@
 
 ## 1. 当前状态与质量目标
 
-当前仓库已有 P0/P1 依赖清单、三类锁文件、核心测试和 CI 草案。API 的 Household/认证/学习/Capture/可信 Tutor/周报/导出、Mistake/Review closeout、教材 PDF-only 私有原页/多模态知识图谱、作答四态/推荐审批、Web/Flutter 入口、SQLite 任务位置与离线 Attempt/任务终态队列、服务端任务位置/容量/未来日期/撤销保护和 Compose 已验证；Android/iOS 构建及 PostgreSQL/MinIO 恢复已有记录。本地与 Ubuntu API/OpenAPI 均为 `0.17.3`、迁移头为 `0039_smartedu_curriculum_source`。2026-09-09/10 已新增并部署家长 SmartEdu 目录选择、私有 PDF 加载和来源元数据；完整 API/Web 回归、Ubuntu 备份恢复/前滚/健康及 GHCR 拉取式切换通过，真实目录/PDF、Provider 质量成本、真实账号/设备回归仍待执行。
+当前仓库已有 P0/P1 依赖清单、三类锁文件、核心测试和 CI 草案。API 的 Household/认证/学习/Capture/可信 Tutor/周报/导出、Mistake/Review closeout、教材 PDF-only 私有原页/多模态知识图谱、作答四态/推荐审批、Web/Flutter 入口、SQLite 任务位置与离线 Attempt/任务终态队列、服务端任务位置/容量/未来日期/撤销保护和 Compose 已验证；Android/iOS 构建及 PostgreSQL/MinIO 恢复已有记录。本地 API/OpenAPI 为 `0.17.4`，Ubuntu 为 `0.17.3`，迁移头均为 `0039_smartedu_curriculum_source`。2026-09-09/10 已新增并部署家长 SmartEdu 目录选择、私有 PDF 加载和来源元数据；私有 CDN 签名修复只完成本地回归，真实目录/PDF、Provider 质量成本、真实账号/设备回归仍待执行。
+
+2026-09-10 SmartEdu 重试修复：Web `sessionStorage` 凭据读写/清除、同孩子/资源幂等键复用和 API 已完成导入回放均有定向回归；第二次同键请求不再调用 PDF 下载器。缓存仅属于当前标签页，手动清除、退出登录或关闭标签页后清除。
 
 2026-09-04 iPhone 11 本地网络回归：iOS `26.6.1` 真机在权限列表尚未登记 App 时稳定复现 `/healthz` 的 `errno 65: No route to host`，Ubuntu 未收到请求；API 容器、本机/LAN `8000` 和 Mac 跨网段访问均正常。孩子端现于健康检查前通过原生 `NWConnection` 连接用户填写的实际家庭服务器，等待 iOS 本地网络权限决定后再发 HTTP 请求；修复包以 Personal Team 签名覆盖安装，系统授权后 Ubuntu 记录 `192.168.1.100` 的 `/healthz` 为 `200 OK`。定向 Flutter `37 passed`、完整 Flutter `74 passed`、Analyze 和 iPhone Release 签名构建通过；未输入账号、未读取儿童数据，也未执行登录、相机/相册或弱网 E2E。
 
@@ -199,7 +208,7 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | OCR 锁定模型 synthetic smoke | `cd services/api && ./.venv/bin/python ../../evals/run_ocr_model_eval.py` | Ubuntu/模型/Provider 变更 | 通过（2026-07-16，远端 x86_64 Debian 13 锁定容器，4/4 cases：普通文本 3、公式 1，CPU；只使用内存 synthetic 图片，无外部 Provider）；真实题型评测仍待执行 |
 | NewAPI synthetic live eval | `docker compose -f infra/compose/compose.yml exec -T api python scripts/run_newapi_live_eval.py` | NewAPI key/model/网络或 worker 变更 | 通过（2026-07-20，Ubuntu x86_64）：纯合成题仅传确认文字，返回 3 个完整步骤、答案 17 只和独立验算；实际拍题四态仍待设备人工验收 |
 | 备份/恢复 | `infra/compose/scripts/backup.sh`；`verify-restore.sh <backup-dir>` | 数据/迁移/发布变更 | 通过（2026-08-24，Ubuntu；`/home/syin/study-backups/20260824T024445Z` 的 PostgreSQL custom dump + MinIO 快照 + SHA-256 清单已隔离恢复，39 个 public tables、353 个 MinIO 文件） |
-| 契约结构/差异 | 结构化解析 `openapi.yaml` 与 `schemas/*.json`、闭合本地引用，并对比 FastAPI 运行时 path/method/version | OpenAPI/Schema 变更 | 通过（2026-09-09；OpenAPI `0.17.2` 为 72 paths/84 HTTP operations/101 schemas，SmartEdu 新增路由与运行时一致；SDK 生成器仍未决定） |
+| 契约结构/差异 | 结构化解析 `openapi.yaml` 与 `schemas/*.json`、闭合本地引用，并对比 FastAPI 运行时 path/method/version | OpenAPI/Schema 变更 | 通过（2026-09-10；本地 OpenAPI/运行时 `0.17.4` 为 72 paths/84 HTTP operations/101 schemas，SmartEdu 路由与运行时一致；SDK 生成器仍未决定） |
 | 安全扫描 | `TBD（按 Flutter/pnpm/uv/镜像工具链建立）` | 合并/发布前 | 阻塞：无依赖/镜像 |
 
 耗时预算必须在命令首次进入 CI 后用实际数据补充，不在无代码阶段猜测。
@@ -224,7 +233,7 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | --- | --- | --- | --- | --- | --- | --- |
 | 家庭/账号/孩子/设备 | 账号规范化、密码策略、会话状态、权限策略、当前孩子选择优先级 | Account/AuthSession/Profile migration、聚合创建原子回滚/幂等/并发唯一、任务/周报 child 过滤、契约 | Web 首次改密、单表单创建孩子、聚合卡、两个孩子切换/刷新/删除回退、Flutter 孩子登录、iPad + Windows 共享档案 | 默认凭据限制、改密前数据阻断、枚举/爆破、Cookie/CSRF、会话撤销、跨 Household/反向孩子绑定、选择 ID 篡改与兄弟姐妹隔离 | Argon2id、聚合写入/首页加载延迟 | `TBD` |
 | 教材/知识发布 | Assignment/MaterialParseJob/Chunk/PageAsset/PageAnalysis/KnowledgeMap/KnowledgePoint/Snapshot 状态机、页码/练习来源 Schema | 文字/扫描/图形/加密/损坏/超限 PDF；私有页图、4 页批次、全书归纳、缺页/伪造来源、扩展名/MIME/文件头/结构/哈希/对象展开/CPU/内存/超时；非 PDF 拒绝；批准/发布/撤销/删除/迁移 | 家长导入 synthetic PDF、对照原页批准知识图谱并发布，两个孩子不同教材；讲解/推荐/孩子任务打开原页 | 危险动作/链接/附件、解析器出网、版权/无个人信息声明、Prompt 注入、页图单 Provider、未批准/跨家庭、PDF/对象键外发 | 页数/预览大小/整本输入、内存/时长、队列、token/延迟和 Provider 成本 | `TBD` |
-| SmartEdu 目录与 PDF 加载 | 目录版本/分片标签过滤、详情 `ti_items`/固定 CDN、资源 ID/文件头/SHA-256、来源字段 | 目录/详情/镜像异常、未知主机/畸形 URL/超限/非 PDF、家长授权/幂等、私有 MinIO、解析队列和 `0039` 前滚 | 家长 Web 选择年级/学科并加载为草稿；真实目录/PDF、真实账号和设备待执行 | 不接收 Access Token/任意 URL，不向客户端返回直链/对象键；未审核草稿不可被孩子/Tutor 使用；版权/无个人信息确认 | 目录缓存、60 秒源请求超时、50 MiB PDF 上限、队列等待和外部源可用性 | Codex/项目 Owner |
+| SmartEdu 目录与 PDF 加载 | 目录版本/分片标签过滤、详情 `ti_items`/固定 CDN、资源 ID/文件头/SHA-256、来源字段 | 目录/详情/镜像异常、匿名默认、可选一次性 JSON（`access_token`/`mac_key`/`diff`）、未知主机/畸形 URL/超限/非 PDF、家长授权/幂等、私有 MinIO、解析队列和 `0039` 前滚 | 家长 Web 选择年级/学科并加载为草稿；真实目录/PDF、真实账号和设备待执行 | 不接受任意 URL；凭据只随当前下载请求使用且不落库/不回显，不向客户端返回直链/对象键；未审核草稿不可被孩子/Tutor 使用；版权/无个人信息确认 | 目录缓存、60 秒源请求超时、50 MiB PDF 上限、队列等待和外部源可用性 | Codex/项目 Owner |
 | 任务/推荐/会话/Attempt | 来源/审批状态机、追加写、每日上限 | 推荐→批准→Task 事务、幂等/冲突、错题/教材引用 | 家长安排/到期复习/系统建议到完成、断网重连 | 越权、载荷篡改、AI 绕过审批/静默下发 | 队列吞吐、每日任务量/推荐成本 | `TBD` |
 | Capture/PrivacySanitizer/云视觉 | 脱敏规则、Schema、置信度、哈希绑定 | Session 鉴权流式上传、元数据清除、实色遮挡、单 Provider Adapter、临时副本删除 | 四端权限、裁切、脱敏预览、手动涂抹、题目校正 | 反向越权、流式大小/类型/文件头/尺寸/哈希/断连、恶意内容、敏感信息漏检/误遮挡、原图外发、跨 Provider 广播 | 上传内存/并发、脱敏/云解析延迟和单题成本 | `TBD` |
 | Tutor | guided/review/mistake_explanation Policy、L1/L2/L3 披露、builds-on、来源和确定性校验 Schema | VerifiedQuestion/AttemptEvidence/Snapshot 三重门禁、层级连续/披露差异、Provider 失败/降级、审计 | worked/blank/review 分支；L1 看懂题意、L2 方法脚手架、允许时 L3 完整讲解 | L1/L2 换词重复/答案泄露、未确认状态绕过、错版/超纲、来源缺失、计算/单位错误、文档提示注入 | token/延迟/每级/每题和家庭预算 | `TBD` |

@@ -46,7 +46,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -59,6 +60,7 @@ button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible,
+textarea:focus-visible,
 summary:focus-visible {
   outline: 3px solid rgba(22, 122, 85, 0.2);
   outline-offset: 2px;
@@ -1379,7 +1381,8 @@ summary:focus-visible {
 }
 
 .auth-form input,
-.auth-form select {
+.auth-form select,
+.auth-form textarea {
   width: 100%;
   min-height: 2.65rem;
   padding: 0.65rem 0.75rem;
@@ -1390,7 +1393,8 @@ summary:focus-visible {
 }
 
 .auth-form input:focus,
-.auth-form select:focus {
+.auth-form select:focus,
+.auth-form textarea:focus {
   border-color: #76aa8d;
   outline: 3px solid #edf6f0;
 }
@@ -1590,6 +1594,127 @@ summary:focus-visible {
   align-items: end;
   gap: 0.75rem;
   margin-top: 1.15rem;
+}
+
+.smartedu-credentials-panel {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 1rem;
+  padding: 0.85rem;
+  border: 1px solid #d9e8df;
+  border-radius: 0.65rem;
+  background: #fbfdfc;
+}
+
+.smartedu-credentials-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.smartedu-credentials-heading > label {
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 680;
+}
+
+.smartedu-credentials-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 650;
+}
+
+.smartedu-credentials-clear:hover {
+  color: var(--red);
+}
+
+.field-optional {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.smartedu-credentials-panel textarea {
+  width: 100%;
+  min-height: 6.3rem;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #cfdcd4;
+  border-radius: 0.6rem;
+  background: white;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.smartedu-credentials-panel textarea:focus {
+  border-color: #76aa8d;
+  outline: 3px solid #edf6f0;
+}
+
+.smartedu-credentials-panel .upload-boundary-note {
+  margin: 0;
+}
+
+.smartedu-credentials-help {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.55;
+}
+
+.smartedu-credentials-help summary {
+  cursor: pointer;
+  color: var(--green-dark);
+  font-weight: 700;
+}
+
+.smartedu-credentials-help ol {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.65rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.smartedu-credentials-help code {
+  margin: 0 0.15rem;
+  padding: 0.08rem 0.25rem;
+  border-radius: 0.25rem;
+  background: #eef5f0;
+  color: var(--green-dark);
+  overflow-wrap: anywhere;
+}
+
+.smartedu-credentials-help kbd {
+  padding: 0.08rem 0.3rem;
+  border: 1px solid #cfdcd4;
+  border-bottom-width: 2px;
+  border-radius: 0.25rem;
+  background: white;
+  color: var(--ink);
+  font-size: 0.66rem;
+}
+
+.smartedu-credentials-help pre {
+  max-width: 100%;
+  margin: 0.45rem 0 0;
+  padding: 0.7rem;
+  overflow-x: auto;
+  border-radius: 0.45rem;
+  background: #19231f;
+  color: #ecf7ef;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.66rem;
+  line-height: 1.5;
+  white-space: pre;
 }
 
 .smartedu-search-field {

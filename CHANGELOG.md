@@ -1,5 +1,7 @@
 # Changelog
 
+- 2026-09-10（v0.17.4）：家长后台将已填写的 SmartEdu JSON 凭据临时保存到当前标签页 `sessionStorage`，刷新后可继续重试和连续加载，手动清除/退出登录/关闭标签页后清除；同一孩子/资源复用幂等键，API 对已有结果在下载前回放，避免网络重试重复下载。新增 Web session-storage 回归和 API 下载调用次数回归；已提交并创建中文 GitHub Release，尚未重新部署 Ubuntu。
+
 - 2026-09-10：提交 `a7454a8` 已推送 `master`，并创建/推送 `v0.17.3`。tag quality run `34425077122`、Android run `34425077166` 和 master quality run `34425029726` 均成功，API/Web GHCR 多架构镜像发布完成。Ubuntu `192.168.1.4` 已从远端本地构建切换为 `sha-a7454a8`，备份 `/home/syin/study-backups/20260910T012805Z` 已隔离恢复验证，迁移为 `0039_smartedu_curriculum_source`，API/Web、四个 worker、SmartEdu 路由、本机/LAN health、运行时 revision 和近期日志检查均通过；真实 SmartEdu PDF、Provider、版权/教研、账号浏览器和设备验收仍未执行。
 
 - 2026-09-10（实现阶段）：按用户要求将 SmartEdu 家长教材目录选择和私有 PDF 草稿加载部署到 Ubuntu `192.168.1.4`。部署前备份 `/home/syin/study-backups/20260910T004753Z` 已通过隔离恢复；远端 x86_64 本地构建 API/Web 镜像，前滚至 `0039_smartedu_curriculum_source`，API/Web、四个 worker、SmartEdu 运行时路由、本机/LAN health 和近期日志检查均通过。随后已由 `v0.17.3` GHCR 载荷替换；本记录保留初始本地构建阶段，不代表当前运行来源。
@@ -82,6 +84,8 @@
 本文件只记录用户可感知、运维可感知或兼容性相关的已发布变化，格式参考 Keep a Changelog，版本计划遵循 Semantic Versioning。
 
 ## [Unreleased]
+
+- 修复 SmartEdu 真实教材在私有 CDN 返回 `400 InvalidArgument` 后被误报为通用 `503`：默认免配置，家长页面需要时可粘贴至少含 `access_token` 的一次性 JSON，`mac_key` 和 `diff` 可选；有 MAC key 时按每个固定 URL 生成短时 HMAC-SHA256 `X-ND-AUTH`。凭据不进入数据库、日志、镜像或 Git，页面按当前标签页临时缓存并提供手动清除；页面同时提供从本人 SmartEdu 登录会话获取 JSON 的具体步骤。无凭据或凭据过期时显示可操作提示，本地 PDF 上传继续可用。API/OpenAPI 已前移为 `0.17.4`，无数据库迁移；已在顶部 `v0.17.4` 发布记录，尚未重新部署 Ubuntu。
 
 - Ubuntu 自用服务器新增每日 Docker 缓存维护脚本：默认清理 7 天前的未使用构建缓存和悬空镜像，使用非阻塞锁和 system journal 留痕；明确保留数据卷、容器、网络及仍有标签的镜像。UTC 主机计划于 `16:00` 执行，对应北京时间每天 `00:00`。
 

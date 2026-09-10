@@ -30,6 +30,7 @@ openssl rand -hex 32
 - `STUDY_API_IMAGE` 和 `STUDY_WEB_IMAGE` 默认为 `latest`。可重复部署和回滚必须把两者固定到同一次 CI 产生的相同 `v*` 或 `sha-*` 标签；不要混用来自不同提交的 API 与 Web。
 - Capture 图片现在由 App 携带登录 Session 通过 API 的有界原始字节流上传，API 在内部校验并写入私有 MinIO。MinIO 的 S3 API 和控制台不映射到宿主机或局域网；不要配置 `OBJECT_STORAGE_PUBLIC_ENDPOINT_URL`、`MINIO_API_PORT` 或预签名上传地址。
 - Compose 只使用账号密码认证。Web 登录后会通过 HttpOnly Cookie 保存会话；不要把会话或密码写入 `.env`、客户端构建参数或日志。HMAC、Demo Header 和 Web 免登录旁路已删除。
+- SmartEdu 默认免配置。目录页会先尝试匿名加载；如果选中的私有教材要求登录，家长直接按页面“如何获取”取得一段 JSON 并粘贴到页面输入框。`access_token` 是唯一必需字段，`mac_key` 和 `diff` 可省略；凭据只随本次下载请求使用，成功后页面清空，不需要重启或修改 Compose。
 - 如果 NewAPI 在宿主机，使用 `http://host.docker.internal:<port>`；如果在另一台机器或另一个 Compose 网络，填写容器可访问的 URL。Adapter 会自动补齐 `/v1/chat/completions`，因此 base URL 可以是根地址或以 `/v1` 结尾。
 - 初次部署保持 `STUDY_NEWAPI_ENABLED=false`。确认 NewAPI 视觉模型、key 和响应契约后，再改为 `true`。
 - Adapter 默认以 `study-api/0.5` 作为 `User-Agent`，避免部分 Cloudflare 规则拦截 Python `urllib` 的默认特征；如前置网关要求其他值，可设置 `STUDY_NEWAPI_USER_AGENT`，但只允许 1–256 个可打印 ASCII 字符，不能包含换行或其他控制字符。
@@ -42,7 +43,7 @@ openssl rand -hex 32
 - 本地输出固定受 `STUDY_LOCAL_MODEL_MAX_OUTPUT_TOKENS` 约束（默认 `2048`），且本地超时/网络失败不自动重复推理；云端仍使用既有的最多三次瞬时重试。这样模型不收敛时会返回可见失败，而不是长时间占满 CPU 或切换 Provider。
 - DataLifecycle worker 固定删除超过 180 天、且不再被开放错题引用的详细题目/讲解和已结束复习链路。紧急调查时可设置 `LEARNING_HISTORY_CLEANUP_ENABLED=false` 暂停后续清理；不要改变代码中的 180 天策略或手工删除开放错题。
 
-不要把 `infra/compose/.env`、真实 API key、儿童图片或真实题目写入仓库。
+不要把 `infra/compose/.env`、SmartEdu/NewAPI 真实凭据、儿童图片或真实题目写入仓库。不要把 SmartEdu JSON 粘贴到聊天、命令历史、日志或工单。
 
 ## 3. 校验与启动
 

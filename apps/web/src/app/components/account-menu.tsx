@@ -9,6 +9,11 @@ import {
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import {
+  clearSmartEduCredentials,
+  clearSmartEduImport,
+} from "../curriculum/smartedu-session";
+
 type CurrentAccount = {
   username: string;
   role: "super_admin" | "parent" | "child";
@@ -47,7 +52,11 @@ export function AccountMenu() {
         ? { "X-CSRF-Token": decodeURIComponent(csrfToken()!) }
         : {},
     });
-    if (response.ok) window.location.assign("/login");
+    if (response.ok) {
+      clearSmartEduCredentials();
+      clearSmartEduImport();
+      window.location.assign("/login");
+    }
   }
 
   if (!account) return null;

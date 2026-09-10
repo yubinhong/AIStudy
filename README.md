@@ -65,7 +65,7 @@ cd AIStudy
 cp infra/compose/.env.example infra/compose/.env
 ```
 
-编辑 `infra/compose/.env`，至少替换 PostgreSQL、MinIO 和 Session Secret。初次启动应保持所有外部 Provider 开关关闭。
+编辑 `infra/compose/.env`，至少替换 PostgreSQL、MinIO 和 Session Secret。初次启动应保持所有外部 Provider 开关关闭。SmartEdu 默认免配置；如果某本教材需要登录，家长直接按教材页“如何获取”复制 JSON 并粘贴到页面，不需要新增环境文件或重启服务。
 
 服务端镜像由 GitHub Actions 发布到 GHCR。公开 Package 可直接拉取；若 Package 为 private，先使用只具备 `read:packages` 的凭据登录 `ghcr.io`。正式升级应把 `.env` 中的 `STUDY_API_IMAGE` 和 `STUDY_WEB_IMAGE` 固定到同一个 `v*` 或 `sha-*` 标签，避免 `latest` 漂移。
 
@@ -104,7 +104,7 @@ Compose 支持在本地 Qwen 和现有 NewAPI 云端模型之间进行显式切�
 
 ## 电子教材
 
-家长后台现可直接查询并选择国家中小学智慧教育平台的电子课本，服务端会按资源 ID 有界取得 PDF 并进入私有解析/审核流程；本功能参考 [tchMaterial-parser](https://github.com/happycola233/tchMaterial-parser) 的 MIT 协议解析方式，但 AIStudy 不接收其 Access Token，也不包含或分发下载的教材。平台需要登录的资源仍需改用本地 PDF 上传。请只加载或导入自己有权使用的资料，并遵守平台条款、教材版权和当地法律；完整安全边界见 [部署指南的教材章节](docs/DEPLOYMENT.md#7-获取和导入电子教材)。
+家长后台现可直接查询并选择国家中小学智慧教育平台的电子课本，服务端会按资源 ID 有界取得 PDF 并进入私有解析/审核流程；本功能参考 [tchMaterial-parser](https://github.com/happycola233/tchMaterial-parser) 的 MIT 协议解析方式。默认免配置，平台要求登录时按页面“如何获取”从本人登录会话复制 JSON；`access_token` 必填，`mac_key` 和 `diff` 可省略。凭据只在服务端当前请求内存使用，并临时保存在当前浏览器标签页的 `sessionStorage` 以便刷新重试和连续加载，手动清除、退出登录或关闭标签页后清除；不会进入教材记录。相同孩子/教材的重试会复用幂等键，已有结果不会再次下载。AIStudy 不包含或分发下载的教材。请只加载或导入自己有权使用的资料，并遵守平台条款、教材版权和当地法律；完整安全边界见 [部署指南的教材章节](docs/DEPLOYMENT.md#7-获取和导入电子教材)。
 
 ## 本地开发与验证
 

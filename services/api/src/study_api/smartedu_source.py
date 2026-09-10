@@ -1,20 +1,25 @@
 """Bounded adapter for the public SmartEdu electronic textbook catalog.
 
 The catalog and detail payloads are untrusted third-party input. The adapter
-accepts resource IDs only, constructs every upstream URL itself, and exposes no
-Access Token or object-storage URL to callers.
+constructs every upstream URL itself and exposes no source URL or object-storage
+URL to callers. Optional credentials are supplied per download request and are
+never retained by the source adapter after that request.
 """
 
 from __future__ import annotations
 
+import base64
+import hmac
 import json
 import re
+import secrets
+import time
 from dataclasses import dataclass
 from hashlib import sha256
 from threading import Lock
 from typing import Any, Protocol, cast
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, unquote, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -46,6 +51,10 @@ GRADE_NAMES = {
     "五年级": 5,
     "六年级": 6,
 }
+MAX_CREDENTIAL_JSON_LENGTH = 8192
+MAX_CREDENTIAL_LENGTH = 4096
+MAX_TOKEN_DIFF_MS = 7 * 24 * 60 * 60 * 1000
+NONCE_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 
 class SmartEduSourceError(RuntimeError):
@@ -54,6 +63,63 @@ class SmartEduSourceError(RuntimeError):
     def __init__(self, code: str) -> None:
         super().__init__(code)
         self.code = code
+
+
+@dataclass(frozen=True)
+class SmartEduCredentials:
+    access_token: str = ""
+    mac_key: str = ""
+    token_diff_ms: int = 0
+
+    def __post_init__(self) -> None:
+        if self.access_token:
+            _validate_credential(self.access_token, name="access token")
+        if self.mac_key:
+            _validate_credential(self.mac_key, name="MAC key")
+        if abs(self.token_diff_ms) > MAX_TOKEN_DIFF_MS:
+            raise ValueError("SmartEdu token clock difference is out of range")
+
+    @classmethod
+    def from_json(cls, raw: str) -> SmartEduCredentials:
+        """Parse one parent-supplied upstream credential JSON without retaining it."""
+
+        text = raw.strip()
+        if not text or len(text) > MAX_CREDENTIAL_JSON_LENGTH:
+            raise ValueError("SmartEdu credential JSON is empty or too large")
+        try:
+            payload: object = json.loads(text)
+            # The upstream console helper may be copied as a JSON-encoded string.
+            if isinstance(payload, str):
+                payload = json.loads(payload)
+        except (json.JSONDecodeError, TypeError) as error:
+            raise ValueError("SmartEdu credentials must be a JSON object") from error
+        if not isinstance(payload, dict):
+            raise ValueError("SmartEdu credentials must be a JSON object")
+
+        access_token = payload.get("access_token")
+        if not isinstance(access_token, str) or not access_token.strip():
+            raise ValueError("SmartEdu access_token must be a non-empty string")
+        mac_key = payload.get("mac_key", "")
+        if mac_key is None:
+            mac_key = ""
+        if not isinstance(mac_key, str):
+            raise ValueError("SmartEdu mac_key must be a string when provided")
+        diff = payload.get("diff", 0)
+        if diff is None or diff == "":
+            diff = 0
+        if isinstance(diff, bool):
+            raise ValueError("SmartEdu diff must be an integer")
+        if isinstance(diff, float) and not diff.is_integer():
+            raise ValueError("SmartEdu diff must be an integer")
+        try:
+            token_diff_ms = int(diff)
+        except (TypeError, ValueError) as error:
+            raise ValueError("SmartEdu diff must be an integer") from error
+        return cls(
+            access_token=access_token.strip(),
+            mac_key=mac_key.strip(),
+            token_diff_ms=token_diff_ms,
+        )
 
 
 class SmartEduTextbook(BaseModel):
@@ -75,6 +141,14 @@ class ImportSmartEduCurriculumRequest(BaseModel):
     grade: int = Field(ge=1, le=6)
     authorization_statement: str = Field(min_length=1, max_length=500)
     is_public_reusable: bool = False
+    smartedu_credentials_json: str | None = Field(
+        default=None,
+        max_length=MAX_CREDENTIAL_JSON_LENGTH,
+        description=(
+            "Optional one-time JSON copied from the SmartEdu login session. "
+            "It is used only for this download and is never stored or returned."
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -118,7 +192,52 @@ def _default_opener() -> UrlOpener:
     return cast(UrlOpener, build_opener(ProxyHandler({}), _SmartEduRedirectHandler()))
 
 
-def _header_map(url: str) -> dict[str, str]:
+def _validate_credential(value: str, *, name: str) -> None:
+    if not 1 <= len(value) <= MAX_CREDENTIAL_LENGTH:
+        raise ValueError(f"SmartEdu {name} length is invalid")
+    if any(
+        ord(character) < 33 or ord(character) > 126 or character in {'"', "\\"}
+        for character in value
+    ):
+        raise ValueError(f"SmartEdu {name} must contain header-safe printable ASCII without spaces")
+
+
+def _generate_nonce(token_diff_ms: int) -> str:
+    suffix = "".join(secrets.choice(NONCE_ALPHABET[1:]) for _ in range(8))
+    return f"{int(time.time() * 1000) + token_diff_ms}:{suffix}"
+
+
+def _signature_text(url: str, method: str, nonce: str) -> str:
+    parts = urlsplit(url)
+    relative = unquote(parts.path) + (f"?{parts.query}" if parts.query else "")
+    return f"{nonce}\n{method.upper()}\n{relative}\n{parts.hostname or ''}\n"
+
+
+def _build_nd_auth(
+    url: str,
+    credentials: SmartEduCredentials | None,
+    *,
+    method: str = "GET",
+    nonce: str | None = None,
+) -> str:
+    if credentials is None or not credentials.mac_key:
+        token_id = credentials.access_token if credentials else "0"
+        return f'MAC id="{token_id or "0"}",nonce="0",mac="0"'
+    nonce = nonce or _generate_nonce(credentials.token_diff_ms)
+    signature = hmac.new(
+        credentials.mac_key.encode("utf-8"),
+        _signature_text(url, method, nonce).encode("utf-8"),
+        "sha256",
+    ).digest()
+    mac = base64.b64encode(signature).decode("ascii")
+    return f'MAC id="{credentials.access_token}",nonce="{nonce}",mac="{mac}"'
+
+
+def _header_map(
+    url: str,
+    *,
+    credentials: SmartEduCredentials | None = None,
+) -> dict[str, str]:
     headers = {
         "Accept": "application/json, application/pdf, */*",
         "Origin": "https://basic.smartedu.cn",
@@ -126,11 +245,10 @@ def _header_map(url: str) -> dict[str, str]:
         "User-Agent": "Mozilla/5.0 (compatible; AIStudy/0.17)",
     }
     if urlsplit(url).hostname in SMARTEDU_CDN_HOSTS:
-        # Anonymous public resources accept the same placeholder used by the
-        # upstream browser client. We deliberately do not collect or persist a
-        # parent's localStorage token in the AIStudy service.
+        # Authorization remains the public placeholder used by the platform;
+        # the private CDN authenticates each URL through the MAC header.
         headers["Authorization"] = "Bearer 0"
-        headers["X-ND-AUTH"] = 'MAC id="0",nonce="0",mac="0"'
+        headers["X-ND-AUTH"] = _build_nd_auth(url, credentials)
     return headers
 
 
@@ -248,15 +366,27 @@ class SmartEduSource:
         self._catalog_cache: tuple[float, tuple[SmartEduTextbook, ...]] | None = None
         self._cache_lock = Lock()
 
-    def _request_bytes(self, url: str, *, max_bytes: int) -> bytes:
-        request = Request(url, headers=_header_map(url), method="GET")
+    def _request_bytes(
+        self,
+        url: str,
+        *,
+        max_bytes: int,
+        credentials: SmartEduCredentials | None = None,
+    ) -> bytes:
+        request = Request(
+            url,
+            headers=_header_map(url, credentials=credentials),
+            method="GET",
+        )
         try:
             with self._opener.open(request, timeout=SOURCE_TIMEOUT_SECONDS) as response:
                 return _read_bounded(response, max_bytes)
         except SmartEduSourceError:
             raise
         except HTTPError as error:
-            if error.code in {401, 403}:
+            if error.code in {401, 403} or (
+                error.code == 400 and urlsplit(url).hostname in SMARTEDU_CDN_HOSTS
+            ):
                 raise SmartEduSourceError("smartedu_source_requires_authentication") from error
             raise SmartEduSourceError("smartedu_source_unavailable") from error
         except (OSError, TimeoutError, URLError, ValueError) as error:
@@ -378,12 +508,21 @@ class SmartEduSource:
             raise SmartEduSourceError("smartedu_pdf_not_available")
         return SmartEduResource(textbook=textbook, pdf_urls=tuple(pdf_urls[:3]))
 
-    def download_pdf(self, resource_id: str) -> DownloadedSmartEduTextbook:
+    def download_pdf(
+        self,
+        resource_id: str,
+        *,
+        credentials: SmartEduCredentials | None = None,
+    ) -> DownloadedSmartEduTextbook:
         resource = self.resolve(resource_id)
         last_error: SmartEduSourceError | None = None
         for url in resource.pdf_urls:
             try:
-                data = self._request_bytes(url, max_bytes=MAX_DOCUMENT_BYTES)
+                data = self._request_bytes(
+                    url,
+                    max_bytes=MAX_DOCUMENT_BYTES,
+                    credentials=credentials,
+                )
                 if not data.startswith(b"%PDF-"):
                     raise SmartEduSourceError("smartedu_source_not_pdf")
                 return DownloadedSmartEduTextbook(
