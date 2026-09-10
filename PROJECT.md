@@ -2,10 +2,10 @@
 
 ## 文档信息
 
-- 状态：`ACTIVE`（本地 API/OpenAPI 为 0.17.4/0039，Ubuntu 仍为 0.17.3/0039；家长后台 SmartEdu 目录选择和私有 PDF 草稿加载已部署，私有 CDN MAC 签名修复已完成本地测试但尚待凭据、发布和真实 PDF 验证；古诗抽查仅发布并读取标题、连续诗句和全部选项均通过确定性目录的经典古诗，Nova 9 已完成 12 轮全六首抽查；数学今日任务已支持指定题目按序执行、服务端/端侧题号恢复、跳过和断网排队；家长首页已移除语文技能报告并只展示上海自然日当天到期错题，Ubuntu Web 已完成受控部署；用户已确认并完成远端同一家庭两个孩子的学习历史清理，账号/档案/教材/审核/设备设置/审计记录保留；正式内容、真实 Provider 和其他完整设备验收仍待完成）
+- 状态：`ACTIVE`（本地 API/OpenAPI 为 0.17.5/0039，Ubuntu 为 0.17.4/0039；家长后台 SmartEdu 目录选择和私有 PDF 草稿加载已通过 GHCR 部署，本地已追加修复真实 Bearer、中文路径与有界 CDN 重试，但尚未发布部署，真实 PDF 验证仍待完成；古诗抽查仅发布并读取标题、连续诗句和全部选项均通过确定性目录的经典古诗，Nova 9 已完成 12 轮全六首抽查；数学今日任务已支持指定题目按序执行、服务端/端侧题号恢复、跳过和断网排队；家长首页已移除语文技能报告并只展示上海自然日当天到期错题，Ubuntu Web 已完成受控部署；用户已确认并完成远端同一家庭两个孩子的学习历史清理，账号/档案/教材/审核/设备设置/审计记录保留；正式内容、真实 Provider 和其他完整设备验收仍待完成）
 - Owner：`TBD（项目发起人确认）`
 - 最后更新：`2026-09-10`
-- 项目仓库：本地 Git 仓库 `/Users/ybh/PycharmProjects/study`；`origin` 为 `git@github.com:yubinhong/AIStudy.git`；最后远端标签为 `v0.17.3`，Ubuntu 运行 `0.17.3/0039` 的 SmartEdu 自用增量，当前载荷为同一提交的 GHCR 镜像，GitHub quality/Android Actions 和两个 GHCR 发布 job 已通过
+- 项目仓库：本地 Git 仓库 `/Users/ybh/PycharmProjects/study`；`origin` 为 `git@github.com:yubinhong/AIStudy.git`；最后远端标签为 `v0.17.4`，Ubuntu 运行 `0.17.4/0039` 的 SmartEdu 自用增量，当前载荷为同一提交的 GHCR 镜像，GitHub quality/Android Actions 和两个 GHCR 发布 job 已通过
 - 设计基线：`家庭AI学习助手_架构设计_v1.0.docx`
 
 - SmartEdu 临时凭据边界：家长页面只在当前标签页 `sessionStorage` 保存已粘贴 JSON 和同一孩子/资源的幂等键以支持刷新和连续加载；手动清除、退出登录或关闭标签页后清除，服务端不持久化凭据，并在下载前回放已完成的同资源请求。
@@ -99,7 +99,7 @@
 | 孩子/移动端 | Flutter（iOS/Android） | Flutter stable `3.44.6`（`ADR-0007` Accepted）；`image_picker 1.2.3`、`crypto 3.0.7`、`flutter_secure_storage 9.2.4`、`sqflite 2.4.3` | iPad 为孩子主端；任务/拍题/提示、安全会话、数学三入口、视觉四态自动候选与人工校正、长文本确认、上传进度、完整解答和账号切换已实现；实际相机闭环与设备回归待完成 |
 | Web/PWA | Next.js + TypeScript | Next.js `16.2.10`（`ADR-0007` Accepted） | 家长后台和 Windows 首版入口；登录、统一孩子管理/切换、家庭权限、SmartEdu 目录选择、PDF 教材审核发布、任务建议审批、导出及数学/语文学习记录已实现；Ubuntu 真实账号浏览器待验收 |
 | API/Worker | Python + FastAPI + 异步 Worker | Python `3.12.x`、FastAPI `0.136.3`、boto3 `1.43.46`、Pillow `12.3.0`、pdfplumber `0.11.7`、pypdfium2 `5.11.0`、PaddleOCR `3.7.0`、PaddlePaddle CPU `3.3.1` | 模块化单体；SmartEdu 元数据/PDF 有界适配器、PDF 文本辅助解析、私有页图渲染、多模态教材知识图谱、Tutor、Mistake/Review/Recommendation worker 已有本地实现 |
-| 视觉/推理 Provider | Provider Adapter + 固定 JSON Schema / Tutor Policy | `STUDY_LOCAL_MODEL_ENABLED=true` 时使用 Compose 内部 Qwen3.5-4B Q4_K_M；否则使用自用 NewAPI URL/key/model | 图片解析与 Tutor 分离；本地/云端由同一 `NewApiConfig` 选择且不自动跨 Provider 回退；服务端只保存未确认 Extraction，人工确认后才生成 VerifiedQuestion；英语真实 Provider 未接入 |
+| 视觉/推理 Provider | Provider Adapter + 固定 JSON Schema / Tutor Policy | `STUDY_LOCAL_MODEL_ENABLED=true` 时由 `infra/compose/compose.sh` 叠加可选 Compose 文件并使用内部 Qwen3.5-4B Q4_K_M；否则基础拓扑不创建 `local-model` 并使用自用 NewAPI URL/key/model | 图片解析与 Tutor 分离；本地/云端由同一 `NewApiConfig` 选择且不自动跨 Provider 回退；服务端只保存未确认 Extraction，人工确认后才生成 VerifiedQuestion；英语真实 Provider 未接入 |
 | 业务数据 | PostgreSQL + pgvector | PostgreSQL `16.10`（Compose） | PostgreSQL 是业务事实来源；Profile/Learning/Capture/Identity/Tutor/Report/Mistake/Review、CurriculumSnapshot、来源证据和 TaskRecommendation 已持久化；pgvector 只做已发布知识检索，不替代关系/审批事实 |
 | 缓存/队列 | Redis | `TBD（P0 锁定）` | 不作为长期业务事实来源 |
 | 文件 | 本地 MinIO / S3 兼容 Adapter | MinIO `RELEASE.2025-09-07T16-13-09Z`；boto3 `1.43.46` | 私有 Bucket；API/worker 由内部地址有界流式写入且 MinIO 不暴露 LAN，见 ADR-0018/0011。Ubuntu 已完成成对迁移 |
@@ -110,11 +110,11 @@
 
 | 环境 | 用途 | 访问方式 | 数据级别 | 部署来源 |
 | --- | --- | --- | --- | --- |
-| local | 本地开发、离线与多端联调 | `infra/compose/compose.yml` 编排 PostgreSQL、Redis、MinIO、API、家长 Web、迁移、worker 和可切换的 llama.cpp/Qwen 本地模型服务；模型仅在 `STUDY_LOCAL_MODEL_ENABLED=true` 时加载 | synthetic / 自用 restricted（需显式启用并自行承担生命周期） | GitHub Actions 发布的 GHCR 镜像；本地源码调试使用各子项目标准命令 |
+| local | 本地开发、离线与多端联调 | `infra/compose/compose.yml` 编排 PostgreSQL、Redis、MinIO、API、家长 Web、迁移和 worker；`infra/compose/compose.sh` 仅在 `STUDY_LOCAL_MODEL_ENABLED=true` 时叠加 `compose.local-model.yml` | synthetic / 自用 restricted（需显式启用并自行承担生命周期） | GitHub Actions 发布的 GHCR 镜像；本地源码调试使用各子项目标准命令 |
 | staging | 集成、设备、AI 评测和迁移/恢复验证 | `TBD（P0/P1 建立）` | sanitized/synthetic | CI 产物，禁止从个人工作区直接发布 |
 | production | 家庭正式使用 | `TBD（发布方案和 RUNBOOK 批准后建立）` | restricted | 仅允许已通过发布门槛的版本化产物 |
 
-当前事实：Git 位于 `master`；本地 API/OpenAPI 为 `0.17.4`，Ubuntu 为 `0.17.3`，迁移 head 均为 `0039_smartedu_curriculum_source`；家长首页已移除语文技能报告并只展示上海自然日当天到期错题。SmartEdu 目录和来源加载基础版本已部署 Ubuntu，远端载荷为 `ghcr.io/yubinhong/aistudy-api:sha-a7454a8`/`ghcr.io/yubinhong/aistudy-web:sha-a7454a8`，Compose 使用 `pull_policy: always`。本地 `0.17.4` 默认免配置，页面需要时向 API 传递一次性 JSON（`access_token` 必填，`mac_key`/`diff` 可选），API 对私有 CDN URL 动态签名；凭据临时保存在当前标签页 `sessionStorage`，支持刷新和连续加载，手动清除、退出登录或关闭标签页后清除。该修复尚待发布、部署和真实 PDF 验证，下载成功后才进入现有私有草稿/解析/家长审核链路。用户已确认并完成远端同一家庭两个孩子的全部学习历史清理，目标学习表和已登记拍题对象均为 0；保留账号、孩子档案、教材/快照/已审核内容、设备设置和审计记录。PostgreSQL 已有私有页图元数据、页级 AI 分析、全书知识图谱、规范化知识点及语文 Content/Attempt/Review；同一孩子可并行发布多份教材，推荐遍历全部已发布且已批准的知识图谱，并继续为每条题目保留确切教材/页码来源。全实例只有一个超级管理员 `super_admin`，它可开通独立亲戚家庭及其普通家长；普通家长只能管理自己名下孩子。只有显式声明为国家公开教材、完整内容指纹匹配且来源图谱已批准的 PDF 可跨家庭复用私有 PDF/页图/解析草稿，目标家庭仍独立审核发布。2026-09-10 已完成 Ubuntu `0.17.3`/`0039` SmartEdu 基础版 GHCR 拉取式部署，备份与恢复校验、迁移、健康、worker、OpenAPI 和局域网 smoke 均通过；隔离 Chromium 已验证跨家庭登录态、Cookie/CSRF/撤销及双孩子学科/切换。孩子英语框架保持关闭，正式教研/版权、真实 Provider/PDF、Ubuntu 真实账号浏览器与设备验收仍未执行。
+- 当前事实：Git 位于 `master`；本地 API/OpenAPI 为 `0.17.5`、Ubuntu 为 `0.17.4`，迁移 head 均为 `0039_smartedu_curriculum_source`；家长首页已移除语文技能报告并只展示上海自然日当天到期错题。SmartEdu 目录、来源加载和初版私有 CDN 签名已部署 Ubuntu，远端载荷为 `ghcr.io/yubinhong/aistudy-api:v0.17.4`/`ghcr.io/yubinhong/aistudy-web:v0.17.4`，Compose 使用 `pull_policy: always`；本地 `0.17.5` 的实际 Bearer、路径编码和有界 CDN 重试尚待发布部署。页面需要时向 API 传递一次性 JSON（`access_token` 必填，`mac_key`/`diff` 可选），凭据临时保存在当前标签页 `sessionStorage`，支持刷新和连续加载，手动清除、退出登录或关闭标签页后清除。真实 SmartEdu PDF 验证仍待执行，下载成功后才进入现有私有草稿/解析/家长审核链路。用户已确认并完成远端同一家庭两个孩子的全部学习历史清理，目标学习表和已登记拍题对象均为 0；保留账号、孩子档案、教材/快照/已审核内容、设备设置和审计记录。PostgreSQL 已有私有页图元数据、页级 AI 分析、全书知识图谱、规范化知识点及语文 Content/Attempt/Review；同一孩子可并行发布多份教材，推荐遍历全部已发布且已批准的知识图谱，并继续为每条题目保留确切教材/页码来源。全实例只有一个超级管理员 `super_admin`，它可开通独立亲戚家庭及其普通家长；普通家长只能管理自己名下孩子。只有显式声明为国家公开教材、完整内容指纹匹配且来源图谱已批准的 PDF 可跨家庭复用私有 PDF/页图/解析草稿，目标家庭仍独立审核发布。2026-09-10 已完成 Ubuntu `0.17.4`/`0039` GHCR 拉取式部署及 Compose 可选模型清理，备份与恢复校验、迁移、健康、worker、OpenAPI 和局域网 smoke 均通过；`STUDY_LOCAL_MODEL_ENABLED=false` 时基础 Compose 不创建 `local-model`，不代表本地推理已验收；隔离 Chromium 已验证跨家庭登录态、Cookie/CSRF/撤销及双孩子学科/切换。孩子英语框架保持关闭，正式教研/版权、真实 Provider/PDF、Ubuntu 真实账号浏览器与设备验收仍未执行。
 
 2026-09-04/05 新增并部署家长后台分学科学习记录：侧栏学习记录展开为数学和语文两个子菜单；数学页继续读取已确认数学题/讲解，语文页通过家长专用查询读取 `chinese_attempts` 并展示孩子答案、对错、错误时正确答案、耗时及复习状态。新增查询为兼容式 API 扩展，API/Web 完整回归、登录态浏览器 E2E、Ubuntu 备份恢复、API/Web health 和运行源码核验已通过；没有数据库迁移。版本 `v0.17.2` 已提交并推送，Ubuntu 真实账号/设备验收仍待执行。
 

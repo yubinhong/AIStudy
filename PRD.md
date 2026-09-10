@@ -28,7 +28,7 @@
 - 产品/技术设计明确了四类现有设备、P0/P1/P2 分工、核心领域和发布门槛。
 - 家庭已有 iPad mini 6、Windows 笔记本、iPhone 11 和华为 nova 9，可用于真实设备验证。
 - 竞品方向参考设计稿列出的好未来公开材料；具体在售型号、价格和能力在正式竞品结论前仍需复核。
-- Ubuntu 自用 Compose 运行 API/OpenAPI `0.17.3`、迁移 `0039_smartedu_curriculum_source`，载荷为 GHCR `sha-a7454a8`；本地 API/OpenAPI 已前移为 `0.17.4`，并增加 SmartEdu 私有 CDN 签名修复，但尚未发布、部署或完成真实 PDF 验证。已支持多家庭会话作用域、实例唯一超级管理员、家长自有孩子、显式公开教材复用和数学/语文分学科学习记录。现有能力包含拍题讲解原子沉淀错题、实际题目复习与 ReviewAttempt、PDF-only 私有原页预览、分批多模态页面理解、整本知识图谱/家长批准、题意相关云端 L1/L2、来源受限任务规划、语文古诗抽查与看图写话。真实 SmartEdu PDF、Provider 质量/成本、正式内容、Ubuntu 真实账号/iPad/完整设备验收仍未完成，不能把自动化结果描述成完整产品验收。
+- Ubuntu 自用 Compose 运行 API/OpenAPI `0.17.4`、迁移 `0039_smartedu_curriculum_source`，载荷为 GHCR `v0.17.4`；本地 API/OpenAPI 已前移为 `0.17.5`，并增加 SmartEdu 真实 Bearer、路径编码和有界 CDN 重试，但尚未发布、部署或完成真实 PDF 验证。已支持多家庭会话作用域、实例唯一超级管理员、家长自有孩子、显式公开教材复用和数学/语文分学科学习记录。现有能力包含拍题讲解原子沉淀错题、实际题目复习与 ReviewAttempt、PDF-only 私有原页预览、分批多模态页面理解、整本知识图谱/家长批准、题意相关云端 L1/L2、来源受限任务规划、语文古诗抽查与看图写话。真实 SmartEdu PDF、Provider 质量/成本、正式内容、Ubuntu 真实账号/iPad/完整设备验收仍未完成，不能把自动化结果描述成完整产品验收。
 
 ## 3. 目标与非目标
 

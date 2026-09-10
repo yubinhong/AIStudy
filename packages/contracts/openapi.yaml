@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 家庭 AI 学习助手 API
-  version: 0.17.4
+  version: 0.17.5
   description: Self-hosted Household account/session, multi-subject learning, Chinese practice, and gated English speaking contracts.
 servers:
   - url: http://localhost:8000
@@ -3009,7 +3009,7 @@ components:
           const: study-api
         version:
           type: string
-          const: 0.17.4
+          const: 0.17.5
     CreateChildRequest:
       type: object
       additionalProperties: false

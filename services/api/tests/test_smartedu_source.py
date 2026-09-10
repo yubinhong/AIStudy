@@ -55,16 +55,24 @@ class FakeResponse:
 
 
 class FakeOpener:
-    def __init__(self, responses: dict[str, bytes | Exception]) -> None:
+    def __init__(
+        self,
+        responses: dict[str, bytes | Exception | list[bytes | Exception]],
+    ) -> None:
         self.responses = responses
         self.requests: list[str] = []
         self.request_headers: dict[str, dict[str, str]] = {}
+        self.request_header_history: list[dict[str, str]] = []
 
     def open(self, request, timeout: float) -> FakeResponse:
         del timeout
         self.requests.append(request.full_url)
-        self.request_headers[request.full_url] = dict(request.header_items())
+        headers = dict(request.header_items())
+        self.request_headers[request.full_url] = headers
+        self.request_header_history.append(headers)
         response = self.responses[request.full_url]
+        if isinstance(response, list):
+            response = response.pop(0)
         if isinstance(response, Exception):
             raise response
         return FakeResponse(response)
@@ -157,7 +165,87 @@ def test_smartedu_source_applies_credentials_to_private_cdn_request() -> None:
     assert nd_auth.startswith('MAC id="synthetic-access-token",nonce="')
     assert 'nonce="0"' not in nd_auth
     assert 'mac="0"' not in nd_auth
-    assert opener.request_headers[PDF_URL]["Authorization"] == "Bearer 0"
+    assert opener.request_headers[PDF_URL]["Authorization"] == ("Bearer synthetic-access-token")
+
+
+def test_smartedu_source_encodes_non_ascii_download_path() -> None:
+    raw_pdf_url = "https://r1-ndr-private.ykt.cbern.com.cn/assets/中文 教材.pdf"
+    encoded_pdf_url = (
+        "https://r1-ndr-private.ykt.cbern.com.cn/assets/%E4%B8%AD%E6%96%87%20%E6%95%99%E6%9D%90.pdf"
+    )
+    payload = _resource_payload()
+    payload["ti_items"] = [
+        {
+            "ti_is_source_file": True,
+            "ti_format": "pdf",
+            "ti_storage": raw_pdf_url,
+            "ti_storages": [],
+        }
+    ]
+    opener = FakeOpener(
+        {
+            DETAIL_URL: json.dumps(payload).encode(),
+            encoded_pdf_url: PDF_DATA,
+        }
+    )
+
+    downloaded = SmartEduSource(opener=opener).download_pdf(RESOURCE_ID)
+
+    assert downloaded.data == PDF_DATA
+    assert encoded_pdf_url in opener.requests
+
+
+def test_smartedu_source_retries_private_400_with_a_new_signature() -> None:
+    credentials = SmartEduCredentials(
+        access_token="synthetic-access-token",
+        mac_key="synthetic-mac-key",
+    )
+    opener = FakeOpener(
+        {
+            DETAIL_URL: json.dumps(_resource_payload()).encode(),
+            PDF_URL: [
+                HTTPError(PDF_URL, 400, "InvalidArgument", {}, None),
+                PDF_DATA,
+            ],
+        }
+    )
+
+    downloaded = SmartEduSource(opener=opener, retry_delays=(0,)).download_pdf(
+        RESOURCE_ID,
+        credentials=credentials,
+    )
+
+    assert downloaded.data == PDF_DATA
+    assert opener.requests.count(PDF_URL) == 2
+    assert (
+        opener.request_header_history[-2]["X-nd-auth"]
+        != (opener.request_header_history[-1]["X-nd-auth"])
+    )
+
+
+def test_smartedu_source_tries_fixed_private_mirror_after_server_error() -> None:
+    r2_pdf_url = PDF_URL.replace("r1-ndr-private", "r2-ndr-private")
+    payload = _resource_payload()
+    payload["ti_items"] = [
+        {
+            "ti_is_source_file": True,
+            "ti_format": "pdf",
+            "ti_storage": PDF_URL,
+            "ti_storages": [],
+        }
+    ]
+    opener = FakeOpener(
+        {
+            DETAIL_URL: json.dumps(payload).encode(),
+            PDF_URL: HTTPError(PDF_URL, 500, "upstream error", {}, None),
+            r2_pdf_url: PDF_DATA,
+        }
+    )
+
+    downloaded = SmartEduSource(opener=opener).download_pdf(RESOURCE_ID)
+
+    assert downloaded.data == PDF_DATA
+    assert opener.requests[-2:] == [PDF_URL, r2_pdf_url]
 
 
 def test_smartedu_credentials_accept_upstream_access_token_only_json() -> None:

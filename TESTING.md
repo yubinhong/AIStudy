@@ -1,32 +1,40 @@
 # TESTING.md
 
+## 2026-09-10 SmartEdu 真实凭据下载重试修复
+
+- 失败复现：Ubuntu 连续两次真实页面导入均到达 API 并返回 `503`；同时间目录、认证会话和 API/Web health 正常，且没有进入私有对象写入或解析队列。控制台 `startTime` TypeError 来自页面外辅助脚本，与接口 503 无关。
+- API：SmartEdu 定向 `20 passed`，非集成全量通过；Ruff format/check、Mypy `64` 个源文件通过。新增回归覆盖有凭据时真实 Bearer、URL 绑定 MAC、非 ASCII/空格路径编码、400 新 nonce 重签和固定私有镜像切换；fixture 全为 synthetic，不含真实凭据或教材正文。
+- Web：Vitest `24` 个文件、`44` 项通过；Prettier、ESLint、TypeScript 和 production build 通过。`smartedu_source_unavailable` 显示有界重试与本地 PDF 回退说明。本机 Node `20.17.0` 低于锁定 `24.18.0`，仍产生既有 engine warning。
+- 未执行：提交、推送、tag、GHCR 发布、Ubuntu 新镜像部署、真实凭据/PDF、版权/教研、真实 Provider 和设备回归。
+
 ## 2026-09-10 SmartEdu 私有 CDN 签名修复
 
 - API：SmartEdu 定向 `17 passed`，非集成全量 `278 passed, 32 deselected`；Ruff format/check 与 Mypy 通过。覆盖匿名默认路径、仅 `access_token` 的上游 JSON、可选 `mac_key`/`diff`、URL/查询绑定、动态 nonce、控制字符/超限输入防护、私有 CDN `400/401/403` 分类、API 标准错误信封，以及请求凭据不进入教材记录/响应。
 - Web：Vitest `24` 个文件、`44` 项通过；Prettier、ESLint、TypeScript 和 production build 通过。错误解析优先读取 API 的 `{code,message}`，同时兼容旧 `{detail}`；默认免配置，凭据 JSON 输入和获取步骤可见，凭据在当前标签页临时缓存并可手动清除，保留本地 PDF 上传。
 - 契约/Compose：API/OpenAPI 已前移为 `0.17.4`，仍为 72 paths、84 HTTP operations、101 schemas；新增可选 `smartedu_credentials_json` 请求字段，无数据库迁移。脱敏临时目录 `docker compose config --quiet` 通过，Compose 不再挂载 SmartEdu 专用环境文件。
-- 未执行：服务器端 SmartEdu 凭据配置、GHCR 发布、Ubuntu 部署和真实 `PDF -> 私有草稿 -> 解析队列`。Ubuntu 当前仍运行 `0.17.3`/`sha-a7454a8`，不得把本地自动化描述为运行修复。
+- 未执行：服务器端 SmartEdu 凭据配置、真实 `PDF -> 私有草稿 -> 解析队列`、版权/教研、真实 Provider、Ubuntu 真实账号浏览器和设备回归。Ubuntu `v0.17.4` GHCR 部署已完成，不得把本地自动化或健康检查描述为真实教材质量验收。
+- 发布说明：`python3 scripts/test_extract_release_notes.py` 通过；tag 质量工作流会校验 `CHANGELOG.md` 中精确匹配 tag 的 `## vX.Y.Z - YYYY-MM-DD` 区块，Android 发布工作流使用同一区块创建或更新中文 Release，缺少或重复区块时失败并阻止发布。
 
 ## 2026-09-09/10 家长后台选择并加载 SmartEdu 电子教材
 
 - API：`services/api/.venv/bin/pytest -q services/api/tests/test_smartedu_source.py` 定向通过；`services/api/.venv/bin/pytest -q services/api/tests -m 'not integration'` 全量通过；Ruff format/check 和 Mypy 通过。回归覆盖目录标签筛选、固定主机边界、详情 PDF 来源、畸形 URL、非受信主机、SHA-256、家长授权、私有对象写入、解析队列和来源元数据。
 - Web：`cd apps/web && pnpm test` 通过（23 个文件、41 项）；`pnpm typecheck`、`pnpm lint`、`pnpm format:check`、`pnpm build` 通过。本机 Node `20.17.0` 低于项目锁定的 `24.18.0`，仅产生已有 engine warning。
 - 契约/迁移：OpenAPI YAML/JSON Schema 解析与运行时新增 SmartEdu 路由检查通过；`services/api/.venv/bin/alembic -c services/api/alembic.ini upgrade head --sql` 通过，生成 `0039_smartedu_curriculum_source` 的可空来源字段、约束、索引和版本前移 SQL；`git diff --check` 通过。
-- Ubuntu 部署：备份 `/home/syin/study-backups/20260910T012805Z` 隔离恢复通过（39 张 PostgreSQL public 表、739 个 MinIO 快照文件）；远端 x86_64 已拉取 GHCR API/Web `sha-a7454a8`，`0039_smartedu_curriculum_source (head)`、Compose、API/Web 本机和 LAN health、SmartEdu 运行时路由/适配器检查、四个 worker 和最近 5 分钟应用日志错误计数均通过。API digest 为 `sha256:b3ec72fb3949bc14987b2407ef9499fb2be025f578f0c49652b0c68470563fcf`，Web digest 为 `sha256:ca2be9204745ae50f934db6af69e68841a0389d0195c5b95bf3d16ece6c275a6`，OCI revision 均为 `a7454a89bf7e83b847671de8b46460ecdb422840`；MinIO `9000` 未映射宿主端口。
+- Ubuntu 部署：备份 `/home/syin/study-backups/20260910T065224Z` 隔离恢复通过（39 张 PostgreSQL public 表、739 个 MinIO 快照文件）；远端 x86_64 已拉取 GHCR API/Web `v0.17.4`，`0039_smartedu_curriculum_source (head)`、Compose、API/Web 本机和 LAN health、SmartEdu 运行时路由/适配器检查、四个 worker 和最近 10 分钟应用日志错误计数均通过。API digest 为 `sha256:4c701f92e1811894a106f613de9c46ba780d8ecce5c1249b84c1b8c35cbfd4ad`，Web digest 为 `sha256:f72ab165edb493ff03bcf4de716226e7e98fa01d139559fa3e95c5190e4c61d1`，OCI revision 均为 `6a75e81aa7120ab840e79e61ef66c20605c9b17f`；MinIO `9000` 未映射宿主端口。
 - 未执行：真实 SmartEdu 目录和 PDF、平台登录/条款、真实 Provider/PDF 质量与成本、真实家长浏览器、四端设备和完整 Web E2E。v0.17.3 GHCR 已发布并部署；既有本地上传流程未受影响。
 
 ## 2026-09-09 家长拍题图片 GitHub/Ubuntu 发布
 
 - 发布载荷：提交 `f6ae9a2` 已推送 `master`；GitHub Actions `quality` run `34301914666` 的 contracts、API、Web、Chromium E2E 和 API/Web GHCR 发布 job 均为 `success`。远端 API/Web 固定 `sha-f6ae9a2`，OCI revision 均为 `f6ae9a2f8a891c7ffeeec05391c9c933f104f627`；运行 index digest 分别为 `sha256:32066c2a6056d53821844c3a47b38560cdfab21ff96ab50059a6161c9a476261` 和 `sha256:e7b2292978c3948d2dda985822cf84d6309688091dbb717be9b4cef92424d554`。
 - 备份与恢复：`/home/syin/study-backups/20260909T021709Z`；隔离恢复报告 `postgres_public_tables=39`、`minio_snapshot_files=739`。旧 Compose 与 `.env` 保存于 `/home/syin/study-source-backups/20260909T021709Z-capture-images/`。
-- 运行验证：`docker compose config --quiet`、GHCR `pull`、`up -d --no-build`、迁移服务退出成功、API/Web 本机和 LAN `healthz`、Alembic `0038_classical_poem_options (head)`、API/Web/四个 worker、OpenAPI 媒体路由和 MinIO 私有端口均通过；最近 10 分钟应用错误计数为 0。`STUDY_LOCAL_MODEL_ENABLED=false` 下 local-model 仅空闲，不计为本地推理验收。
+- 运行验证：Compose 配置、GHCR `pull`、`up -d --no-build`、迁移服务退出成功、API/Web 本机和 LAN `healthz`、Alembic `0039_smartedu_curriculum_source (head)`、API/Web/四个 worker、OpenAPI 媒体路由和 MinIO 私有端口均通过；最近 10 分钟应用错误计数为 0。`STUDY_LOCAL_MODEL_ENABLED=false` 下基础 Compose 不包含或启动 `local-model`。
 - 未执行：Ubuntu 真实账号浏览器、四设备完整 E2E、真实 Provider/PDF 质量与成本、staging/production 发布。
 
 ## 2026-09-08 Ubuntu GHCR 拉取式部署
 
 - 部署载荷：代码提交 `6a518fc`；远端 `192.168.1.4` 的 API/Web 固定 `ghcr.io/yubinhong/aistudy-api:sha-6a518fc` 与 `ghcr.io/yubinhong/aistudy-web:sha-6a518fc`。运行 digest 分别为 `sha256:653444b0d1c2bf9494c54b0793cdfc37824354cea8c6ca221ef85cc4398095da` 和 `sha256:c312f5301efe5fe448c550f9fe54e344c4c324ae66609f761e7eeb02c43dc729`，OCI revision 均为 `6a518fc1de39c4f8414a40185a7cae593c6010c2`。
 - 备份与恢复：`/home/syin/study-backups/20260908T074345Z`；隔离恢复报告 `postgres_public_tables=39`、`minio_snapshot_files=715`。旧 Compose 与 `.env` 保存于 `/home/syin/study-source-backups/20260908T074345Z-ghcr/`。
-- 运行验证：`docker compose config --quiet`、GHCR `pull`、`up -d --no-build`、API/Web 本机和 LAN `healthz`、`0038_classical_poem_options (head)`、迁移/API/Web/四个 worker 状态均通过；最近 10 分钟日志无新增错误。`STUDY_LOCAL_MODEL_ENABLED=false` 下 local-model 仅空闲，不计为本地推理验收。
+- 运行验证：Compose 配置、GHCR `pull`、`up -d --no-build`、API/Web 本机和 LAN `healthz`、`0039_smartedu_curriculum_source (head)`、迁移/API/Web/四个 worker 状态均通过；最近 10 分钟日志无新增错误。`STUDY_LOCAL_MODEL_ENABLED=false` 下基础 Compose 不包含或启动 `local-model`。
 - 未执行：Ubuntu 真实账号浏览器、四设备完整 E2E、真实 Provider/PDF 质量与成本、staging/production 发布。
 
 ## 2026-09-08 代码/契约/文档一致性复核
@@ -50,7 +58,7 @@
 
 ## 1. 当前状态与质量目标
 
-当前仓库已有 P0/P1 依赖清单、三类锁文件、核心测试和 CI 草案。API 的 Household/认证/学习/Capture/可信 Tutor/周报/导出、Mistake/Review closeout、教材 PDF-only 私有原页/多模态知识图谱、作答四态/推荐审批、Web/Flutter 入口、SQLite 任务位置与离线 Attempt/任务终态队列、服务端任务位置/容量/未来日期/撤销保护和 Compose 已验证；Android/iOS 构建及 PostgreSQL/MinIO 恢复已有记录。本地 API/OpenAPI 为 `0.17.4`，Ubuntu 为 `0.17.3`，迁移头均为 `0039_smartedu_curriculum_source`。2026-09-09/10 已新增并部署家长 SmartEdu 目录选择、私有 PDF 加载和来源元数据；私有 CDN 签名修复只完成本地回归，真实目录/PDF、Provider 质量成本、真实账号/设备回归仍待执行。
+当前仓库已有 P0/P1 依赖清单、三类锁文件、核心测试和 CI 草案。API 的 Household/认证/学习/Capture/可信 Tutor/周报/导出、Mistake/Review closeout、教材 PDF-only 私有原页/多模态知识图谱、作答四态/推荐审批、Web/Flutter 入口、SQLite 任务位置与离线 Attempt/任务终态队列、服务端任务位置/容量/未来日期/撤销保护和 Compose 已验证；Android/iOS 构建及 PostgreSQL/MinIO 恢复已有记录。本地与 Ubuntu API/OpenAPI 均为 `0.17.4`，迁移头均为 `0039_smartedu_curriculum_source`。2026-09-09/10 已新增并部署家长 SmartEdu 目录选择、私有 PDF 加载和来源元数据；真实目录/PDF、Provider 质量成本、真实账号/设备回归仍待执行。
 
 2026-09-10 SmartEdu 重试修复：Web `sessionStorage` 凭据读写/清除、同孩子/资源幂等键复用和 API 已完成导入回放均有定向回归；第二次同键请求不再调用 PDF 下载器。缓存仅属于当前标签页，手动清除、退出登录或关闭标签页后清除。
 
@@ -129,7 +137,7 @@
 
 同日部署复核发现首次同步的 `tutor.py` 路径错误，运行容器仍使用旧路由，导致设备日志中 L1/L2 为 `200` 而 L3 为旧 `409`。已同步到 `services/api/src/study_api/routes/tutor.py`、清除误放的未引用副本并重建 API；远端健康端点、文件检查和容器内 `inspect` 均确认新 `general-solution-policy.v1` 路由已经运行。
 
-- 核心用户路径：家长上传清洁 PDF → 服务端私有渲染原页、分批多模态理解并归纳全书知识图谱 → 家长对照原页批准并发布 → 孩子选择数学/学习模式 → 错题安全拍摄题目+答题区 → 确认题目和作答状态 → L1 看懂题意/L2 找到方法/L3 允许时完整讲解 → 原子 MistakeRecord/ReviewSchedule → 到期或提前加载真实题目、重新作答并追加 ReviewAttempt → 家长审核由错题和已批准知识点生成、包含具体题目/视觉说明/页码/日期/时长的任务 → 孩子执行并可打开教材原页 → 周报。本地和 Ubuntu `0.17.3/0039` 已接通代码和自动化；真实 Provider 质量/成本、正式内容、Ubuntu 真实账号浏览器和完整设备 E2E 未通过前仍不能判定整条路径完成。
+- 核心用户路径：家长上传清洁 PDF → 服务端私有渲染原页、分批多模态理解并归纳全书知识图谱 → 家长对照原页批准并发布 → 孩子选择数学/学习模式 → 错题安全拍摄题目+答题区 → 确认题目和作答状态 → L1 看懂题意/L2 找到方法/L3 允许时完整讲解 → 原子 MistakeRecord/ReviewSchedule → 到期或提前加载真实题目、重新作答并追加 ReviewAttempt → 家长审核由错题和已批准知识点生成、包含具体题目/视觉说明/页码/日期/时长的任务 → 孩子执行并可打开教材原页 → 周报。本地和 Ubuntu `0.17.4/0039` 已接通代码和自动化；真实 Provider 质量/成本、正式内容、Ubuntu 真实账号浏览器和完整设备 E2E 未通过前仍不能判定整条路径完成。
 - 不可接受的失败：跨家庭越权；原图/未确认脱敏图/儿童数据/密钥泄漏；同一图片被静默发送给多个 Provider；学习记录丢失或被最后写入覆盖；AI 在练习/复习或缺少错题门禁时直接代答、错误结论静默入库；删除请求未执行却报告成功；未记录的成本失控。
 - 覆盖策略：风险驱动，不设脱离代码基线的统一行覆盖率。家庭权限、幂等/离线合并、Tutor Policy/Schema、数据删除和核心 E2E 必须覆盖成功与失败路径；普通模块在 P0 代码基线后批准覆盖阈值。
 
@@ -191,14 +199,15 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | API Lint | `cd services/api && uv run ruff check .` | 每次 API 变更 | 通过（2026-08-24；全仓） |
 | API 类型 | `cd services/api && uv run mypy src` | 每次 API 变更 | 通过（2026-08-24；62 source files） |
 | API 单元 | `cd services/api && uv run pytest -m "not integration"` | 每次 API 变更 | 通过（2026-08-24：`249 passed, 32 deselected`；保留 Starlette/httpx deprecation warning） |
-| Compose 配置 | `docker compose -f infra/compose/compose.yml config` | Compose 变更 | 通过（2026-08-23：用隔离临时目录中的脱敏 `.env` 展开，`STUDY_LOCAL_MODEL_ENABLED=true` 下 `local-model`、健康检查、依赖和模型参数均有效；仓库实际 `.env` 按规则不提交） |
+| Compose 本地模型开关 | `scripts/test_compose_local_model_toggle.sh` | Compose/本地模型拓扑变更 | 通过（2026-09-10：`false` 的基础拓扑不含 `local-model`；`true` 叠加 `compose.local-model.yml` 后包含服务） |
+| Compose 配置 | `infra/compose/compose.sh config` | Compose 变更 | 通过（2026-09-10：统一入口按开关选择基础/本地模型拓扑；仓库实际 `.env` 按规则不提交） |
 | 本地模型路由 | `cd services/api && uv run pytest tests/test_newapi_provider.py -q` | Provider、模型或环境路由变更 | 通过（2026-08-24：`24 passed`；覆盖本地/云端互斥、Qwen 关闭 reasoning、2048 输出上限、600 秒本地上限和本地失败不重试） |
-| 本地 Qwen Compose smoke | `docker compose -f infra/compose/compose.yml up -d local-model api image-analysis-worker curriculum-analysis-worker`；检查 `local-model /health`、`/v1/models` 和 synthetic text/vision/schema 请求 | `STUDY_LOCAL_MODEL_ENABLED=true` 或 llama.cpp/GGUF/硬件变更 | 部分通过后关闭（2026-08-24，Ubuntu 12 GB）：镜像、Q4_K_M 权重和 BF16 projector 下载/加载，health、alias、multimodal、`local_qwen` 选择、文本 JSON 和私有端口通过。4 核下 synthetic 大图 600 秒内不收敛；8 核下短文本 1.387 秒，完整视觉请求 373.128 秒、生成 2048 tokens 后以 `provider_response_schema_invalid` 失败，模型约 5.87 GiB、无 Swap。视觉 Schema 门禁未通过，Ubuntu 已恢复云端并停止模型容器；详见 `docs/local-qwen-evaluation-report-2026-08-24.md`，未使用真实儿童数据 |
+| 本地 Qwen Compose smoke | `STUDY_LOCAL_MODEL_ENABLED=true infra/compose/compose.sh up -d local-model api image-analysis-worker curriculum-analysis-worker`；检查 `local-model /health`、`/v1/models` 和 synthetic text/vision/schema 请求 | `STUDY_LOCAL_MODEL_ENABLED=true` 或 llama.cpp/GGUF/硬件变更 | 部分通过后关闭（2026-08-24，Ubuntu 12 GB）：镜像、Q4_K_M 权重和 BF16 projector 下载/加载，health、alias、multimodal、`local_qwen` 选择、文本 JSON 和私有端口通过。4 核下 synthetic 大图 600 秒内不收敛；8 核下短文本 1.387 秒，完整视觉请求 373.128 秒、生成 2048 tokens 后以 `provider_response_schema_invalid` 失败，模型约 5.87 GiB、无 Swap。视觉 Schema 门禁未通过，Ubuntu 已恢复云端并停止模型容器；详见 `docs/local-qwen-evaluation-report-2026-08-24.md`，未使用真实儿童数据 |
 | 云端 Provider 回退 smoke | 关闭本地开关，重新创建 API/ImageAnalysis/CurriculumAnalysis worker；检查运行时 Provider 并执行 synthetic 数学文本 Schema 请求 | 本地模型回退云端或云端配置变更 | 通过（2026-08-24，Ubuntu）：运行时 `provider=newapi` 且本地模型容器 `Exited (0)`；不含儿童数据的 synthetic 数学文本在 3.591 秒内返回合法 3 步结构，API/Web/四个 worker 健康，宿主约 10 GiB available、Swap 为 0 |
-| Compose 完整启动 | `docker compose -f infra/compose/compose.yml pull && docker compose -f infra/compose/compose.yml up -d` | API/数据/跨模块变更 | 通过（2026-09-10；Ubuntu 使用 GHCR `sha-a7454a8`，备份恢复、0039 前滚、API/Web LAN health、SmartEdu 运行时路由和四个 worker 已核验） |
+| Compose 完整启动 | `infra/compose/compose.sh pull && infra/compose/compose.sh up -d --remove-orphans` | API/数据/跨模块变更 | 通过（2026-09-10；Ubuntu 使用 GHCR `v0.17.4`，备份恢复、0039 前滚、API/Web LAN health、SmartEdu 运行时路由和四个 worker 已核验） |
 | Web 镜像 | `cd apps/web && docker buildx build --platform=linux/arm64 --load -t study-web:arm64-debug .` | Web/Compose 变更 | 通过（2026-09-03，Ubuntu x86_64 legacy builder；Next.js standalone 镜像使用 Node 24.18.0、pnpm 11.7.0，镜像 `d03f4fea…`；Web/API 本机和 LAN health、运行 CSS 标识及其他服务未重启通过） |
 | Web 登录态 E2E | `cd apps/web && pnpm test:e2e:install && pnpm test:e2e` | 认证、Cookie/CSRF、多家庭/多孩子或 Web 路由变更 | 通过（2026-09-03；Chromium `1 passed`，增加 `1280×800` 时间标签不裁切和 `390×844` 无横向溢出断言；隔离内存 API，不读取 Ubuntu 数据；本机 Node 22.23 低于锁定 Node 24.18，仅产生 engines warning） |
-| 集成环境 | `docker compose -f infra/compose/compose.yml up -d postgres minio` | API/数据/跨模块变更 | 当前通过（2026-07-13；旧配置发布 5432/9000）。PLAN-0012 目标要求 MinIO 仅在 Compose 内部网络可达，并增加宿主/LAN `9000` 不开放的断言 |
+| 集成环境 | `infra/compose/compose.sh up -d postgres minio` | API/数据/跨模块变更 | 当前通过（2026-07-13；旧配置发布 5432/9000）。PLAN-0012 目标要求 MinIO 仅在 Compose 内部网络可达，并增加宿主/LAN `9000` 不开放的断言 |
 | API 集成 | `cd services/api && uv run pytest -m integration` | 跨模块/数据变更 | 本轮相关通过（2026-08-16：语文并发/导出 `1 passed`，随机 synthetic Household/账号/Child 全部清理；2026-07-30 生命周期 1 项；未运行其余集成套件） |
 | API 镜像 | `cd services/api && docker buildx build --platform=linux/arm64 --load -t study-api:arm64-debug .`；发布仍构建 `linux/amd64` | 合并/发布前 | ARM 本地通过（2026-07-15）；amd64 Ubuntu 远端通过（2026-07-16，构建期模型目录 26 文件/清单标记、Paddle 3.3.1 + PaddleOCR 3.7.0、容器预检 ready、内存 synthetic OCR 4/4）；运行时无模型下载 |
 | AI eval | `cd services/api && ./.venv/bin/python ../../evals/run_ocr_eval.py`；`./.venv/bin/python ../../evals/run_privacy_sanitizer_eval.py`；`./.venv/bin/python ../../evals/run_tutor_policy_eval.py` | OCR/脱敏/Provider/模型路由/Tutor Policy 变更 | Tutor 通过（2026-07-23；offline Tutor Policy 5 cases）；本地 Qwen 文本 JSON smoke 通过，Ubuntu 视觉 Schema eval 失败；固定视觉/Tutor/教材质量评测仍待修复后执行 |
@@ -206,7 +215,7 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 | 英语口语安全 eval | `services/api/.venv/bin/python evals/run_english_conversation_safety_eval.py` | 英语 Policy、Provider 或控制合同变更 | 通过（2026-07-29；7/7，个人信息、成人/危险话题、中文兜底和回答长度；真实 Provider 质量/成本另行评测） |
 | OCR 真实运行时预检 | `cd services/api && ./.venv/bin/python scripts/check_ocr_runtime.py` | Ubuntu/模型镜像或 Paddle 版本变更 | 宿主 Ubuntu 24.04/x86_64 已确认；预检新增显式 `STUDY_OCR_CONTAINER_RUNTIME=true`，仅接受锁定 Debian 13 amd64 容器层，不放宽其他门禁；对应单元测试通过 |
 | OCR 锁定模型 synthetic smoke | `cd services/api && ./.venv/bin/python ../../evals/run_ocr_model_eval.py` | Ubuntu/模型/Provider 变更 | 通过（2026-07-16，远端 x86_64 Debian 13 锁定容器，4/4 cases：普通文本 3、公式 1，CPU；只使用内存 synthetic 图片，无外部 Provider）；真实题型评测仍待执行 |
-| NewAPI synthetic live eval | `docker compose -f infra/compose/compose.yml exec -T api python scripts/run_newapi_live_eval.py` | NewAPI key/model/网络或 worker 变更 | 通过（2026-07-20，Ubuntu x86_64）：纯合成题仅传确认文字，返回 3 个完整步骤、答案 17 只和独立验算；实际拍题四态仍待设备人工验收 |
+| NewAPI synthetic live eval | `infra/compose/compose.sh exec -T api python scripts/run_newapi_live_eval.py` | NewAPI key/model/网络或 worker 变更 | 通过（2026-07-20，Ubuntu x86_64）：纯合成题仅传确认文字，返回 3 个完整步骤、答案 17 只和独立验算；实际拍题四态仍待设备人工验收 |
 | 备份/恢复 | `infra/compose/scripts/backup.sh`；`verify-restore.sh <backup-dir>` | 数据/迁移/发布变更 | 通过（2026-08-24，Ubuntu；`/home/syin/study-backups/20260824T024445Z` 的 PostgreSQL custom dump + MinIO 快照 + SHA-256 清单已隔离恢复，39 个 public tables、353 个 MinIO 文件） |
 | 契约结构/差异 | 结构化解析 `openapi.yaml` 与 `schemas/*.json`、闭合本地引用，并对比 FastAPI 运行时 path/method/version | OpenAPI/Schema 变更 | 通过（2026-09-10；本地 OpenAPI/运行时 `0.17.4` 为 72 paths/84 HTTP operations/101 schemas，SmartEdu 路由与运行时一致；SDK 生成器仍未决定） |
 | 安全扫描 | `TBD（按 Flutter/pnpm/uv/镜像工具链建立）` | 合并/发布前 | 阻塞：无依赖/镜像 |
@@ -260,7 +269,7 @@ rg --files -uu -g '!.git/**' -g '!node_modules/**'
 - [ ] 无未批准的高危依赖/镜像/密钥扫描问题；SBOM/签名策略在生产前确定。
 - [x] Android/iOS/Web/API 构建产物可生成，迁移与 PostgreSQL/MinIO 备份恢复经过验证。
 - [ ] ADR-0017 认证门槛全部通过：API 认证回归、认证审计、孩子账号反向越权及隔离 synthetic Web Cookie/CSRF/跨家庭/双孩子 Chromium E2E 已通过；Flutter 安全存储真实设备生命周期、PostgreSQL 迁移往返和 Ubuntu 真实账号浏览器验收仍待执行。
-- [ ] PLAN-0016/0017/0018：本地与 Ubuntu `0.17.3`/`0039` 代码/部署、SmartEdu 私有草稿加载、真实 118 页 PDF 机器解析/批准和隔离 Chromium 已完成；仍需正式版权/教研、真实 Provider 质量/成本、Ubuntu 真实账号、完整设备 E2E 和发布安全门槛。
+- [ ] PLAN-0016/0017/0018：本地与 Ubuntu `0.17.4`/`0039` 代码/部署、SmartEdu 私有草稿加载、真实 118 页 PDF 机器解析/批准和隔离 Chromium 已完成；仍需正式版权/教研、真实 Provider 质量/成本、Ubuntu 真实账号、完整设备 E2E 和发布安全门槛。
 - [ ] P1 核心 E2E 全通过，四类设备完成职责内弱网/横竖屏/权限回归。
 - [ ] AI eval、成本告警、周报追溯和儿童数据删除有可审查记录。
 

@@ -8,6 +8,27 @@
 - Owner：Codex（执行）；项目 Owner（2026-08-15 明确要求先多学科、再语文、英语最后）
 - 关联：`PLAN-0034`、`PLAN-0031`、`PLAN-0030`、`PLAN-0007`、`ADR-0017`、`ADR-0027`、`ADR-0028`、`docs/deep-research-report.md`
 
+## 2026-09-10 SmartEdu 真实凭据下载重试修复（PLAN-0048）
+
+- [x] 对照上游当前实现，修复有凭据时 `Authorization` 仍错误发送 `Bearer 0` 的移植缺口；现在同时发送实际 Bearer 与按当前 URL 生成的 `X-ND-AUTH`。
+- [x] 安全编码 SmartEdu 下载路径中的中文和空格；私有 CDN 瞬时 `400` 在同地址使用新 nonce 有界退避，非鉴权的上游故障按固定 r1/r2/r3 镜像切换。
+- [x] Web 对 `smartedu_source_unavailable` 显示已自动重试和本地 PDF 回退提示，不再与未知错误使用同一笼统文案。
+- [x] API SmartEdu 定向 `20 passed`，非集成全量通过；Ruff format/check、Mypy `64` 个源文件通过。Web `24` 个测试文件、`44` 项及 Prettier、ESLint、TypeScript、production build 通过。
+- [ ] 尚未提交、推送、tag、发布 GHCR 或部署 Ubuntu；真实凭据/PDF 仍需新镜像部署后由项目 Owner 在当前浏览器验证。
+
+诊断结论：截图中的两次请求均已到达 Ubuntu API 并返回 `503`，目录、登录会话和 API 健康正常；失败发生在外部 PDF 下载阶段。此前实现虽然生成了 MAC，却固定发送 `Authorization: Bearer 0`，并缺少上游已有的 400 重签、固定镜像重试和非 ASCII 路径编码。控制台 `startTime` 异常来自页面外的辅助脚本，不是教材接口失败原因。失败发生在私有对象写入和解析队列之前，没有创建教材草稿。
+
+回滚：恢复 `smartedu_source.py` 和 Web 错误文案即可；无数据库迁移，不删除数据库、MinIO、Redis、教材或学习事实。截图已包含真实登录凭据，项目 Owner 应在验证后退出 SmartEdu 登录并重新登录以轮换会话。
+
+## 2026-09-10 Compose 本地模型可选拓扑与 Ubuntu 无效容器清理（PLAN-0047）
+
+- [x] `STUDY_LOCAL_MODEL_ENABLED=false` 时基础 Compose 不再定义或启动 `local-model`；`infra/compose/compose.sh` 仅在开关为 `true` 时叠加 `compose.local-model.yml`，并保留健康依赖和模型缓存卷。
+- [x] 增加 false/true Compose 服务集合回归，更新 ADR-0028、部署说明、运行手册、测试矩阵和变更记录。
+- [x] Ubuntu 完成备份、Compose 同步、GHCR 拉取式重启和健康/迁移/worker/数据卷验收。
+- [x] Ubuntu 清理已核验的三个无 Compose 项目标识的停止容器，不删除 `migrate`、运行服务或任何数据卷。
+
+实施证据：备份 `/home/syin/study-backups/20260910T072556Z` 已通过隔离恢复（39 张 PostgreSQL public 表、727 个 MinIO 快照文件）；回滚副本为 `/home/syin/study-source-backups/20260910T072547Z-local-model-topology/`。Ubuntu `STUDY_LOCAL_MODEL_ENABLED=false` 的 Compose 服务列表不含 `local-model`，旧模型容器已移除，`study-local_local-model-cache` 保留；API/Web 本机和服务器 LAN 地址 health 返回 200，迁移为 `0039_smartedu_curriculum_source`，四个 worker 正常。已删除三个无 Compose 项目标识、停止 6 周、退出码为 1 且无挂载的容器：`115764a93a10`、`4540aca63e83`、`cee7ce25aaa5`。当前工作机直连 Ubuntu 高端口仍失败，未修改防火墙或端口配置。不涉及数据库迁移、OpenAPI 变化或儿童学习事实。
+
 ## 2026-09-10 SmartEdu 私有 CDN 签名修复（PLAN-0046）
 
 - [x] 修复真实教材 PDF 私有 CDN 的 URL 绑定 `X-ND-AUTH` MAC 签名；默认免配置，家长可在页面粘贴一次性 JSON，`access_token` 必填，`mac_key` 和 `diff` 可省略。
@@ -15,9 +36,13 @@
 - [x] 同一孩子/SmartEdu 资源的重试复用浏览器缓存中的幂等键；API 在下载前回放已有结果，避免网络重试造成重复 PDF 下载。
 - [x] 定向/全量 API/Web 测试、格式、Lint、类型、构建、脱敏 Compose 展开和文档同步通过；API/OpenAPI 前移为 `0.17.4`，新增可选 `smartedu_credentials_json` 请求字段，无数据库迁移。
 - [x] 提交并推送 `v0.17.4` 代码，创建带中文说明的 GitHub Release。
-- [ ] 发布 GHCR、部署 Ubuntu，并在项目 Owner 明确授权后完成真实私有草稿与解析队列验证；当前 Ubuntu 仍为 `0.17.3`/`sha-a7454a8`。
+- [x] 固定后续 tag 发布流程：Action 校验并读取 `CHANGELOG.md` 对应版本区块，自动创建或更新中文 Release。
+- [x] 发布 GHCR、部署 Ubuntu：`v0.17.4` API/Web 镜像已拉取并运行，备份与隔离恢复、迁移、API/Web 本机和 LAN health、worker、运行时 revision、错误计数及 MinIO 私有端口均通过。
+- [ ] 在项目 Owner 明确授权后完成真实私有草稿与解析队列验证；真实 SmartEdu 目录/PDF、Provider、版权/教研、账号浏览器和设备回归仍未执行。
 
-诊断证据：Ubuntu 的目录和教材详情请求成功；人教版二年级上册 PDF 的 SmartEdu 私有 CDN 在占位 `MAC id="0",nonce="0",mac="0"` 下返回 `HTTP 400 InvalidArgument`，现有适配器将其折叠为 `smartedu_source_requires_authentication` 并对 Web 返回 `422`。失败发生在私有对象和草稿写入之前。缓存凭据和同资源幂等重试修复已随 `v0.17.4` 提交并发布，尚待 GHCR/Ubuntu 真实 PDF 验证。
+诊断证据：Ubuntu 的目录和教材详情请求成功；人教版二年级上册 PDF 的 SmartEdu 私有 CDN 在占位 `MAC id="0",nonce="0",mac="0"` 下返回 `HTTP 400 InvalidArgument`，现有适配器将其折叠为 `smartedu_source_requires_authentication` 并对 Web 返回 `422`。失败发生在私有对象和草稿写入之前。缓存凭据和同资源幂等重试修复已随 `v0.17.4` 提交、发布并部署，真实 PDF 验证仍待执行。
+
+部署证据：备份 `/home/syin/study-backups/20260910T065224Z` 已隔离恢复验证（39 张 PostgreSQL public 表、739 个 MinIO 快照文件）；回滚副本位于 `/home/syin/study-source-backups/20260910T065224Z-ghcr/`。API RepoDigest 为 `sha256:4c701f92e1811894a106f613de9c46ba780d8ecce5c1249b84c1b8c35cbfd4ad`，Web RepoDigest 为 `sha256:f72ab165edb493ff03bcf4de716226e7e98fa01d139559fa3e95c5190e4c61d1`，OCI revision 均为完整提交 `6a75e81aa7120ab840e79e61ef66c20605c9b17f`。迁移为 `0039_smartedu_curriculum_source (head)`，API/Web 本机和局域网 health 返回 200；部署时旧 Compose 的 idle `local-model` 已由后续 PLAN-0047 移除，不代表本地推理质量已验收。
 
 ## 2026-09-10 提交、tag 与 GHCR Ubuntu 修复（PLAN-0045）
 

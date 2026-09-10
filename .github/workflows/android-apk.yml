@@ -141,17 +141,29 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout release metadata
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
       - name: Download built APKs
         uses: actions/download-artifact@v5
         with:
           name: ${{ needs.build.outputs.artifact_name }}
           path: release-assets
 
+      - name: Extract Chinese release notes
+        run: python3 scripts/extract_release_notes.py "$GITHUB_REF_NAME" > release-notes.md
+
       - name: Create release and upload APKs
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "AIStudy $GITHUB_REF_NAME" \
+              --notes-file release-notes.md
             gh release upload "$GITHUB_REF_NAME" release-assets/* \
               --repo "$GITHUB_REPOSITORY" \
               --clobber
@@ -160,6 +172,6 @@ jobs:
               release-assets/* \
               --repo "$GITHUB_REPOSITORY" \
               --verify-tag \
-              --generate-notes \
+              --notes-file release-notes.md \
               --title "AIStudy $GITHUB_REF_NAME"
           fi

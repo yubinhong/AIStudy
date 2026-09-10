@@ -4,7 +4,7 @@ This directory is the single source for the public OpenAPI contract and AI JSON
 Schemas. Generated client SDKs belong in build output directories and are not
 hand-maintained in application code.
 
-The current `0.17.4` contract contains 72 path entries (including one WebSocket
+The current `0.17.5` contract contains 72 path entries (including one WebSocket
 extension), 84 HTTP operations, and 101 component schemas. It covers health,
 authentication, household/child/device administration, learning tasks and
 sessions, Capture upload/correction/delete, OCR and image-analysis confirmation,

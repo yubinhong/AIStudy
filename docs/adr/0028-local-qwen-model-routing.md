@@ -29,9 +29,9 @@
 
 选择选项 3。
 
-1. Compose 增加 `local-model` 服务，默认使用 `ghcr.io/ggml-org/llama.cpp:server-b9603`，通过 `-hf` 从 `bjivanovich/Qwen3.5-4B-Vision-GGUF:Q4_K_M` 加载 Q4_K_M 权重，并自动加载可用的视觉 projector。模型缓存挂载到 `local-model-cache`，服务不发布宿主端口。
+1. Compose 通过可选的 `compose.local-model.yml` 增加 `local-model` 服务，默认使用 `ghcr.io/ggml-org/llama.cpp:server-b9603`，从 `bjivanovich/Qwen3.5-4B-Vision-GGUF` 加载 Q4_K_M 权重和视觉 projector。模型缓存挂载到 `local-model-cache`，服务不发布宿主端口；基础 `compose.yml` 不定义该服务。
 2. `STUDY_LOCAL_MODEL_ENABLED=true` 时，API 和两个 AI worker 的 `NewApiConfig.from_environment()` 强制生成 `local_qwen` 配置，忽略云端 NewAPI URL、key 和模型；本地请求统一指向 `http://local-model:8080/v1`，并通过 `chat_template_kwargs.enable_thinking=false` 关闭 Qwen reasoning，保证固定 JSON Schema 请求有可解析的 `content`。关闭时仍只读取 `STUDY_NEWAPI_*` 配置。
-3. Compose 在开关关闭时让本地容器保持空闲，在开启时等待 `/health` 通过后再启动 API/相关 worker。这样同一 Compose 拓扑支持两种模式，不把模型下载和推理端口暴露给家庭 LAN。
+3. `infra/compose/compose.sh` 读取 `STUDY_LOCAL_MODEL_ENABLED`：关闭时只使用基础 `compose.yml`，不创建或启动 `local-model`；开启时叠加 `compose.local-model.yml`，并等待 `/health` 通过后再启动 API/相关 worker。这样切换不会拉取无用模型镜像，也不把模型下载和推理端口暴露给家庭 LAN。
 4. Provider、模型名和 Tutor Policy 记录使用实际路由名称；云端历史继续使用 `newapi`，本地新记录使用 `local_qwen`。不增加公共 OpenAPI 字段或数据库迁移。
 
 ## Consequences
@@ -50,7 +50,7 @@
 
 ## Compatibility, Migration, and Rollback
 
-- 无数据库迁移和公共 OpenAPI 变更；旧客户端无需升级。新增环境变量缺省为关闭，旧 `.env` 继续选择现有 NewAPI 路径。
+- 无数据库迁移和公共 OpenAPI 变更；旧客户端无需升级。新增环境变量缺省为关闭，旧 `.env` 继续选择现有 NewAPI 路径。2026-09-10 起关闭状态不再创建 idle 的 `local-model`；需要本地模式时必须通过 `infra/compose/compose.sh` 叠加可选 Compose 文件。
 - 启用顺序为：备份配置和数据 → 更新 Compose/API → 设置本地变量 → 首次下载并检查 `local-model` 健康 → 运行 synthetic text/vision/schema eval → 再使用家庭数据。
 - 回滚只需设置 `STUDY_LOCAL_MODEL_ENABLED=false` 并重启 API、ImageAnalysis worker 和 CurriculumAnalysis worker；保留模型缓存和已有学习事实，不执行数据库 downgrade，不自动把失败请求发往云端。
 - 若模型仓库、镜像或模型质量异常，停用本地服务并恢复已验证的 NewAPI 配置；不得把未经评测的本地输出直接当作 VerifiedQuestion、标准答案、教材知识点或掌握事实。
@@ -58,5 +58,5 @@
 ## Validation
 
 - 单元测试验证本地开关优先于云端配置、关闭时保留 NewAPI 配置、记录实际 Provider/model，以及本地结构化请求关闭 reasoning。
-- `docker compose config` 验证服务、健康检查、依赖和模型缓存配置；本机 Linux ARM64 已在本地开启后验证 `/health`、`/v1/models` 和一个不含儿童数据的文本/图片 Schema 请求。
+- `scripts/test_compose_local_model_toggle.sh` 和 `infra/compose/compose.sh config` 验证关闭/开启时的服务集合、健康检查、依赖和模型缓存配置；本机 Linux ARM64 已在本地开启后验证 `/health`、`/v1/models` 和一个不含儿童数据的文本/图片 Schema 请求。
 - 固定 AI eval 必须覆盖 JSON Schema 失败、题目/作答四态、Tutor L1/L2 答案泄露、教材来源键、中文看图写话边界和成本/延迟记录。真实 PDF、儿童图片、设备质量和生产开放仍是独立门禁。

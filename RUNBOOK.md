@@ -3,8 +3,26 @@
 ## 1. 服务概览
 
 - 服务：家庭 AI 学习助手（目标包括 Flutter 孩子端、Web/PWA、FastAPI/Worker、PostgreSQL、Redis、S3/MinIO 和 AI Provider）。
-- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.17.3`/`0039_smartedu_curriculum_source`；API/Web/worker 健康，已审核语文教材只保留标题、连续诗句和全部选项均通过确定性目录的六首 21 道古诗题。2026-09-10 SmartEdu 家长教材加载增量已切换为同一提交的 GHCR `sha-a7454a8` API/Web 镜像；没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
+- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.17.4`/`0039_smartedu_curriculum_source`；API/Web/worker 健康，已审核语文教材只保留标题、连续诗句和全部选项均通过确定性目录的六首 21 道古诗题。2026-09-10 SmartEdu 家长教材加载与私有 CDN 签名修复已切换为同一提交的 GHCR `v0.17.4` API/Web 镜像；没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
 - Owner/值班：`TBD（项目 Owner/运维负责人在 staging 前确认）`。
+
+## 2026-09-10 SmartEdu v0.17.4 GHCR 拉取式部署
+
+- 载荷：提交 `6a75e81aa7120ab840e79e61ef66c20605c9b17f` 的 `ghcr.io/yubinhong/aistudy-api:v0.17.4` 与 `ghcr.io/yubinhong/aistudy-web:v0.17.4`；API RepoDigest 为 `sha256:4c701f92e1811894a106f613de9c46ba780d8ecce5c1249b84c1b8c35cbfd4ad`，Web RepoDigest 为 `sha256:f72ab165edb493ff03bcf4de716226e7e98fa01d139559fa3e95c5190e4c61d1`，两镜像 OCI revision 均为完整提交 `6a75e81aa7120ab840e79e61ef66c20605c9b17f`。
+- 备份：部署前 `/home/syin/study-backups/20260910T065224Z` 已完成；`verify-restore.sh` 隔离恢复报告 `postgres_public_tables=39`、`minio_snapshot_files=739`。远端 `.env` 与 Compose 回滚副本保存在 `/home/syin/study-source-backups/20260910T065224Z-ghcr/`，未输出密钥。
+- 发布步骤：远端 `.env` 仅将 `STUDY_API_IMAGE`/`STUDY_WEB_IMAGE` 固定为 `v0.17.4`；`docker compose config --quiet`、指定应用镜像 `pull` 和 `up -d --no-build` 成功，未修改数据库卷、模型开关或其他配置。
+- 验收：`migrate` 成功退出，Alembic 为 `0039_smartedu_curriculum_source (head)`；API/Web/四个 worker running，API/Web 本机和 `192.168.1.4` LAN health 均返回 200，API 返回版本 `0.17.4`；最近 10 分钟应用错误计数为 0，MinIO `9000` 无宿主端口映射。
+- 模型边界：远端 `STUDY_LOCAL_MODEL_ENABLED=false`、`STUDY_NEWAPI_ENABLED=true`；当时旧 Compose 仍创建了 idle 的 `local-model` 容器，不代表本地 Qwen 视觉或 Tutor 质量已验收。后续拓扑修复见下节。
+- 未执行与回滚：真实 SmartEdu 目录登录/PDF、版权和教研签核、真实 Provider 质量与成本、真实账号浏览器、四端设备、staging/production 仍未验收。回滚优先把 API/Web 固定回已验证的 `sha-a7454a8` 并重新 `pull/up`，数据库保留 `0039`，不执行 downgrade；本次回滚文件在上述 source-backup 目录。
+
+## 2026-09-10 本地模型可选拓扑与无效容器清理
+
+- 修复：`STUDY_LOCAL_MODEL_ENABLED=false` 时，基础 `compose.yml` 不再定义 `local-model`，不会拉取、创建或启动该容器；`infra/compose/compose.sh` 读取同目录 `.env`，仅在值为 `true` 时叠加 `compose.local-model.yml` 和健康依赖。
+- 启用/关闭：本地模型仍保留 `local-model-cache` 卷；关闭时使用 `infra/compose/compose.sh up -d --remove-orphans`，只移除旧拓扑的模型容器，不删除卷、数据库或 MinIO 数据。模型服务失败时仍不会自动切换云端。
+- 清理范围：仅清理 Ubuntu 上已核验的三个无 Compose 项目标识、已停止 6 周且退出码为 1 的容器；保留 Compose 的 `migrate` 一次性容器和所有数据服务/数据卷。
+- 验收：Ubuntu 基础 Compose 服务列表不含 `local-model`，`model_container_count=0`；API/Web 本机和服务器 LAN 地址 health 均返回 200，API/Web/四个 worker 正常，Alembic 为 `0039_smartedu_curriculum_source`，最近 5 分钟各应用日志 error-like 计数均为 0。`study-local_local-model-cache` 保留；停止容器只剩正常的 `study-local-migrate-1 (Exited 0)`。
+- 清理结果：已删除 `frosty_roentgen`（`115764a93a10`）、`agitated_moser`（`4540aca63e83`）和 `mystifying_kalam`（`cee7ce25aaa5`）；三者均为已停止 6 周、退出码为 1、无 Compose 项目标识且无挂载的旧容器。未删除镜像、数据卷或运行中的服务。
+- 访问路径备注：Ubuntu 自身通过 `127.0.0.1` 和 `192.168.1.4` 访问 API/Web 均返回 200，宿主监听 `0.0.0.0:8000/3000`；当前工作机直连这两个 LAN 端口仍被拒绝。本次未修改防火墙或端口配置，需单独排查当前网络路径/访问策略。
 
 ## 2026-09-10 SmartEdu 家长教材加载部署（实现阶段本地构建）
 
@@ -45,7 +63,7 @@
 - 载荷：API/Web 固定 `ghcr.io/yubinhong/aistudy-api:sha-6a518fc` 与 `ghcr.io/yubinhong/aistudy-web:sha-6a518fc`；运行 digest 分别为 `sha256:653444b0d1c2bf9494c54b0793cdfc37824354cea8c6ca221ef85cc4398095da` 和 `sha256:c312f5301efe5fe448c550f9fe54e344c4c324ae66609f761e7eeb02c43dc729`，OCI revision 均为 `6a518fc1de39c4f8414a40185a7cae593c6010c2`。
 - 备份：`/home/syin/study-backups/20260908T074345Z`；`verify-restore.sh` 隔离恢复报告 `postgres_public_tables=39`、`minio_snapshot_files=715`。旧 Compose 与 `.env` 保存在 `/home/syin/study-source-backups/20260908T074345Z-ghcr/`。
 - 发布：远端 Compose 校验、GHCR pull 和 `docker compose up -d --no-build` 成功；迁移、API、Web 和四个 worker 使用固定镜像，远端 `.env` 与数据卷保留。
-- 验收：API/Web 本机及 `192.168.1.4` LAN `healthz` 返回 200，Alembic 为 `0038_classical_poem_options (head)`，四个 worker running，最近 10 分钟无新增错误日志。`STUDY_LOCAL_MODEL_ENABLED=false` 时 local-model 仅保持空闲，不表示本地推理质量已验收。
+- 验收（旧 Compose 记录）：API/Web 本机及 `192.168.1.4` LAN `healthz` 返回 200，Alembic 为 `0038_classical_poem_options (head)`，四个 worker running，最近 10 分钟无新增错误日志。当时 `STUDY_LOCAL_MODEL_ENABLED=false` 时 local-model 仅保持空闲；该行为已由本次拓扑修复移除。
 - 未执行：Ubuntu 真实账号浏览器、四设备完整 E2E、真实 Provider/PDF 质量成本、staging/production。回滚优先固定上一个已验证 GHCR 标签并重新 pull/up，不执行数据库 downgrade。
 
 ### 2026-09-05 家长后台分学科学习记录部署记录
@@ -134,11 +152,13 @@ SLO 必须在 staging 获得基线后由产品/技术 Owner 批准，不在零�
 
 ## 3. 环境与部署
 
-GitHub Actions Android APK 构建、稳定签名 Secret、Artifact 校验/安装、首次自托管部署和外部教材工具的完整操作入口见 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)。本 Runbook 继续作为运行态、迁移、备份、故障处置和回滚的事实来源。
+GitHub Actions Android APK 构建、稳定签名 Secret、Artifact 校验/安装、版本化 Changelog 发布、首次自托管部署和外部教材工具的完整操作入口见 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)。本 Runbook 继续作为运行态、迁移、备份、故障处置和回滚的事实来源。
+
+版本发布必须先把代码与对应的 `CHANGELOG.md` 版本区块放在同一提交中，再推送 `master` 和 `v*` tag。tag 质量工作流会拒绝缺少或重复版本区块的 tag；Android 发布工作流使用该区块创建或更新 GitHub Release 正文，不使用 GitHub 自动生成的默认英文说明。
 
 ### 当前环境
 
-- local：`infra/compose/compose.yml` 已编排 PostgreSQL、Redis、MinIO、API、家长 Web、一次性 Alembic migration、AI worker 和可切换的 llama.cpp/Qwen 本地模型服务；应用服务现在从 GHCR 拉取匹配宿主架构的镜像，本地源码调试使用各子项目标准命令。`STUDY_LOCAL_MODEL_ENABLED=false` 时本地模型容器保持空闲，路由读取 NewAPI；设置为 `true` 时所有当前 AI 请求只走 Compose 内部本地模型，模型缓存写入独立持久卷且不发布推理端口。
+- local：`infra/compose/compose.yml` 编排 PostgreSQL、Redis、MinIO、API、家长 Web、一次性 Alembic migration、AI worker；`compose.local-model.yml` 是显式叠加的 llama.cpp/Qwen 本地模型拓扑。应用服务现在从 GHCR 拉取匹配宿主架构的镜像，本地源码调试使用各子项目标准命令。`STUDY_LOCAL_MODEL_ENABLED=false` 时基础拓扑不创建 `local-model`，路由读取 NewAPI；设置为 `true` 时 `compose.sh` 叠加本地拓扑并让所有当前 AI 请求只走 Compose 内部本地模型，模型缓存写入独立持久卷且不发布推理端口。
 - Ubuntu 自用验收：宿主为 Ubuntu 24.04/x86_64、12 GB 内存/8 核，远端 `infra/compose/.env` 权限 600。2026-08-24 备份 `/home/syin/study-backups/20260824T024445Z` 已隔离恢复验证 39 张 PostgreSQL public 表和 353 个 MinIO 文件；API/OpenAPI `0.17.0`、迁移 `0036_task_session_progress`、PostgreSQL、MinIO、Redis、Web 和四个 worker 健康。Qwen3.5-4B Q4_K_M 在 4 核下视觉 synthetic 600 秒内不收敛，8 核下耗时 373.128 秒且生成到 2048 token 上限后仍因 Schema 无效失败；当前 `STUDY_LOCAL_MODEL_ENABLED=false`、模型容器已停止并保留缓存，运行态选择 `newapi`。回退后 synthetic 数学文本 Schema smoke 3.591 秒通过，宿主约 10 GiB available、Swap 为 0；真实 PDF、账号浏览器和设备未验证。
 - 真机拍题当前事实：API/Flutter/Compose/Ubuntu 已切换为 App 携带 Session 向 API 上传，且 Compose 不发布 MinIO `9000`。最新 iPad Release `Runner.app` 已安装到无线设备 `00008110-0011356E0E41801E`，但 iOS 首次启动要求用户在“设置 → 通用 → VPN 与设备管理”显式信任开发者 Team `VZ59988J63`；信任后仍需执行拍题、权限、弱网和重启验收。Provider HTTP `402` 只表示 NewAPI 余额/模型额度不可用，不应误判为上传或 MinIO 故障。
 - staging：未建立。
@@ -210,7 +230,7 @@ STUDY_LOCAL_MODEL_MMPROJ_FILE=Qwen3.5-4B.BF16-mmproj.gguf
 STUDY_LOCAL_MODEL_BASE_URL=http://local-model:8080/v1
 ```
 
-执行 `docker compose -f infra/compose/compose.yml up -d local-model api image-analysis-worker curriculum-analysis-worker`，等待 `local-model` 健康后再运行不含儿童数据的 text/vision/schema smoke。开启后不要同时把真实请求送往 NewAPI；本地服务或模型不可用时不会自动云端回退。恢复云端路径时把开关改为 `false`，配置并验证 `STUDY_NEWAPI_*`，再重启 API 和两个 AI worker。本机 Linux ARM64 已完成镜像、权重/projector 下载和 synthetic smoke；Ubuntu 12 GB/8 核视觉质量门禁已失败，重新选型并通过固定 Schema eval 前不得重新启用当前模型。GGUF 来源/许可证和镜像摘要仍需最终核对。
+执行 `infra/compose/compose.sh up -d local-model api image-analysis-worker curriculum-analysis-worker`，等待 `local-model` 健康后再运行不含儿童数据的 text/vision/schema smoke。开启后不要同时把真实请求送往 NewAPI；本地服务或模型不可用时不会自动云端回退。恢复云端路径时把开关改为 `false`，配置并验证 `STUDY_NEWAPI_*`，再执行 `infra/compose/compose.sh up -d --remove-orphans api image-analysis-worker curriculum-analysis-worker`；这会移除旧的 `local-model` 容器，但保留模型缓存卷。本机 Linux ARM64 已完成镜像、权重/projector 下载和 synthetic smoke；Ubuntu 12 GB/8 核视觉质量门禁已失败，重新选型并通过固定 Schema eval 前不得重新启用当前模型。GGUF 来源/许可证和镜像摘要仍需最终核对。
 
 ### 生产前置检查
 
@@ -231,10 +251,10 @@ STUDY_LOCAL_MODEL_BASE_URL=http://local-model:8080/v1
 ```bash
 cp infra/compose/.env.example infra/compose/.env
 openssl rand -hex 32
-docker compose -f infra/compose/compose.yml config
-docker compose -f infra/compose/compose.yml pull
-docker compose -f infra/compose/compose.yml up -d
-docker compose -f infra/compose/compose.yml ps
+infra/compose/compose.sh config
+infra/compose/compose.sh pull
+infra/compose/compose.sh up -d --remove-orphans
+infra/compose/compose.sh ps
 curl http://127.0.0.1:${WEB_PORT:-3000}/healthz
 ```
 

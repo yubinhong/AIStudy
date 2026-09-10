@@ -38,6 +38,9 @@ export function smartEduImportErrorMessage(error: unknown) {
     if (message === "smartedu_credentials_invalid") {
       return "凭据 JSON 格式不正确，请按页面“如何获取”重新复制 access_token 后重试。";
     }
+    if (message === "smartedu_source_unavailable") {
+      return "智慧教育平台或教材下载镜像暂时不可用，系统已自动重试；请稍后再试，也可使用有权使用的本地 PDF 上传。";
+    }
   }
   return "教材加载失败，请稍后重试或使用本地 PDF 上传。";
 }

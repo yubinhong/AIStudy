@@ -7,7 +7,7 @@
 | 交付物 | 生成方式 | 当前边界 |
 | --- | --- | --- |
 | Android APK | GitHub Actions `Build Android APK` | 默认是 runner debug 证书签名的 evaluation 包；配置稳定密钥后才是可持续升级的自签名包 |
-| API、Web、Worker、可选本地模型 | `infra/compose/compose.yml` | 单家庭自托管；`STUDY_LOCAL_MODEL_ENABLED=true` 时加载 Compose 内部 Qwen3.5-4B Q4_K_M，否则选择已配置云端 NewAPI；不应直接暴露到公网 |
+| API、Web、Worker、可选本地模型 | `infra/compose/compose.yml` + `infra/compose/compose.local-model.yml` | 单家庭自托管；`infra/compose/compose.sh` 根据 `STUDY_LOCAL_MODEL_ENABLED` 选择是否加载 Compose 内部 Qwen3.5-4B Q4_K_M；关闭时不创建 `local-model`；不应直接暴露到公网 |
 | PostgreSQL、Redis、MinIO | 同一 Compose | MinIO 只在 Compose 内部可达，不发布 `9000` |
 | 英语口语 | 客户端和 Provider 中立框架 | 真实 Provider 未接入，默认锁定 |
 | 教材 PDF | 家长在 Web 选择 SmartEdu 公开目录，或自行合法取得后上传 | 下载内容只进入家庭私有存储和审核链路，不进入 Git 仓库，不随 AIStudy 分发，不因 Apache-2.0 获得额外授权 |
@@ -41,7 +41,7 @@ git push -u origin master
 4. 按 ABI 构建 release APK。
 5. 生成 `SHA256SUMS` 和 `BUILD-INFO.txt`。
 6. 上传保留 14 天的 GitHub Actions Artifact。
-7. 如果由 `v*` 标签触发，创建同名 GitHub Release 并上传 APK、摘要和构建信息。
+7. 如果由 `v*` 标签触发，从 `CHANGELOG.md` 提取同名版本区块，创建或更新中文 GitHub Release，并上传 APK、摘要和构建信息。
 
 工作流不会接收 API URL、Session、Provider Key 或教材。应用首次启动时由用户在登录页配置家庭 API 地址。
 
@@ -62,14 +62,27 @@ gh run list --workflow android-apk.yml
 
 ### 标签发布到 GitHub Release
 
-推送 `v` 开头的标签会触发构建，并在全部 Flutter 检查通过后自动创建同名 GitHub Release：
+推送 `v` 开头的标签会触发构建，并在全部 Flutter 检查通过后自动创建或更新同名 GitHub Release。发布前必须先在 `CHANGELOG.md` 增加唯一的对应版本区块；GitHub Actions 会严格读取该区块作为 Release 正文，缺少或重复时直接失败：
 
-```bash
-git tag v0.1.0
-git push origin v0.1.0
+```markdown
+## v0.18.0 - 2026-09-10
+
+### 更新内容
+
+- 用中文记录本次用户可感知变化。
 ```
 
-Release 附件包含三个 APK、`SHA256SUMS` 和 `BUILD-INFO.txt`，可直接从仓库 **Releases** 页面下载。重新运行同一标签的 workflow 时会覆盖同名附件，不重复创建 Release。手动运行仍只生成 Actions Artifact，不会创建没有版本标签的 Release。两种触发方式都不会推送应用商店或部署服务器。
+```bash
+# 代码和 CHANGELOG.md 必须先在同一提交中完成，并推送该提交。
+git add <changed-files> CHANGELOG.md
+git commit -m "feat(web): 本次更新摘要"
+git push origin master
+
+git tag -a v0.18.0 -m "v0.18.0：本次更新摘要"
+git push origin v0.18.0
+```
+
+Release 正文来自该版本区块，不使用 GitHub 的默认 `--generate-notes`；重新运行同一标签的 workflow 时会同步更新正文并覆盖同名附件，不重复创建 Release。Release 附件包含三个 APK、`SHA256SUMS` 和 `BUILD-INFO.txt`，可直接从仓库 **Releases** 页面下载。手动运行仍只生成 Actions Artifact，不会创建没有版本标签的 Release。两种触发方式都不会推送应用商店或部署服务器。
 
 ### APK 文件选择
 
@@ -191,10 +204,10 @@ printf '%s' "$GHCR_READ_TOKEN" | docker login ghcr.io -u <github-user> --passwor
 ### 启动和验证
 
 ```bash
-docker compose -f infra/compose/compose.yml config
-docker compose -f infra/compose/compose.yml pull
-docker compose -f infra/compose/compose.yml up -d
-docker compose -f infra/compose/compose.yml ps
+infra/compose/compose.sh config
+infra/compose/compose.sh pull
+infra/compose/compose.sh up -d --remove-orphans
+infra/compose/compose.sh ps
 
 curl -fsS http://127.0.0.1:8000/healthz
 curl -fsS http://127.0.0.1:3000/healthz
@@ -203,7 +216,7 @@ curl -fsS http://127.0.0.1:3000/healthz
 确认 `migrate` 成功退出，API、Web、PostgreSQL、Redis、MinIO 和常驻 worker 健康：
 
 ```bash
-docker compose -f infra/compose/compose.yml logs --tail=100 migrate api web
+infra/compose/compose.sh logs --tail=100 migrate api web
 ```
 
 日志不得复制到公开 Issue，除非已经确认其中没有 Session、密钥、儿童资料、题目、教材文字或对象键。
@@ -212,7 +225,7 @@ docker compose -f infra/compose/compose.yml logs --tail=100 migrate api web
 
 更完整的 Compose 配置、NewAPI、备份恢复和架构限制见 [Compose 部署说明](../infra/compose/README.md) 与 [运维手册](../RUNBOOK.md)。
 
-本地模型模式：复制 `infra/compose/.env.example` 后设置 `STUDY_LOCAL_MODEL_ENABLED=true`。Compose 会启动 `llama.cpp` 并从配置的 Hugging Face GGUF 仓库加载 `Qwen3.5-4B` 的 `Q4_K_M` 权重和视觉 projector；模型端口不发布到宿主/LAN。开启本地模式后 API、ImageAnalysis worker、CurriculumAnalysis worker 的所有当前 NewAPI-compatible 请求都只发给本地服务，不会在失败时静默切回云端。首次启动后应先用不含儿童数据的 synthetic 文本/图片和 Schema eval 验证，再进行家庭使用；模型来源、镜像摘要、目标硬件质量和成本/延迟记录仍是独立验收项。
+本地模型模式：复制 `infra/compose/.env.example` 后设置 `STUDY_LOCAL_MODEL_ENABLED=true`，再使用 `infra/compose/compose.sh`。脚本会自动叠加 `compose.local-model.yml`，启动 `llama.cpp` 并从配置的 Hugging Face GGUF 仓库加载 `Qwen3.5-4B` 的 `Q4_K_M` 权重和视觉 projector；模型端口不发布到宿主/LAN。开启本地模式后 API、ImageAnalysis worker、CurriculumAnalysis worker 的所有当前 NewAPI-compatible 请求都只发给本地服务，不会在失败时静默切回云端。首次启动后应先用不含儿童数据的 synthetic 文本/图片和 Schema eval 验证，再进行家庭使用；模型来源、镜像摘要、目标硬件质量和成本/延迟记录仍是独立验收项。设置为 `false` 时基础 Compose 不定义 `local-model`，不会拉取或启动该镜像。
 
 ## 7. 获取和导入电子教材
 
@@ -242,10 +255,10 @@ infra/compose/scripts/verify-restore.sh /srv/study-backups/<UTC_TIMESTAMP>
 ```bash
 git fetch --tags origin
 git checkout <approved-tag-or-commit>
-docker compose -f infra/compose/compose.yml config
-docker compose -f infra/compose/compose.yml pull
-docker compose -f infra/compose/compose.yml up -d
-docker compose -f infra/compose/compose.yml ps
+infra/compose/compose.sh config
+infra/compose/compose.sh pull
+infra/compose/compose.sh up -d --remove-orphans
+infra/compose/compose.sh ps
 ```
 
 回滚应用时把 `STUDY_API_IMAGE` 与 `STUDY_WEB_IMAGE` 一起改回上一个已验证的 `v*` 或 `sha-*` 标签，再执行 `pull` 和 `up -d`。保留 PostgreSQL、MinIO 和 Redis 卷，不执行 `down -v`，也不在正式数据上随意运行数据库 downgrade。Android 回滚必须使用相同签名密钥和兼容的版本号；如果旧 APK 不接受新数据库/API 合同，应优先做前向修复。

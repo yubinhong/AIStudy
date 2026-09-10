@@ -42,7 +42,7 @@ AIStudy 是给一个家庭自己使用的小学生学习助手。孩子在平板
 | 英语 | 暂未开放 |
 | 自用部署 | 已在家庭 Ubuntu 服务器运行；不等同于公开网站或商业服务 |
 
-Ubuntu 当前运行 API/OpenAPI `0.17.3`、迁移 `0039_smartedu_curriculum_source`。服务器配有 12 GB 内存和 8 个 CPU 核心；本地 `Qwen3.5-4B Q4_K_M` 已完成测试但因视觉质量门禁失败而停止，当前 AI 请求使用现有 NewAPI 云端配置。跨设备任务位置、每天最多 3 项、未来任务保护、家长撤销、语文教材批准后自动古诗出题和看图写话安全降级已由版本标签固化。`v0.17.3` 的 GitHub Actions quality、Android 和 API/Web GHCR 发布均成功完成；2026-09-10 Ubuntu 已切换为同一提交的 `sha-a7454a8` GHCR 镜像并前滚 `0039` 迁移。备份、恢复校验、模型测试、健康检查和仍待完成的设备/Provider 验证见 [RUNBOOK.md](RUNBOOK.md) 和 [TESTING.md](TESTING.md)。
+Ubuntu 当前运行 API/OpenAPI `0.17.4`、迁移 `0039_smartedu_curriculum_source`。服务器配有 12 GB 内存和 8 个 CPU 核心；本地 `Qwen3.5-4B Q4_K_M` 已完成测试但因视觉质量门禁失败而停止，当前 AI 请求使用现有 NewAPI 云端配置。跨设备任务位置、每天最多 3 项、未来任务保护、家长撤销、语文教材批准后自动古诗出题和看图写话安全降级已由版本标签固化。`v0.17.4` 的 GitHub Actions quality、Android 和 API/Web GHCR 发布均成功完成；2026-09-10 Ubuntu 已切换为同一提交的 `v0.17.4` GHCR 镜像并前滚 `0039` 迁移。关闭 `STUDY_LOCAL_MODEL_ENABLED` 时基础 Compose 不创建本地模型容器。备份、恢复校验、模型测试、健康检查和仍待完成的设备/Provider 验证见 [RUNBOOK.md](RUNBOOK.md) 和 [TESTING.md](TESTING.md)。
 
 ## 家庭使用流程
 
@@ -70,10 +70,10 @@ cp infra/compose/.env.example infra/compose/.env
 服务端镜像由 GitHub Actions 发布到 GHCR。公开 Package 可直接拉取；若 Package 为 private，先使用只具备 `read:packages` 的凭据登录 `ghcr.io`。正式升级应把 `.env` 中的 `STUDY_API_IMAGE` 和 `STUDY_WEB_IMAGE` 固定到同一个 `v*` 或 `sha-*` 标签，避免 `latest` 漂移。
 
 ```bash
-docker compose -f infra/compose/compose.yml config
-docker compose -f infra/compose/compose.yml pull
-docker compose -f infra/compose/compose.yml up -d
-docker compose -f infra/compose/compose.yml ps
+infra/compose/compose.sh config
+infra/compose/compose.sh pull
+infra/compose/compose.sh up -d --remove-orphans
+infra/compose/compose.sh ps
 
 curl -fsS http://127.0.0.1:8000/healthz
 curl -fsS http://127.0.0.1:3000/healthz
@@ -87,16 +87,16 @@ curl -fsS http://127.0.0.1:3000/healthz
 
 Compose 支持在本地 Qwen 和现有 NewAPI 云端模型之间进行显式切换：
 
-- `STUDY_LOCAL_MODEL_ENABLED=true`：启动 `Qwen3.5-4B Q4_K_M`，当前所有 AI 大模型请求统一走本地 OpenAI-compatible 服务。请求失败时不会静默回退到云端，避免同一份内容在未确认时被外发。
-- `STUDY_LOCAL_MODEL_ENABLED=false`：不加载本地权重，恢复现有 `STUDY_NEWAPI_*` 云端路由；云端仍需单独设置 `STUDY_NEWAPI_ENABLED=true` 和有效配置。
+- `STUDY_LOCAL_MODEL_ENABLED=true`：`infra/compose/compose.sh` 叠加 `compose.local-model.yml`，启动 `Qwen3.5-4B Q4_K_M`，当前所有 AI 大模型请求统一走本地 OpenAI-compatible 服务。请求失败时不会静默回退到云端，避免同一份内容在未确认时被外发。
+- `STUDY_LOCAL_MODEL_ENABLED=false`：基础 Compose 不创建或启动 `local-model`，恢复现有 `STUDY_NEWAPI_*` 云端路由；云端仍需单独设置 `STUDY_NEWAPI_ENABLED=true` 和有效配置。
 
 本地模型首次启动会下载约数 GB 权重并写入持久化 Docker volume，所需时间取决于网络。若只有 Docker 守护进程能访问外网，可设置仅传给模型容器的 `STUDY_LOCAL_MODEL_PROXY_URL`。家庭 Ubuntu 服务器使用 12 GB 内存、8 个 CPU 核心和 `8192` context 对 `Qwen3.5-4B Q4_K_M` 完成了两轮 synthetic 测试：4 核下完整视觉请求 600 秒内未收敛；8 核下短文本 JSON 为 1.387 秒，但 synthetic 数学大图耗时 373.128 秒、生成到 2048 token 上限后仍因 `provider_response_schema_invalid` 失败。模型运行中约占 5.87 GiB，未使用 Swap。该结果说明增加 CPU 可以改善吞吐，但不能解决当前模型、量化和运行时组合的视觉 Schema 质量，不应把短文本 smoke 通过视为多模态可用。
 
-因此 Ubuntu 当前设置为 `STUDY_LOCAL_MODEL_ENABLED=false`，本地模型容器已停止，模型缓存保留以便后续重新选型；所有已启用的 AI 请求显式使用现有 NewAPI 云端配置。切换后 synthetic 数学文本 Schema smoke 在 3.591 秒内通过，API、Web 和四个 worker 保持运行。本地与云端不会在单次请求失败时自动互相回退，切换必须修改开关并重启 API 和 AI worker。开关和模型参数示例见 [infra/compose/.env.example](infra/compose/.env.example)，完整 4 核/8 核证据、限制和后续调研问题见 [本地 Qwen 测试报告](docs/local-qwen-evaluation-report-2026-08-24.md)。上述结果只使用 synthetic 数据，不代表真实教材、真实儿童图片、完整 Tutor 质量或设备验收通过。
+因此 Ubuntu 当前设置为 `STUDY_LOCAL_MODEL_ENABLED=false`，基础 Compose 不会创建本地模型容器；旧容器会在 `infra/compose/compose.sh up -d --remove-orphans` 时被移除，模型缓存卷保留以便后续重新选型。所有已启用的 AI 请求显式使用现有 NewAPI 云端配置。切换后 synthetic 数学文本 Schema smoke 在 3.591 秒内通过，API、Web 和四个 worker 保持运行。本地与云端不会在单次请求失败时自动互相回退，切换必须修改开关并重启 API 和 AI worker。开关和模型参数示例见 [infra/compose/.env.example](infra/compose/.env.example)，完整 4 核/8 核证据、限制和后续调研问题见 [本地 Qwen 测试报告](docs/local-qwen-evaluation-report-2026-08-24.md)。上述结果只使用 synthetic 数据，不代表真实教材、真实儿童图片、完整 Tutor 质量或设备验收通过。
 
 ## Android APK 与部署
 
-仓库提供 `Build Android APK` GitHub Actions：手动运行时生成保留 14 天的 Actions Artifact；推送 `v*` 标签时还会自动创建对应 GitHub Release，并上传三个 ABI APK、SHA-256 摘要和构建信息。工作流使用固定 Flutter `3.44.6`，发布 Job 才获得最小 `contents: write` 权限。
+仓库提供 `Build Android APK` GitHub Actions：手动运行时生成保留 14 天的 Actions Artifact；推送 `v*` 标签时会先从 `CHANGELOG.md` 提取同名版本区块，自动创建或更新中文 GitHub Release，再上传三个 ABI APK、SHA-256 摘要和构建信息。缺少或重复对应 Changelog 区块时发布会失败，不会生成无内容的 Release。工作流使用固定 Flutter `3.44.6`，发布 Job 才获得最小 `contents: write` 权限。
 
 `quality` GitHub Actions 在 `master` 或 `v*` 标签通过契约、API、Web 和隔离浏览器门槛后，发布 `ghcr.io/yubinhong/aistudy-api` 与 `ghcr.io/yubinhong/aistudy-web` 的 `linux/amd64`、`linux/arm64` 镜像。`master` 生成 `latest` 和 `sha-*`，版本标签生成同名版本和 `sha-*`；Pull Request 不获得 Package 写权限，也不发布镜像。
 

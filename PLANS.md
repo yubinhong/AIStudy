@@ -1,3 +1,57 @@
+# PLANS.md — PLAN-0048 SmartEdu 真实凭据下载重试修复
+
+## 计划元数据
+
+- 计划 ID：`PLAN-0048`
+- 关联：`PLAN-0046`、`TASK-0012`、`ADR-0029`、`SECURITY.md`、`TESTING.md`
+- 状态：`IN_PROGRESS`
+- 优先级：`P1 / API / WEB / SECURITY`
+- Owner：Codex（实现与测试）；项目 Owner（真实凭据与教材验收）
+- 创建：`2026-09-10`
+
+## 目标、边界与里程碑
+
+修复家长填写 SmartEdu 登录 JSON 后教材加载仍返回 `503` 的问题。严格复现上游下载请求：有凭据时同时发送对应的 Bearer 和按 URL 生成的 `X-ND-AUTH`，对私有 CDN 的瞬时 `400` 使用新 nonce 有界退避，对非鉴权故障按固定 r1/r2/r3 镜像重试，并安全编码包含中文或空格的路径。凭据仍只存在当前请求内存和浏览器当前标签页，不读取、不记录、不回显用户真实值。
+
+- [x] M1 — 先增加 Bearer、中文路径、400 重签和镜像切换的失败回归。
+- [x] M2 — 修复 API 下载适配器并让 Web 对上游暂不可用返回可操作提示。
+- [x] M3 — 完成 API/Web 定向及相关质量检查，更新任务、测试和变更记录。
+- [ ] M4 — 真实凭据回归与 Ubuntu GHCR 部署需单独获得提交、推送、tag 和部署授权。
+
+## 兼容性、风险与回滚
+
+不改变 OpenAPI 字段、数据库迁移或凭据缓存范围。重试仅限固定 HTTPS 私有 CDN 主机：同地址最多两次退避重签，认证拒绝不跨镜像扩散，普通上游故障最多尝试三个固定镜像。回滚只需恢复此前 API/Web 代码或镜像，保留数据库、MinIO、Redis、教材和学习事实。
+
+---
+
+# PLANS.md — PLAN-0047 Compose 可选本地模型与 Ubuntu 容器清理
+
+## 计划元数据
+
+- 计划 ID：`PLAN-0047`
+- 关联：`TASK-0012`、`ADR-0028`、`RUNBOOK.md`、`TESTING.md`
+- 状态：`COMPLETE`
+- 优先级：`P1 / INFRA / SELF-HOSTED DEPLOYMENT`
+- Owner：Codex（实现、测试、部署和清理）
+- 创建：`2026-09-10`
+
+## 目标、边界与里程碑
+
+修复 `STUDY_LOCAL_MODEL_ENABLED=false` 仍创建 idle `local-model` 容器的问题，并在 Ubuntu 只删除已核验的无效停止容器。保留本地模型能力、模型缓存卷、PostgreSQL/MinIO/Redis 数据和 Compose 迁移容器；不改变 API、OpenAPI、数据库迁移或儿童学习事实。
+
+- [x] M1 — 将本地模型拆为可选 Compose 文件，增加按环境开关选择拓扑的统一入口，并同步回滚/启用说明。
+- [x] M2 — 增加 Compose false/true 服务集合回归和脚本语法检查。
+- [x] M3 — Ubuntu 备份/配置同步/拉取式重启，确认 false 下无 `local-model` 容器且 API/Web/worker 健康。
+- [x] M4 — 删除已核验的三个无 Compose 项目标识的停止容器，复查数据卷、迁移和运行服务。
+
+实施证据：备份 `/home/syin/study-backups/20260910T072556Z` 已通过隔离恢复（39 张 PostgreSQL public 表、727 个 MinIO 快照文件）；回滚副本为 `/home/syin/study-source-backups/20260910T072547Z-local-model-topology/`。Ubuntu 已同步三份 Compose 文件，`STUDY_LOCAL_MODEL_ENABLED=false` 下服务列表不含 `local-model`，旧模型容器已由 `--remove-orphans` 移除，API/Web 本机及服务器 LAN 地址 health 返回 200，迁移为 `0039_smartedu_curriculum_source`，四个 worker 正常；三个无效停止容器已定向删除，`local-model-cache` 保留。
+
+## 兼容性、风险与回滚
+
+无数据库或公共 OpenAPI 变化。现有 `.env` 的 `STUDY_LOCAL_MODEL_ENABLED=false` 继续使用 NewAPI，关闭时不再创建本地模型服务；开启本地模型必须通过 `infra/compose/compose.sh`，脚本自动叠加 `compose.local-model.yml` 并等待模型健康。回滚 Compose 时可恢复此前 `compose.yml` 副本，但不得删除 `local-model-cache`、PostgreSQL、MinIO 或 Redis 卷；应用镜像继续固定 `v0.17.4`，不执行数据库 downgrade。
+
+---
+
 # PLANS.md — PLAN-0046 SmartEdu 私有 CDN 签名修复
 
 ## 计划元数据
@@ -17,7 +71,9 @@
 - [x] M2 — 家长页面提供可选凭据输入和从 SmartEdu 登录会话复制 JSON 的具体步骤；凭据和同一教材的幂等键临时保存于当前标签页 `sessionStorage`，同步 ADR、安全、部署、测试、任务和变更记录。
 - [x] M3 — 完成本地 API 定向/全量质量门槛、Web 类型/Lint/构建和 Compose 配置检查，审查密钥、生成物及无关改动；确认凭据不进入持久化教材记录和响应，已有幂等结果不会再次下载。
 - [x] M4a — 提交并推送 `v0.17.4`，创建带中文说明的 GitHub Release。
-- [ ] M4b — 通过 GHCR 同提交镜像部署 Ubuntu，并在项目 Owner 明确授权后用真实账号/教材验证 `PDF -> 私有草稿 -> 解析队列`；不读取或输出教材正文。
+- [x] M4c — 固定后续发布流程：tag 质量门槛校验 `CHANGELOG.md` 版本区块，Android 发布 Action 自动用该区块创建或更新中文 Release。
+- [x] M4b — 通过 GHCR 同提交镜像部署 Ubuntu：`v0.17.4` API/Web 已拉取并运行，备份与隔离恢复、迁移、健康、worker、运行时 revision、错误计数和 MinIO 私有端口均通过。
+- [ ] M4d — 在项目 Owner 明确授权后用真实账号/教材验证 `PDF -> 私有草稿 -> 解析队列`；不读取或输出教材正文。
 
 ## 兼容性、风险与回滚
 
@@ -154,7 +210,7 @@ Ubuntu 部署载荷：`study-local-api:smartedu-20260910`（`sha256:e4e41ce1f391
 
 ## 兼容性、风险与回滚
 
-本次无数据库迁移、无业务数据删除；回滚优先恢复旧 `STUDY_API_IMAGE`/`STUDY_WEB_IMAGE` 标签并重新拉取/启动，数据库只前滚不 downgrade。`STUDY_LOCAL_MODEL_ENABLED=false` 时 `local-model` 保持空闲，不能描述为本地模型质量验收通过。
+本次无数据库迁移、无业务数据删除；回滚优先恢复旧 `STUDY_API_IMAGE`/`STUDY_WEB_IMAGE` 标签并重新拉取/启动，数据库只前滚不 downgrade。`STUDY_LOCAL_MODEL_ENABLED=false` 时基础拓扑不包含 `local-model`，不能描述为本地模型质量验收通过。
 
 ---
 

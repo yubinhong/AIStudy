@@ -1,8 +1,58 @@
 # Changelog
 
-- 2026-09-10（v0.17.4）：家长后台将已填写的 SmartEdu JSON 凭据临时保存到当前标签页 `sessionStorage`，刷新后可继续重试和连续加载，手动清除/退出登录/关闭标签页后清除；同一孩子/资源复用幂等键，API 对已有结果在下载前回放，避免网络重试重复下载。新增 Web session-storage 回归和 API 下载调用次数回归；已提交并创建中文 GitHub Release，尚未重新部署 Ubuntu。
+## 未发布
 
-- 2026-09-10：提交 `a7454a8` 已推送 `master`，并创建/推送 `v0.17.3`。tag quality run `34425077122`、Android run `34425077166` 和 master quality run `34425029726` 均成功，API/Web GHCR 多架构镜像发布完成。Ubuntu `192.168.1.4` 已从远端本地构建切换为 `sha-a7454a8`，备份 `/home/syin/study-backups/20260910T012805Z` 已隔离恢复验证，迁移为 `0039_smartedu_curriculum_source`，API/Web、四个 worker、SmartEdu 路由、本机/LAN health、运行时 revision 和近期日志检查均通过；真实 SmartEdu PDF、Provider、版权/教研、账号浏览器和设备验收仍未执行。
+## v0.17.5 - 2026-09-10
+
+### SmartEdu 真实凭据下载
+
+- 修复填写 SmartEdu 登录 JSON 后下载请求仍固定发送 `Authorization: Bearer 0` 的问题；现在 Bearer 与 URL 绑定 MAC 使用同一份当前请求凭据。
+- 补齐上游下载容错：中文/空格路径安全编码，私有 CDN 瞬时 `400` 重新生成签名后有界退避，非鉴权故障在固定 r1/r2/r3 镜像间切换。
+- `smartedu_source_unavailable` 现在提示系统已自动重试，并继续提供本地 PDF 上传回退；凭据缓存和服务端不持久化边界不变。
+
+### Ubuntu Compose 模型拓扑
+
+- 修复 `STUDY_LOCAL_MODEL_ENABLED=false` 仍创建并运行 idle `local-model` 容器的问题。基础 Compose 现在不包含本地模型服务，统一入口仅在开关为 `true` 时叠加可选模型拓扑；关闭时保留模型缓存卷并可清理旧容器。
+- 清理 Ubuntu 上三个已停止、无 Compose 项目标识且退出码为 1 的无效容器；保留数据库、MinIO、Redis、迁移容器和所有数据卷。
+- Ubuntu 已完成备份与隔离恢复、GHCR `v0.17.4` 拉取式重启和健康复核；基础服务列表不含 `local-model`，模型缓存卷保留，三个无效容器已定向删除。
+
+### 发布流程
+
+- tag 质量门槛校验 `CHANGELOG.md` 中唯一的对应版本区块；Android 发布 Action 自动读取该区块创建或更新中文 GitHub Release，不再要求在浏览器手工填写更新内容。
+
+### 验证
+
+- API SmartEdu 定向 `20 passed`，非集成全量、Ruff 和 Mypy 通过。
+- Web `44 passed`，Prettier、ESLint、TypeScript 和 production build 通过。
+- Compose 本地模型开关 false/true 服务集合、脚本语法和 release notes 提取回归通过；无数据库迁移。
+
+## v0.17.4 - 2026-09-10
+
+### SmartEdu 教材加载
+
+- 修复真实教材 PDF 私有 CDN 返回 `400 InvalidArgument` 后被误报为通用服务不可用的问题。
+- 默认免配置；页面提示需要凭据时，仅需填写 `access_token`，`mac_key` 和 `diff` 可选。
+- 按固定 SmartEdu PDF URL 生成兼容的 `X-ND-AUTH` MAC 签名，并保留本地 PDF 上传回退。
+
+### 重试与凭据体验
+
+- 凭据临时保存在当前浏览器标签页，刷新后可以继续重试和连续加载教材。
+- 同一孩子、同一教材的重试复用幂等键，服务端在下载 PDF 前回放已完成的导入结果，避免网络重试重复下载。
+- 凭据不会进入数据库、日志、接口响应或镜像；手动清除、退出登录或关闭标签页后清除。
+- 修复公开复用教材首次响应与后续重试状态不一致的问题。
+
+### 验证
+
+- API 非集成测试：278 passed。
+- SmartEdu 定向测试：17 passed。
+- Web 测试：44 passed；Lint、类型检查和生产构建通过。
+- 无数据库迁移。
+
+> 本次 Release 对应提交：`6a75e81`。Ubuntu 已切换到本版本 GHCR 镜像；真实 SmartEdu PDF 验证仍待执行。
+
+## v0.17.3 - 2026-09-10
+
+- 提交 `a7454a8` 已推送 `master`，并创建/推送 `v0.17.3`。tag quality run `34425077122`、Android run `34425077166` 和 master quality run `34425029726` 均成功，API/Web GHCR 多架构镜像发布完成。Ubuntu `192.168.1.4` 已从远端本地构建切换为 `sha-a7454a8`，备份 `/home/syin/study-backups/20260910T012805Z` 已隔离恢复验证，迁移为 `0039_smartedu_curriculum_source`，API/Web、四个 worker、SmartEdu 路由、本机/LAN health、运行时 revision 和近期日志检查均通过；真实 SmartEdu PDF、Provider、版权/教研、账号浏览器和设备验收仍未执行。
 
 - 2026-09-10（实现阶段）：按用户要求将 SmartEdu 家长教材目录选择和私有 PDF 草稿加载部署到 Ubuntu `192.168.1.4`。部署前备份 `/home/syin/study-backups/20260910T004753Z` 已通过隔离恢复；远端 x86_64 本地构建 API/Web 镜像，前滚至 `0039_smartedu_curriculum_source`，API/Web、四个 worker、SmartEdu 运行时路由、本机/LAN health 和近期日志检查均通过。随后已由 `v0.17.3` GHCR 载荷替换；本记录保留初始本地构建阶段，不代表当前运行来源。
 
@@ -85,7 +135,7 @@
 
 ## [Unreleased]
 
-- 修复 SmartEdu 真实教材在私有 CDN 返回 `400 InvalidArgument` 后被误报为通用 `503`：默认免配置，家长页面需要时可粘贴至少含 `access_token` 的一次性 JSON，`mac_key` 和 `diff` 可选；有 MAC key 时按每个固定 URL 生成短时 HMAC-SHA256 `X-ND-AUTH`。凭据不进入数据库、日志、镜像或 Git，页面按当前标签页临时缓存并提供手动清除；页面同时提供从本人 SmartEdu 登录会话获取 JSON 的具体步骤。无凭据或凭据过期时显示可操作提示，本地 PDF 上传继续可用。API/OpenAPI 已前移为 `0.17.4`，无数据库迁移；已在顶部 `v0.17.4` 发布记录，尚未重新部署 Ubuntu。
+- 发布流程要求每次准备版本时先增加对应的 `## vX.Y.Z - YYYY-MM-DD` Changelog 区块；tag 触发的 GitHub Actions 会严格读取该区块作为 Release 正文，缺少或重复区块时发布失败，不再回退为 GitHub 自动生成的英文说明。
 
 - Ubuntu 自用服务器新增每日 Docker 缓存维护脚本：默认清理 7 天前的未使用构建缓存和悬空镜像，使用非阻塞锁和 system journal 留痕；明确保留数据卷、容器、网络及仍有标签的镜像。UTC 主机计划于 `16:00` 执行，对应北京时间每天 `00:00`。
 

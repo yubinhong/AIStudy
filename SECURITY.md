@@ -21,7 +21,7 @@
 
 - 家长后台可查询 SmartEdu 小学一至六年级数学/语文目录并选择资源 ID；目录标题、版本、学期、年级和学科均视为不可信元数据，服务端在下载前重新读取详情并核对选择。默认不需要 SmartEdu 凭据；严格私有 CDN 需要登录时，家长可从本人登录会话复制一次性 JSON 到页面，`access_token` 必填，`mac_key` 和 `diff` 可省略。API 仅在当前下载请求内存中使用该 JSON，按固定主机 URL 生成需要的 MAC，不保存到数据库、日志、镜像、Git 或响应。
 - 页面只接受有界 JSON 文本；凭据字段仅允许可打印 ASCII 且禁止换行，时钟差有界。空输入走匿名请求，字段错误返回稳定的 `smartedu_credentials_invalid`；CDN 返回 `400/401/403` 时统一视为凭据缺失或失效，不读取或记录错误正文、请求签名和令牌。Web 只把凭据临时保存到当前标签页 `sessionStorage`，刷新和连续加载时可继续复用，手动清除、退出登录或关闭标签页后清除；服务端对同一孩子/资源的幂等键在下载前回放已有结果，避免网络重试重复下载。凭据不复制到 worker 或其他客户端持久存储。
-- 适配器只访问固定 HTTPS 元数据/CDN 主机，禁用环境代理，使用有界超时、最多三个固定镜像、50 MiB 读取上限、PDF 文件头和 SHA-256 校验；拒绝用户传入 URL、未知主机、重定向到未知主机、非 PDF 和平台需要认证的资源。日志只可记录稳定错误码和来源资源 ID，不记录直链或教材正文。
+- 适配器只访问固定 HTTPS 元数据/CDN 主机，禁用环境代理，使用有界超时、最多三个固定镜像、50 MiB 读取上限、PDF 文件头和 SHA-256 校验；有凭据时 Bearer 与 URL 绑定 MAC 使用同一当前请求令牌，私有 CDN 瞬时 400 只在同地址有界重签，认证拒绝不跨镜像扩散。拒绝用户传入 URL、未知主机、重定向到未知主机、非 PDF 和平台需要认证的资源。日志只可记录稳定错误码和来源资源 ID，不记录直链或教材正文。
 - 下载内容进入家庭私有 MinIO 和现有 `uploaded` 草稿/解析 worker；API/Web 不返回第三方 PDF URL、对象键或签名 URL。家长仍必须确认使用权、不对外分发和无儿童个人信息，跨家庭精确复用需要单独勾选；版权/平台条款不因代码许可改变。
 
 ### 自用部署修订（2026-07-15）
@@ -36,7 +36,7 @@
 
 Apple Silicon 的默认 Compose 镜像是 Linux ARM64 调试运行时；由于锁定的 PaddlePaddle 3.3.1 只提供 macOS ARM64 和 Linux x86_64 wheel，该镜像不含 Paddle OCR。不得把规则/手工遮挡或“ARM 镜像可以启动”解释成完整 PrivacySanitizer 已通过；启用图片外发前仍必须在具备获批本地检测器的运行时完成固定脱敏评测和用户确认门禁。
 
-当前实现状态：Profile/Device、Learning/Capture/OCR/ImageAnalysis、Account/AuthSession、TutorTurn、教材知识图谱、语文 Content/Attempt/Review 和短期 Export 均有 PostgreSQL 仓储；本地 API/OpenAPI 为 `0.17.4`，Ubuntu 为 `0.17.3`，迁移头均为 `0039_smartedu_curriculum_source`。孩子绑定拍题/活动会话、家长分学科学习记录/周报/导出/删除、Compose 和反向 Household 授权测试已存在；SmartEdu 目录/私有 PDF 加载基础版本已部署 Ubuntu，私有 CDN 签名修复尚待服务器凭据、发布和真实 PDF 验证。孩子档案删除按依赖清理学习、Capture/OCR、视觉、Tutor、教材派生数据、语文 Attempt/Review 和导出数据并级联账号/会话；Flutter 令牌只进系统安全存储，确认作答、任务完成、复习收口和跳过的离线事件只进按服务端/家庭/账号隔离的 SQLite，联网后先同步 Attempt 再按序重放终态。SmartEdu 部署前备份和 PostgreSQL/MinIO 隔离恢复已验证；英语 Provider 保持关闭，真实视觉检测器和真实教材 Provider 质量/成本验收仍未完成。
+当前实现状态：Profile/Device、Learning/Capture/OCR/ImageAnalysis、Account/AuthSession、TutorTurn、教材知识图谱、语文 Content/Attempt/Review 和短期 Export 均有 PostgreSQL 仓储；本地 API/OpenAPI 为 `0.17.5`，Ubuntu 为 `0.17.4`，迁移头均为 `0039_smartedu_curriculum_source`。孩子绑定拍题/活动会话、家长分学科学习记录/周报/导出/删除、Compose 和反向 Household 授权测试已存在；SmartEdu 目录/私有 PDF 加载基础版本已部署 Ubuntu，本地真实 Bearer/路径/重试修复尚待发布和真实 PDF 验证。孩子档案删除按依赖清理学习、Capture/OCR、视觉、Tutor、教材派生数据、语文 Attempt/Review 和导出数据并级联账号/会话；Flutter 令牌只进系统安全存储，确认作答、任务完成、复习收口和跳过的离线事件只进按服务端/家庭/账号隔离的 SQLite，联网后先同步 Attempt 再按序重放终态。SmartEdu 部署前备份和 PostgreSQL/MinIO 隔离恢复已验证；英语 Provider 保持关闭，真实视觉检测器和真实教材 Provider 质量/成本验收仍未完成。
 
 2026-08-15 语文边界：家长显式启用语文后孩子才可读取和提交；Household、Owner、绑定孩子和学科开关均在服务端重新授权。语文 `AnswerSpec` 只存在服务端/数据库，孩子 OpenAPI 响应与 Flutter 模型不包含答案；`chinese-score.v1` 只做固定选择、排序、规范化文本集合和“回答 + 文中依据”的确定性校验，不调用 Provider，也不把评分直接解释为永久掌握。Attempt 追加写并纳入家庭导出/孩子删除，Review 是可重算调度状态。首批内容为 synthetic 原创样例；正式内容上线前仍须教研、版权和年龄适配审核。语文教材只创建私有 subject-scoped 草稿，专用 Schema/Prompt 完成前阻断分析，禁止借用数学 Prompt 或跨学科复用材料。
 

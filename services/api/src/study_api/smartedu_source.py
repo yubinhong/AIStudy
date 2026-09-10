@@ -19,7 +19,7 @@ from hashlib import sha256
 from threading import Lock
 from typing import Any, Protocol, cast
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import quote, unquote, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -42,6 +42,7 @@ MAX_CATALOG_PARTS = 8
 MAX_CATALOG_ITEMS = 20_000
 CATALOG_CACHE_SECONDS = 600
 SOURCE_TIMEOUT_SECONDS = 60
+SMARTEDU_400_RETRY_DELAYS = (1.0, 3.0)
 RESOURCE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,120}$")
 GRADE_NAMES = {
     "一年级": 1,
@@ -245,11 +246,29 @@ def _header_map(
         "User-Agent": "Mozilla/5.0 (compatible; AIStudy/0.17)",
     }
     if urlsplit(url).hostname in SMARTEDU_CDN_HOSTS:
-        # Authorization remains the public placeholder used by the platform;
-        # the private CDN authenticates each URL through the MAC header.
-        headers["Authorization"] = "Bearer 0"
+        headers["Authorization"] = f"Bearer {credentials.access_token if credentials else '0'}"
         headers["X-ND-AUTH"] = _build_nd_auth(url, credentials)
     return headers
+
+
+def _encoded_request_url(url: str) -> str:
+    """Encode user-visible path characters without changing existing escapes."""
+
+    parts = urlsplit(url)
+    path = quote(parts.path, safe="/%:@!$&'()*+,;=-._~")
+    query = quote(parts.query, safe="%=&?/:;+,$@-._~")
+    return urlunsplit((parts.scheme, parts.netloc, path, query, ""))
+
+
+def _private_mirror_urls(url: str) -> tuple[str, ...]:
+    parts = urlsplit(url)
+    hostname = parts.hostname
+    if hostname not in SMARTEDU_CDN_HOSTS:
+        return (url,)
+    ordered_hosts = [hostname, *(host for host in sorted(SMARTEDU_CDN_HOSTS) if host != hostname)]
+    return tuple(
+        urlunsplit((parts.scheme, host, parts.path, parts.query, "")) for host in ordered_hosts
+    )
 
 
 def _read_bounded(response: Any, max_bytes: int) -> bytes:
@@ -360,9 +379,11 @@ class SmartEduSource:
         *,
         opener: UrlOpener | None = None,
         cache_ttl_seconds: int = CATALOG_CACHE_SECONDS,
+        retry_delays: tuple[float, ...] = SMARTEDU_400_RETRY_DELAYS,
     ) -> None:
         self._opener = opener or _default_opener()
         self._cache_ttl_seconds = max(0, cache_ttl_seconds)
+        self._retry_delays = tuple(max(0.0, delay) for delay in retry_delays[:3])
         self._catalog_cache: tuple[float, tuple[SmartEduTextbook, ...]] | None = None
         self._cache_lock = Lock()
 
@@ -373,24 +394,30 @@ class SmartEduSource:
         max_bytes: int,
         credentials: SmartEduCredentials | None = None,
     ) -> bytes:
-        request = Request(
-            url,
-            headers=_header_map(url, credentials=credentials),
-            method="GET",
-        )
-        try:
-            with self._opener.open(request, timeout=SOURCE_TIMEOUT_SECONDS) as response:
-                return _read_bounded(response, max_bytes)
-        except SmartEduSourceError:
-            raise
-        except HTTPError as error:
-            if error.code in {401, 403} or (
-                error.code == 400 and urlsplit(url).hostname in SMARTEDU_CDN_HOSTS
-            ):
-                raise SmartEduSourceError("smartedu_source_requires_authentication") from error
-            raise SmartEduSourceError("smartedu_source_unavailable") from error
-        except (OSError, TimeoutError, URLError, ValueError) as error:
-            raise SmartEduSourceError("smartedu_source_unavailable") from error
+        request_url = _encoded_request_url(url)
+        retry = 0
+        while True:
+            request = Request(
+                request_url,
+                headers=_header_map(request_url, credentials=credentials),
+                method="GET",
+            )
+            try:
+                with self._opener.open(request, timeout=SOURCE_TIMEOUT_SECONDS) as response:
+                    return _read_bounded(response, max_bytes)
+            except SmartEduSourceError:
+                raise
+            except HTTPError as error:
+                is_private_cdn = urlsplit(request_url).hostname in SMARTEDU_CDN_HOSTS
+                if error.code == 400 and is_private_cdn and retry < len(self._retry_delays):
+                    time.sleep(self._retry_delays[retry])
+                    retry += 1
+                    continue
+                if error.code in {401, 403} or (error.code == 400 and is_private_cdn):
+                    raise SmartEduSourceError("smartedu_source_requires_authentication") from error
+                raise SmartEduSourceError("smartedu_source_unavailable") from error
+            except (OSError, TimeoutError, URLError, UnicodeError, ValueError) as error:
+                raise SmartEduSourceError("smartedu_source_unavailable") from error
 
     def _request_json(self, url: str, *, expected: type[list] | type[dict]) -> Any:
         try:
@@ -516,7 +543,12 @@ class SmartEduSource:
     ) -> DownloadedSmartEduTextbook:
         resource = self.resolve(resource_id)
         last_error: SmartEduSourceError | None = None
+        download_urls: list[str] = []
         for url in resource.pdf_urls:
+            for candidate in _private_mirror_urls(url):
+                if candidate not in download_urls:
+                    download_urls.append(candidate)
+        for url in download_urls:
             try:
                 data = self._request_bytes(
                     url,

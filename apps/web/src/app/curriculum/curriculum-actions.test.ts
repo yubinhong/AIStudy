@@ -46,6 +46,11 @@ describe("curriculum actions", () => {
         message: "smartedu_credentials_invalid",
       }),
     ).toContain("access_token");
+    expect(
+      smartEduImportErrorMessage({
+        message: "smartedu_source_unavailable",
+      }),
+    ).toContain("已自动重试");
     expect(smartEduImportErrorMessage(null)).toContain("教材加载失败");
   });
 });

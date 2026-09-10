@@ -82,7 +82,7 @@ flowchart LR
 | Tutor | `services/api` 内模块 | 只消费 VerifiedQuestion；按练习/复习/错题讲解模式执行 Policy、教材 grounding、Schema、确定性校验和成本控制 | 追加写 TutorTurn、Policy/Prompt/模型和来源版本 | Capture、Curriculum、AI Provider、Mistake | 由统一路由选择 `local_qwen` 或 `newapi`；答案/重复/题意门禁失败时回退题型相关本地提示；L3 完整步骤/答案/验算已实现；本地模型质量/成本验收待完成 |
 | Mistake/Review/Report | `services/api` 内模块 | 错题证据、错因、讲解引用、确定性复习调度、周报聚合 | MistakeRecord、ReviewSchedule、复习 Attempt 和报告 | Session/Tutor/Curriculum、家长端 | AttemptEvidence 绑定、closeout、实际题目复习/ReviewAttempt、Web/Flutter 和教材来源已实现；真实设备/Provider 质量验收待完成 |
 | Notification | `services/api` 内模块 | 应用内提醒和可替换推送适配器 | 通知状态 | Report/Task、HMS | 未创建 |
-| 跨端契约 | `packages/contracts` | OpenAPI、AI JSON Schema、生成 SDK | 接口/Schema 的唯一事实来源 | API、Flutter、Web、evals | 本地 `0.17.4` 包含 72 个 path 条目、84 个 HTTP operation 和 101 个 component schema；包含 SmartEdu 目录/导入与家长私有 Capture 媒体流等兼容式扩展；Ubuntu 仍为 `0.17.3`，SDK 生成器未实现 |
+| 跨端契约 | `packages/contracts` | OpenAPI、AI JSON Schema、生成 SDK | 接口/Schema 的唯一事实来源 | API、Flutter、Web、evals | 本地 `0.17.5` 包含 72 个 path 条目、84 个 HTTP operation 和 101 个 component schema；包含 SmartEdu 目录/导入与家长私有 Capture 媒体流等兼容式扩展；Ubuntu 仍为 `0.17.4`，SDK 生成器未实现 |
 | AI 评测 | `evals` | 固定样本与质量/安全/延迟/成本回归 | 合成或脱敏评测数据 | Tutor、CI | OCR、PrivacySanitizer、Tutor Policy 和真实 NewAPI synthetic 大图已实现；自动视觉检测器 eval 待其实现后补充 |
 | 本地基础设施 | `infra/compose` | PostgreSQL、Redis、MinIO、API/Web/Worker 和可切换 llama.cpp/Qwen 服务编排 | 单家庭自用数据与本地模型缓存 | 开发/自托管 | Ubuntu 完整栈、迁移、生命周期 worker、备份和隔离恢复已验证；本地模型首次下载/质量验收待完成 |
 | ADR | `docs/adr` | 不可逆或跨模块决策记录 | 架构决策历史 | `DECISIONS.md` | ADR-0001～0011、0013～0018、0020～0028 Accepted；ADR-0019、0029 Proposed；替代关系见决策索引 |
@@ -201,7 +201,7 @@ PLAN-0013 的目标聚合不改变上述认证边界：家长通过一个带幂�
 | 同步事件批次 | Flutter | API | `packages/contracts/schemas` | 每事件有 ID/版本/幂等键；追加新事件类型 | `TBD` |
 | AuditEvent | 所有服务端模块 | 审计/可观测性 | `packages/contracts/schemas` | 稳定事件名；字段按敏感级别控制 | `TBD` |
 
-契约目录和结构检查已建立；SDK 生成器和自动兼容检查命令仍未固定。本地 API/OpenAPI `0.17.4` 与 Ubuntu `0.17.3` 均使用迁移 `0039_smartedu_curriculum_source`；两者均包含服务端任务位置、容量/未来日期/撤销保护、subject-aware 教材、语文 Content/Attempt/Review、古诗抽查/发布、看图写话和分学科学习记录，Ubuntu 尚未部署 `0.17.4` 的 SmartEdu 私有 CDN 签名修复。数学任务的确认作答和终态事件由端侧 SQLite 按范围隔离并在联网后有序重放；图片上传继续保持单一 Session 流式操作。
+契约目录和结构检查已建立；SDK 生成器和自动兼容检查命令仍未固定。本地 API/OpenAPI `0.17.5` 与 Ubuntu `0.17.4` 均使用迁移 `0039_smartedu_curriculum_source`；两者均包含服务端任务位置、容量/未来日期/撤销保护、subject-aware 教材、语文 Content/Attempt/Review、古诗抽查/发布、看图写话和分学科学习记录，Ubuntu 尚未部署 `0.17.5` 的 SmartEdu 真实凭据下载修复。数学任务的确认作答和终态事件由端侧 SQLite 按范围隔离并在联网后有序重放；图片上传继续保持单一 Session 流式操作。
 
 ## 6. 数据架构
 

@@ -8,13 +8,14 @@
 - 一句话目标：复用家庭现有设备，以数学错题闭环为主线，并通过显式多学科核心逐步增加语文确定性练习。
 - 当前阶段：`P1 MULTISUBJECT FOUNDATION / CHINESE MVP / GATED ENGLISH LAST`
 - 主要用户：小学阶段孩子与家长/监护人；辅助角色为家庭内容维护者和项目维护者。
-- 生产状态：`SELF_HOSTED_DEPLOYED`（Ubuntu 自用 Compose 运行 API/OpenAPI `0.17.3`/`0039_smartedu_curriculum_source`，应用通过同一提交的 GHCR API/Web 镜像提供；本地 Qwen 因视觉质量门禁失败已停止，当前 AI 路由为现有 NewAPI 云端配置；API/Web、迁移和四个常驻 worker 健康，不等同于公网/商业生产批准）
-- 当前版本：本地 API/OpenAPI 为 `0.17.4`，Ubuntu 仍为 `0.17.3`，迁移头均为 `0039_smartedu_curriculum_source`；Ubuntu 固定 GHCR `sha-a7454a8`，API/Web digest 和发布证据见 `RUNBOOK.md`。`0.17.4` 的 SmartEdu 私有 CDN MAC 签名、当前标签页凭据缓存及幂等重试修复已提交并创建中文 GitHub Release，尚未部署 Ubuntu。
+- 生产状态：`SELF_HOSTED_DEPLOYED`（Ubuntu 自用 Compose 运行 API/OpenAPI `0.17.4`/`0039_smartedu_curriculum_source`，应用通过同一提交的 GHCR API/Web 镜像提供；`STUDY_LOCAL_MODEL_ENABLED=false` 时基础拓扑不创建 `local-model`，当前 AI 路由为现有 NewAPI 云端配置；API/Web、迁移和四个常驻 worker 健康，不等同于公网/商业生产批准）
+- 当前版本：本地 API/OpenAPI 为 `0.17.5`，Ubuntu 为 `0.17.4`，迁移头均为 `0039_smartedu_curriculum_source`；Ubuntu 固定 GHCR `v0.17.4`，API/Web digest 和发布证据见 `RUNBOOK.md`。本地 `0.17.5` 补齐 SmartEdu 真实 Bearer、路径编码和有界 CDN 重试，待发布部署后验证真实 PDF。
 - 最近更新：`2026-09-10`
 
 - 2026-09-09/10 PLAN-0044/0045：家长教材页新增 SmartEdu 公开教材目录查询和“加载为草稿”入口，并已随 `v0.17.3` 发布到 Ubuntu。API 只接收资源 ID，适配器固定 SmartEdu 元数据/CDN 主机、无环境代理、60 秒超时、三镜像候选、50 MiB/PDF 文件头/SHA-256 校验；下载文件进入现有私有 MinIO、`uploaded` 草稿和 material-parse 队列，材料保存 `source_provider/source_resource_id`。Web 不显示第三方 PDF URL/对象键；默认免配置，私有资源需要时家长可在页面粘贴一次性 JSON。API/Web/契约/迁移自动化、Ubuntu 备份恢复、0039 前滚、API/Web/worker 和运行时路由检查已通过；tag quality、Android 和 GHCR 发布均成功，真实 SmartEdu PDF、平台登录要求、版权/教研、Provider 和设备验收仍未执行，ADR-0029 为 Proposed。
-- 2026-09-10 PLAN-0046：复现真实 SmartEdu 教材私有 CDN 对占位认证返回 `400 InvalidArgument`。本地 `0.17.4` 默认免配置，页面在需要时接收至少含 `access_token` 的一次性 JSON，`mac_key`/`diff` 可选；有 MAC key 时按每个受信 URL 生成短时 HMAC-SHA256 MAC，凭据不进入数据库、日志、提交或镜像，临时保存在当前标签页 `sessionStorage`，手动清除/退出登录/关闭标签页后清除。API 非集成 `278 passed, 32 deselected`、SmartEdu 定向 `17 passed`、Web `44 passed`，格式、Lint、类型、production build、OpenAPI/runtime 和 Compose 检查通过；Ubuntu 发布和真实 `PDF -> 私有草稿 -> 解析队列` 尚未执行。
-- 当前 SmartEdu 重试修复已发布为 `v0.17.4`：Web 将凭据和同一孩子/资源的幂等键临时保存在当前标签页 `sessionStorage`，服务端命中已有导入回执时在下载前回放；新增 Web 存储回归与 API 下载调用次数回归。该版本尚未部署 Ubuntu。
+- 2026-09-10 PLAN-0046/0048：复现真实 SmartEdu 教材私有 CDN 对占位认证返回 `400 InvalidArgument`，随后真实页面在填写 JSON 后仍返回 `503`。本地保持一次性 JSON 与当前标签页 `sessionStorage` 边界，已补齐实际 Bearer、URL 绑定 MAC、中文/空格路径编码、400 新 nonce 重签和固定 r1/r2/r3 镜像重试；API SmartEdu 定向 `20 passed`、非集成全量、Web `44 passed`、格式、Lint、类型和 production build 通过。该追加修复尚未提交发布或部署，Ubuntu 仍是 `v0.17.4`，真实 `PDF -> 私有草稿 -> 解析队列` 尚未完成。
+- 当前 SmartEdu 重试修复已发布并部署为 `v0.17.4`：Web 将凭据和同一孩子/资源的幂等键临时保存在当前标签页 `sessionStorage`，服务端命中已有导入回执时在下载前回放；新增 Web 存储回归与 API 下载调用次数回归。真实 SmartEdu PDF、账号浏览器和设备验收仍待执行。
+- 发布流程已固定：准备版本时必须先在 `CHANGELOG.md` 写入唯一的 `## vX.Y.Z - YYYY-MM-DD` 区块；tag 质量门禁会校验该区块，Android 发布 Action 会从同一区块创建或更新中文 GitHub Release，缺少或重复区块时失败。
 
 ## 2. 当前工作状态
 
@@ -36,11 +37,11 @@
 
 - 2026-08-23 继续实现：数学“今日任务”每道题仍必须有指定题干并将当前题目和教材来源传入拍题/确认页；多题任务在同一会话内按序执行，中间题追加 Attempt、最后一题关闭任务；端侧 SQLite 保存服务端/家庭/孩子范围内的下一题号，进程重开后可继续；已确认作答、任务完成、复习收口和跳过在断网时进入结构化 SQLite 队列，联网后先按最多 50 条批次幂等同步 Attempt，再按顺序重放终态事件；服务端拒绝第二个活动会话。语文首页只保留“古诗抽查”和“看图写话”，古诗题库为空时也显示受限入口。语文 scorer golden 覆盖八类技能，正式原创内容必须有项目 Owner 审核、审核时间和权利凭证摘要才可被孩子读取；古诗抽查先均匀抽取诗目再抽相邻句题；服务端已持久化跨设备题号、每日容量、未来日期/逾期边界和家长撤销规则；教材批准自动生成古诗题、看图写话空句阻断和安全通用降级已补回归；完整 PostgreSQL 集成为 `32 passed`，API 非集成为 `244 passed`，Flutter 为 `70 passed`，Web 为 `35 passed`。本轮不连接手机/平板；真实 Provider/PDF、正式签核、Ubuntu 真实账号浏览器和设备 E2E 仍未完成。
 
-- 活动计划：`TASK-0012` 继续跟踪多学科与语文剩余验收；`PLAN-0031` 的隔离 Chromium 登录态 E2E、`PLAN-0032/0033` 的语文复习/古诗/看图写话、`PLAN-0038` 的分学科学习记录、`PLAN-0039` 的 GHCR 发布、`PLAN-0042` 的家长学习记录拍题图片展示均已完成代码和对应自动化。`PLAN-0040` 复核代码、OpenAPI 与文档一致性。正式教研/版权签核、真实 Provider 质量/成本、Ubuntu 真实账号浏览器和完整设备 E2E 仍待完成；英语保持供应商中立锁定框架并排最后。
+- 活动计划：`TASK-0012` 继续跟踪多学科与语文剩余验收；`PLAN-0031` 的隔离 Chromium 登录态 E2E、`PLAN-0032/0033` 的语文复习/古诗/看图写话、`PLAN-0038` 的分学科学习记录、`PLAN-0039` 的 GHCR 发布、`PLAN-0042` 的家长学习记录拍题图片展示和 `PLAN-0047` 的可选本地模型拓扑/Ubuntu 容器清理均已完成代码和对应自动化。`PLAN-0040` 复核代码、OpenAPI 与文档一致性。正式教研/版权签核、真实 Provider 质量/成本、Ubuntu 真实账号浏览器和完整设备 E2E 仍待完成；英语保持供应商中立锁定框架并排最后。
 - 任务状态：ADR-0018/PLAN-0012 已完成本地与 Ubuntu API/Flutter/Compose/契约迁移；Ubuntu 不再依赖预签名直传，MinIO `9000` 未向宿主/LAN 暴露。最终真机仍未回归。
 - 2026-09-04 iPhone 11：重新签名安装后复现 iOS 本地网络权限未登记导致的 `errno 65`；Flutter/iOS 已在健康检查前用 `NWConnection` 对实际家庭服务器触发授权并等待结果。修复包覆盖安装后，Ubuntu 收到 iPhone `192.168.1.100` 的 `/healthz` 并返回 200。登录、相机/相册、弱网和完整设备生命周期仍未验收。
-- 当前分支：`master`；本地 API/OpenAPI `0.17.4`，Ubuntu API/OpenAPI `0.17.3`，迁移均为 `0039_smartedu_curriculum_source`。Ubuntu 当前 SmartEdu 部署载荷为 GHCR `ghcr.io/yubinhong/aistudy-api:sha-a7454a8` 与 `ghcr.io/yubinhong/aistudy-web:sha-a7454a8`；`0.17.4` 已创建 GitHub Release，尚未部署 Ubuntu。
-- 当前重点：完成正式语文内容具名教研/版权签核、真实 Provider/PDF 质量与成本评测、Ubuntu 真实账号浏览器和设备 E2E；`PLAN-0034/ADR-0028` 的本地 Qwen 路由和 12 GB Ubuntu 部署能力仍保留，但 4 核下 `question-extraction.v1` synthetic 大图 600 秒内不收敛，8 核下耗时 373.128 秒且生成到 2048 token 上限后仍因 `provider_response_schema_invalid` 失败。Ubuntu 已将开关恢复为 `false` 并停止本地模型，当前运行时为 `newapi`；切换后的 synthetic 数学文本 Schema smoke 3.591 秒通过，详见 `docs/local-qwen-evaluation-report-2026-08-24.md`。本轮未连接手机或平板。英语继续排最后。既有数学教材原页/知识审核、推荐详情和学习记录继续按已部署合同运行。
+- 当前分支：`master`；本地 API/OpenAPI 为 `0.17.5`，Ubuntu 为 `0.17.4`，迁移均为 `0039_smartedu_curriculum_source`。Ubuntu 当前 SmartEdu 部署载荷仍为 GHCR `ghcr.io/yubinhong/aistudy-api:v0.17.4` 与 `ghcr.io/yubinhong/aistudy-web:v0.17.4`；`0.17.5` 已准备版本区块，尚未提交、tag 或部署。
+- 当前重点：完成正式语文内容具名教研/版权签核、真实 Provider/PDF 质量与成本评测、Ubuntu 真实账号浏览器和设备 E2E；`PLAN-0034/ADR-0028` 的本地 Qwen 路由和 12 GB Ubuntu 部署能力仍保留，但 4 核下 `question-extraction.v1` synthetic 大图 600 秒内不收敛，8 核下耗时 373.128 秒且生成到 2048 token 上限后仍因 `provider_response_schema_invalid` 失败。Ubuntu 保持 `STUDY_LOCAL_MODEL_ENABLED=false`、`STUDY_NEWAPI_ENABLED=true`，基础拓扑不创建 `local-model`，当前运行时为 `newapi`；切换后的 synthetic 数学文本 Schema smoke 3.591 秒通过，详见 `docs/local-qwen-evaluation-report-2026-08-24.md`。本轮未连接手机或平板。英语继续排最后。既有数学教材原页/知识审核、推荐详情和学习记录继续按已部署合同运行。
 - 已完成：本地与 Ubuntu 已部署的既有 OpenAPI/迁移、视觉四态候选与确认、可信 VerifiedQuestion → 云端递进 L1/L2 → 完整步骤/答案/验算、Mistake/Review closeout、语文确定性 Content/Attempt/Review、古诗抽查和看图写话引导，以及 PDF 私有原页、分批多模态教材理解、全书知识图谱、家长批准、“批准知识点 + 全部开放错题”的来源受限推荐和 180 天详细学习历史策略；本地新增任务会话位置、容量/未来日期/撤销保护。
 - 2026-08-16 语文 `v0.16.0` 已部署：`0033` 退役六项语文演示并从已审核教材逐行古诗生成抽查；`0034` 增加独立 `picture_writing_guides` 与 `picture-writing-guide.v1`。看图写话只消耗用户确认的脱敏派生图，Provider 只返回观察/提问/句式支架，绝不走数学抽题、生成范文或评分。Ubuntu 对无人物、无文字的合成花园图完成一次真实 Provider Schema 冒烟；不代表儿童图片、质量、成本或完整设备验收。
 - 当前未完成：真实 118 页 PDF 已完成机器解析且数据库记录为已批准，但 token/费用核算和正式版权/教研签核仍无独立证据；Ubuntu 真实账号/PostgreSQL 浏览器链路、实际相机四态闭环、教材个人信息自动门禁、自动视觉检测器、四设备回归、正式依赖/镜像安全扫描、监控告警和已批准的 RPO/RTO 仍未完成。本地 Qwen 的 GGUF/镜像来源最终核对、视觉 chat template/Schema 收敛、固定质量评测和真实设备回归仍未完成。NewAPI 合成完整解答和隔离登录态浏览器 E2E 已通过；L1/L2 和推荐 planner 尚未进行真实 Provider 质量/成本验收。PLAN-0032 本地实现已补齐语文到期复习、家长技能汇总及 `chinese-curriculum-*.v2` 独立 Schema/Prompt/短边界证据；内容仍为待具名教研和版权签核的原创演示包，不能作为正式课程或部署验收。
@@ -57,9 +58,9 @@
 ## 3. 已验证的仓库事实
 
 - 仓库根目录：`/Users/ybh/PycharmProjects/study`。
-- Git：代码/契约审计基线为 `master`/`origin/master` 的 `17275d8`，当前发布提交为 `a7454a8`，标签为 `v0.17.3`；该提交已推送并用于 Ubuntu GHCR 部署。
+- Git：代码/契约审计基线为 `master`/`origin/master` 的 `17275d8`，当前发布提交为 `6a75e81`，标签为 `v0.17.4`；该提交已推送并用于 Ubuntu GHCR 部署。
 - 现有内容：根目录上下文文档、`prompts/` 工作流模板、`docs/adr/0000-template.md`、`家庭AI学习助手_架构设计_v1.0.docx`。
-- 已创建并验证：`apps/`、`services/`、`packages/`、`evals/`、`infra/` 的 P0/P1 核心路径、配置、锁文件、测试和 Compose；Flutter Android release APK 与 iOS release 无签名 Runner.app 已构建。Ubuntu VM 上的 amd64 完整栈运行 API/OpenAPI `0.17.3`、迁移 `0039_smartedu_curriculum_source`，新流式上传、孩子管理、SmartEdu 目录/PDF 草稿加载、PDF 解析、错题闭环、私有原页、知识图谱、来源受限推荐、分学科学习记录、语文确定性 Content/Attempt/Review、古诗抽查和看图写话独立引导已部署；SmartEdu 当前使用 GHCR `sha-a7454a8`，tag quality、Android 与 API/Web 发布均成功。NewAPI synthetic 完整解答和看图写话 Schema 冒烟已成功，真实 L1/L2/智能规划、真实语文 Provider/PDF 质量仍待实测；ARM 镜像因 PaddlePaddle 3.3.1 无 Linux aarch64 wheel 而不含旧本地 OCR。
+- 已创建并验证：`apps/`、`services/`、`packages/`、`evals/`、`infra/` 的 P0/P1 核心路径、配置、锁文件、测试和 Compose；Flutter Android release APK 与 iOS release 无签名 Runner.app 已构建。Ubuntu VM 上的 amd64 完整栈运行 API/OpenAPI `0.17.4`、迁移 `0039_smartedu_curriculum_source`，新流式上传、孩子管理、SmartEdu 目录/PDF 草稿加载、PDF 解析、错题闭环、私有原页、知识图谱、来源受限推荐、分学科学习记录、语文确定性 Content/Attempt/Review、古诗抽查和看图写话独立引导已部署；SmartEdu 当前使用 GHCR `v0.17.4`，tag quality、Android 与 API/Web 发布均成功。NewAPI synthetic 完整解答和看图写话 Schema 冒烟已成功，真实 L1/L2/智能规划、真实语文 Provider/PDF 质量仍待实测；ARM 镜像因 PaddlePaddle 3.3.1 无 Linux aarch64 wheel 而不含旧本地 OCR。
 - 设计稿：31 个段落、6 个表格、3 页，定义 P0/P1/P2、设备职责、核心实体/API 和发布门槛；本地渲染缺少部分中文字体，但 OOXML 文本可完整提取。
 
 ## 4. 主文档索引
@@ -69,23 +70,23 @@
 | 项目目标、范围、设备、环境 | `PROJECT.md` | Active；目标与现状已分离 |
 | P1 产品需求与验收 | `PRD.md` | Draft；待产品 Owner 审批 |
 | 当前任务 | `TASK.md` | TASK-0012 多学科/语文主线已部署，继续跟踪正式内容、真实 Provider 和设备验收；英语框架保持锁定并排最后 |
-| 复杂任务计划 | `PLANS.md` | PLAN-0040 代码/契约/文档复核、PLAN-0041 Ubuntu GHCR 拉取式部署、PLAN-0042 家长学习记录拍题图片展示均已完成；正式内容、Provider 和设备验收仍在队列 |
+| 复杂任务计划 | `PLANS.md` | PLAN-0040 代码/契约/文档复核、PLAN-0041 Ubuntu GHCR 拉取式部署、PLAN-0042 家长学习记录拍题图片展示、PLAN-0047 Compose 可选本地模型与 Ubuntu 容器清理均已完成；正式内容、Provider 和设备验收仍在队列 |
 | 系统结构、数据流、接口 | `ARCHITECTURE.md` | P0/P1 单家庭核心闭环已实现；残余边界明确记录 |
 | 测试命令和质量门槛 | `TESTING.md` | API/Web/Flutter 质量命令已有验证；原生构建结果以最新记录为准 |
 | 儿童数据、权限与 AI 安全 | `SECURITY.md` | 基线草案；生产开放项未决 |
 | 部署、回滚、告警与恢复 | `RUNBOOK.md` | Ubuntu 自用部署与恢复已验证；监控/公网发布未建立 |
 | 架构决策 | `DECISIONS.md`、`docs/adr/` | ADR-0025 供应商中立儿童英语框架、ADR-0020～0023 教材驱动数学主线和 ADR-0018 已 Accepted；替代关系见索引 |
 | 工作队列 | `TODO.md` | 核心实现多已部署；正式内容、真实 Provider 质量/成本、Ubuntu 真实账号和完整设备 E2E 仍在队列 |
-| 已发布变化 | `CHANGELOG.md` | 最新发布版本 `v0.17.4`；2026-09-10 已记录 SmartEdu 重试修复，Ubuntu 尚未切换 |
+| 已发布变化 | `CHANGELOG.md` | 已准备 `v0.17.5` 唯一版本区块；SmartEdu 真实凭据下载和 Compose 可选模型修复待发布部署 |
 | 原始设计基线 | `家庭AI学习助手_架构设计_v1.0.docx` | v1.0；后续 ADR 可替代 |
 
 ## 5. 技术摘要
 
 - 客户端：Flutter iOS/Android；Next.js + TypeScript Web/PWA；端侧 SQLite。
 - 后端：Python 3.12 + FastAPI 模块化单体 + 异步 Worker。
-- 数据：PostgreSQL 为业务事实源；pgvector 做检索；Redis 做缓存/队列；私有 S3/MinIO 存图片。新链路仅由 API/worker 通过内部网络访问；Ubuntu `0.17.3` 已完成流式上传、教材解析、私有原页、知识图谱、学习历史保留、语文 Content/Attempt/Review、古诗抽查、看图写话引导和私有 MinIO 成对迁移。
-- 契约：`packages/contracts` 本地 OpenAPI 为 `0.17.4`；规范现有 72 个 path 条目（含一个 WebSocket 扩展）、84 个 HTTP operation 和 101 个 component schema，覆盖 `math/chinese`、OCR 确认、SmartEdu 目录/导入、古诗发布、家长学习记录拍题图片流、任务位置和家长撤销；孩子合同不包含 AnswerSpec。SDK 生成器尚未选择，Ubuntu 仍运行 `0.17.3` 合同。
-- AI：本地 PrivacySanitizer、固定 OCR/脱敏/Tutor eval、Provider Adapter、ImageAnalysis/CurriculumAnalysis worker、QuestionExtraction/VerifiedQuestion 和服务端可信 TutorTurn 已实现；`STUDY_LOCAL_MODEL_ENABLED=true` 时统一路由到 Compose 内部 llama.cpp 的 Qwen3.5-4B Q4_K_M，关闭时选择现有 NewAPI 云端配置，不自动跨 Provider 回退。教材页图有界分批后形成待家长批准的知识图谱，L1/L2 使用已确认文字和最小已批准教材片段，推荐由当前选定 Provider 在本地来源候选上规划。孩子英语只保留供应商中立接口、`disabled` 和测试注入的 `fake`，没有真实语音 Provider；本地 Qwen/云端教材、提示和推荐的真实质量/成本验收仍未完成。
+- 数据：PostgreSQL 为业务事实源；pgvector 做检索；Redis 做缓存/队列；私有 S3/MinIO 存图片。新链路仅由 API/worker 通过内部网络访问；Ubuntu `0.17.4` 已完成流式上传、教材解析、私有原页、知识图谱、学习历史保留、语文 Content/Attempt/Review、古诗抽查、看图写话引导和私有 MinIO 成对迁移。
+- 契约：`packages/contracts` 本地 OpenAPI 为 `0.17.5`、Ubuntu 为 `0.17.4`；规范现有 72 个 path 条目（含一个 WebSocket 扩展）、84 个 HTTP operation 和 101 个 component schema，覆盖 `math/chinese`、OCR 确认、SmartEdu 目录/导入、古诗发布、家长学习记录拍题图片流、任务位置和家长撤销；孩子合同不包含 AnswerSpec。SDK 生成器尚未选择。
+- AI：本地 PrivacySanitizer、固定 OCR/脱敏/Tutor eval、Provider Adapter、ImageAnalysis/CurriculumAnalysis worker、QuestionExtraction/VerifiedQuestion 和服务端可信 TutorTurn 已实现；`STUDY_LOCAL_MODEL_ENABLED=true` 时 `infra/compose/compose.sh` 叠加 `compose.local-model.yml` 并统一路由到 Compose 内部 llama.cpp 的 Qwen3.5-4B Q4_K_M，关闭时基础拓扑不创建本地模型服务并选择现有 NewAPI 云端配置，不自动跨 Provider 回退。教材页图有界分批后形成待家长批准的知识图谱，L1/L2 使用已确认文字和最小已批准教材片段，推荐由当前选定 Provider 在本地来源候选上规划。孩子英语只保留供应商中立接口、`disabled` 和测试注入的 `fake`，没有真实语音 Provider；本地 Qwen/云端教材、提示和推荐的真实质量/成本验收仍未完成。
 - 交付：Ubuntu 自用 Compose 已部署并完成迁移、健康、NewAPI synthetic 和 PostgreSQL/MinIO 恢复验收；OpenTelemetry、正式告警和公网发布未实现。
 - 认证：ADR-0017 已实现代码目标：同一 Household 内家长/孩子账号密码 + 可撤销不透明会话；Web 用 HttpOnly Cookie/CSRF，Flutter 用平台安全存储；不接入短信、邮箱、社交登录、OIDC 或 MFA，也不保留 HMAC/Demo 兼容。
 - 学习主线：ADR-0020/0023 已批准 CurriculumAssignment/Material/Snapshot → 私有原页/KnowledgeMap 批准 → VerifiedQuestion+已确认 AttemptEvidence（`worked` 或确认空白）→ 分模式 Tutor → MistakeRecord/ReviewSchedule → TaskRecommendation；本地与 Ubuntu 已接通拍题 closeout、证据化复习、多模态教材知识/grounding、L1/L2 递进和来源原页，当前剩余正式内容、真实 Provider 质量/成本、真实账号/设备和发布门槛验收。
@@ -97,9 +98,9 @@
 | `apps/child_flutter` | 孩子学习、拍题、提示交互、离线队列 | 本地数学任务恢复/断网 Attempt 与终态队列、语文古诗抽查/看图写话入口已实现；英语锁定，真实设备待回归 |
 | `apps/web` | 家长后台、内容维护、Windows Web/PWA | 逐孩子语文开关、教材学科选择和隔离 Chromium 登录态 E2E 已实现；语文分析走独立 v2 合同，真实账号浏览器与 Provider 质量待验收 |
 | `services/api` | FastAPI 模块化单体和 Worker | 本地与 Ubuntu `0039` 已部署 subject-aware 教材、SmartEdu、语文 Content/Attempt/Review 与分学科学习记录；正式内容与 Ubuntu 真实账号浏览器验收待完成 |
-| `packages/contracts` | OpenAPI、JSON Schema、生成 SDK | 本地 `0.17.4`、Ubuntu `0.17.3`；SDK 生成器尚未固定 |
+| `packages/contracts` | OpenAPI、JSON Schema、生成 SDK | 本地 `0.17.5`、Ubuntu `0.17.4`；SDK 生成器尚未固定 |
 | `evals` | 固定 AI 质量/安全/成本评测 | 既有数学/隐私 eval 增加 7-case 英语安全 Policy；真实英语 Provider 质量、延迟、成本和儿童安全 eval 待批准后执行 |
-| `infra/compose` | PostgreSQL/Redis/MinIO/API/Web/迁移/worker/可切换本地模型编排 | Ubuntu 当前 `0.17.3`/`0039`，SmartEdu 载荷使用 GHCR `sha-a7454a8` API/Web 镜像；本地模型开关为 `false`（容器空闲），英语运行态为 `disabled` |
+| `infra/compose` | PostgreSQL/Redis/MinIO/API/Web/迁移/worker/可选本地模型编排 | Ubuntu 当前 `0.17.4`/`0039`，SmartEdu 载荷使用 GHCR `v0.17.4` API/Web 镜像；本地模型开关为 `false`（基础拓扑不创建 `local-model`），英语运行态为 `disabled` |
 | `docs/adr` | 架构决策 | ADR-0028 本地 Qwen 路由、ADR-0027 多学科/语文、ADR-0026 学习记录保留、ADR-0025 英语及 ADR-0020～0023 数学主线 Accepted |
 | `prompts` | Codex 工作流启动器 | 已存在 |
 
