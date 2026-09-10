@@ -14,11 +14,15 @@
 - [x] 安全编码 SmartEdu 下载路径中的中文和空格；私有 CDN 瞬时 `400` 在同地址使用新 nonce 有界退避，非鉴权的上游故障按固定 r1/r2/r3 镜像切换。
 - [x] Web 对 `smartedu_source_unavailable` 显示已自动重试和本地 PDF 回退提示，不再与未知错误使用同一笼统文案。
 - [x] API SmartEdu 定向 `20 passed`，非集成全量通过；Ruff format/check、Mypy `64` 个源文件通过。Web `24` 个测试文件、`44` 项及 Prettier、ESLint、TypeScript、production build 通过。
-- [ ] 尚未提交、推送、tag、发布 GHCR 或部署 Ubuntu；真实凭据/PDF 仍需新镜像部署后由项目 Owner 在当前浏览器验证。
+- [x] 提交 `13d72bb` 已推送，annotated tag `v0.17.5`、quality run `34453596612`、Android run `34453596562`、GHCR API/Web 镜像和读取 `CHANGELOG.md` 的中文 GitHub Release 均成功。
+- [x] Ubuntu 已部署 `v0.17.5`：备份 `/home/syin/study-backups/20260910T081644Z` 隔离恢复为 39 张 public 表和 733 个 MinIO 文件；API/Web 本机与 LAN health、OpenAPI `0.17.5`、迁移 `0039`、四个 worker、镜像 revision、近期日志及 `local-model` 关闭态通过。
+- [ ] 真实凭据/PDF 仍需项目 Owner 在当前浏览器重试，确认进入私有草稿和解析队列；验证后轮换截图中暴露的 SmartEdu 会话凭据。
 
 诊断结论：截图中的两次请求均已到达 Ubuntu API 并返回 `503`，目录、登录会话和 API 健康正常；失败发生在外部 PDF 下载阶段。此前实现虽然生成了 MAC，却固定发送 `Authorization: Bearer 0`，并缺少上游已有的 400 重签、固定镜像重试和非 ASCII 路径编码。控制台 `startTime` 异常来自页面外的辅助脚本，不是教材接口失败原因。失败发生在私有对象写入和解析队列之前，没有创建教材草稿。
 
-回滚：恢复 `smartedu_source.py` 和 Web 错误文案即可；无数据库迁移，不删除数据库、MinIO、Redis、教材或学习事实。截图已包含真实登录凭据，项目 Owner 应在验证后退出 SmartEdu 登录并重新登录以轮换会话。
+部署证据：API digest 为 `sha256:b10742c7af1e5529fa58efa6dc7e0d1d7b0e1efd1710e4362b20aa2d546e0040`，Web digest 为 `sha256:b443615f05acf4ac4f9a4c89c6d7c56ac5f1fc7e4c24afbbf5b9a39fecc81122`，OCI revision 均为完整提交 `13d72bb06b7f606cf3d162eab06678fbcd058d71`。容器内 synthetic 检查确认 Bearer 转发、中文/空格 URL 编码和三个固定镜像候选；未读取或回显真实凭据。
+
+回滚：把远端 API/Web 镜像恢复到 `v0.17.4` 或回滚副本 `/home/syin/study-source-backups/20260910T081644Z-v0.17.5/` 后重新 `pull/up`；无数据库迁移，不删除数据库、MinIO、Redis、教材或学习事实。截图已包含真实登录凭据，项目 Owner 应在验证后退出 SmartEdu 登录并重新登录以轮换会话。
 
 ## 2026-09-10 Compose 本地模型可选拓扑与 Ubuntu 无效容器清理（PLAN-0047）
 

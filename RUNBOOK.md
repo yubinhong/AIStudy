@@ -3,7 +3,16 @@
 ## 1. 服务概览
 
 - 服务：家庭 AI 学习助手（目标包括 Flutter 孩子端、Web/PWA、FastAPI/Worker、PostgreSQL、Redis、S3/MinIO 和 AI Provider）。
-- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.17.4`/`0039_smartedu_curriculum_source`；API/Web/worker 健康，已审核语文教材只保留标题、连续诗句和全部选项均通过确定性目录的六首 21 道古诗题。2026-09-10 SmartEdu 家长教材加载与私有 CDN 签名修复已切换为同一提交的 GHCR `v0.17.4` API/Web 镜像；没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
+- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.17.5`/`0039_smartedu_curriculum_source`；API/Web/worker 健康，已审核语文教材只保留标题、连续诗句和全部选项均通过确定性目录的六首 21 道古诗题。2026-09-10 SmartEdu 真实 Bearer、路径编码及有界 CDN 重试已切换为同一提交的 GHCR `v0.17.5` API/Web 镜像；没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
+
+## 2026-09-10 SmartEdu v0.17.5 真实凭据下载修复部署
+
+- 载荷：提交 `13d72bb06b7f606cf3d162eab06678fbcd058d71` 的 GHCR `v0.17.5`。API digest 为 `sha256:b10742c7af1e5529fa58efa6dc7e0d1d7b0e1efd1710e4362b20aa2d546e0040`，Web digest 为 `sha256:b443615f05acf4ac4f9a4c89c6d7c56ac5f1fc7e4c24afbbf5b9a39fecc81122`，两者 OCI revision 与提交一致。
+- 备份：`/home/syin/study-backups/20260910T081644Z`。清单校验通过；首次隔离恢复因临时 PostgreSQL 校验容器过早退出失败，正式数据库未受影响，应用写入者由脚本自动恢复。确认宿主资源和应用健康后复跑通过：39 张 PostgreSQL public 表、733 个 MinIO 文件。回滚副本在 `/home/syin/study-source-backups/20260910T081644Z-v0.17.5/`。
+- 部署：只把远端 `.env` 的 API/Web 固定到 `v0.17.5`，保持 `STUDY_LOCAL_MODEL_ENABLED=false`；Compose 配置、拉取和 `up -d --remove-orphans --no-build` 成功。迁移 `Exited (0)`，Alembic 为 `0039_smartedu_curriculum_source (head)`。
+- 验收：API/Web 本机与 LAN health 返回 200，API/OpenAPI 为 `0.17.5` 且 SmartEdu 路由存在；四个 worker running，MinIO `9000` 无宿主映射，没有 `local-model` 容器。容器内 synthetic 检查确认真实 Bearer 代码路径、中文/空格路径编码和三个固定镜像候选；近期日志无异常，生命周期 worker 的 `media_failed=0`。
+- 发布：quality run `34453596612`、Android run `34453596562` 和两个 GHCR job 成功；GitHub Release `v0.17.5` 自动读取 `CHANGELOG.md` 中文区块。
+- 未执行与回滚：真实浏览器 PDF、私有草稿/解析队列、版权/教研、真实 Provider、四端设备及 staging/production 未验收。回滚把 API/Web 同时固定回 `v0.17.4` 并重新 `pull/up`，数据库保留 `0039` 且不 downgrade；不得删除教材、学习事实或数据卷。
 - Owner/值班：`TBD（项目 Owner/运维负责人在 staging 前确认）`。
 
 ## 2026-09-10 SmartEdu v0.17.4 GHCR 拉取式部署

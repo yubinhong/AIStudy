@@ -4,7 +4,7 @@
 
 - 计划 ID：`PLAN-0048`
 - 关联：`PLAN-0046`、`TASK-0012`、`ADR-0029`、`SECURITY.md`、`TESTING.md`
-- 状态：`IN_PROGRESS`
+- 状态：`IN_PROGRESS（代码、发布与 Ubuntu 部署完成；真实浏览器 PDF 验收待项目 Owner 执行）`
 - 优先级：`P1 / API / WEB / SECURITY`
 - Owner：Codex（实现与测试）；项目 Owner（真实凭据与教材验收）
 - 创建：`2026-09-10`
@@ -16,7 +16,10 @@
 - [x] M1 — 先增加 Bearer、中文路径、400 重签和镜像切换的失败回归。
 - [x] M2 — 修复 API 下载适配器并让 Web 对上游暂不可用返回可操作提示。
 - [x] M3 — 完成 API/Web 定向及相关质量检查，更新任务、测试和变更记录。
-- [ ] M4 — 真实凭据回归与 Ubuntu GHCR 部署需单独获得提交、推送、tag 和部署授权。
+- [x] M4 — 提交 `13d72bb`、推送 `master` 和 annotated tag `v0.17.5`；quality/Android Actions、GHCR API/Web 镜像和中文 GitHub Release 均成功，Ubuntu 已完成备份恢复验证、拉取式部署和运行时核验。
+- [ ] M5 — 项目 Owner 在当前真实浏览器重试教材加载，确认 `PDF -> 私有草稿 -> 解析队列`；验收后退出并重新登录 SmartEdu 轮换截图中暴露的会话凭据。
+
+部署证据：备份 `/home/syin/study-backups/20260910T081644Z` 第二次隔离恢复通过（39 张 PostgreSQL public 表、733 个 MinIO 快照文件），回滚副本为 `/home/syin/study-source-backups/20260910T081644Z-v0.17.5/`。Ubuntu API/Web 固定为 GHCR `v0.17.5`，OCI revision 均为 `13d72bb06b7f606cf3d162eab06678fbcd058d71`；API/Web 本机和 LAN health、OpenAPI `0.17.5`、Alembic `0039_smartedu_curriculum_source (head)`、四个 worker、MinIO 私有端口及近期日志检查通过。`STUDY_LOCAL_MODEL_ENABLED=false` 下没有 `local-model` 容器。
 
 ## 兼容性、风险与回滚
 
@@ -48,7 +51,7 @@
 
 ## 兼容性、风险与回滚
 
-无数据库或公共 OpenAPI 变化。现有 `.env` 的 `STUDY_LOCAL_MODEL_ENABLED=false` 继续使用 NewAPI，关闭时不再创建本地模型服务；开启本地模型必须通过 `infra/compose/compose.sh`，脚本自动叠加 `compose.local-model.yml` 并等待模型健康。回滚 Compose 时可恢复此前 `compose.yml` 副本，但不得删除 `local-model-cache`、PostgreSQL、MinIO 或 Redis 卷；应用镜像继续固定 `v0.17.4`，不执行数据库 downgrade。
+无数据库或公共 OpenAPI 变化。现有 `.env` 的 `STUDY_LOCAL_MODEL_ENABLED=false` 继续使用 NewAPI，关闭时不再创建本地模型服务；开启本地模型必须通过 `infra/compose/compose.sh`，脚本自动叠加 `compose.local-model.yml` 并等待模型健康。回滚 Compose 时可恢复此前 `compose.yml` 副本，但不得删除 `local-model-cache`、PostgreSQL、MinIO 或 Redis 卷；应用镜像当前固定 `v0.17.5`，不执行数据库 downgrade。
 
 ---
 

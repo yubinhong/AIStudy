@@ -5,7 +5,10 @@
 - 失败复现：Ubuntu 连续两次真实页面导入均到达 API 并返回 `503`；同时间目录、认证会话和 API/Web health 正常，且没有进入私有对象写入或解析队列。控制台 `startTime` TypeError 来自页面外辅助脚本，与接口 503 无关。
 - API：SmartEdu 定向 `20 passed`，非集成全量通过；Ruff format/check、Mypy `64` 个源文件通过。新增回归覆盖有凭据时真实 Bearer、URL 绑定 MAC、非 ASCII/空格路径编码、400 新 nonce 重签和固定私有镜像切换；fixture 全为 synthetic，不含真实凭据或教材正文。
 - Web：Vitest `24` 个文件、`44` 项通过；Prettier、ESLint、TypeScript 和 production build 通过。`smartedu_source_unavailable` 显示有界重试与本地 PDF 回退说明。本机 Node `20.17.0` 低于锁定 `24.18.0`，仍产生既有 engine warning。
-- 未执行：提交、推送、tag、GHCR 发布、Ubuntu 新镜像部署、真实凭据/PDF、版权/教研、真实 Provider 和设备回归。
+- 发布：提交 `13d72bb`、tag `v0.17.5`、quality run `34453596612` 与 Android run `34453596562` 均成功；API/Web GHCR 镜像发布成功，GitHub Release 正文与 `CHANGELOG.md` 的中文版本区块一致。
+- Ubuntu：备份 `/home/syin/study-backups/20260910T081644Z` 的 SHA-256 清单通过，首次隔离恢复因临时 PostgreSQL 校验容器过早退出失败，正式数据库未受影响；应用自动恢复后复跑成功，报告 39 张 public 表、733 个 MinIO 文件。`v0.17.5` API/Web 本机与 LAN health、OpenAPI 版本/SmartEdu 路由、Alembic `0039`、迁移退出码、四个 worker、镜像 digest/revision、MinIO 私有端口、关闭态无 `local-model` 及近期应用日志均通过。
+- 运行时：容器内 synthetic 检查确认凭据 Bearer 转发为真、中文/空格 URL 编码为真、固定私有镜像候选为 3；未使用或输出真实凭据。
+- 未执行：真实浏览器凭据/PDF 成功加载、私有草稿/解析队列现场确认、版权/教研、真实 Provider 和设备回归。
 
 ## 2026-09-10 SmartEdu 私有 CDN 签名修复
 
