@@ -1584,6 +1584,49 @@ summary:focus-visible {
   color: var(--ink);
 }
 
+.smartedu-filters {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.45fr) minmax(14rem, 1fr) auto;
+  align-items: end;
+  gap: 0.75rem;
+  margin-top: 1.15rem;
+}
+
+.smartedu-search-field {
+  min-width: 0;
+}
+
+.smartedu-book-list {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.smartedu-book-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.smartedu-book-row .task-details {
+  min-width: 0;
+  flex: 1;
+}
+
+.smartedu-book-row .task-details strong,
+.smartedu-book-row .task-details span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.smartedu-book-row .primary-button {
+  flex: 0 0 auto;
+}
+
 .snapshot-row .task-details,
 .recommendation-row .task-details,
 .account-row .task-details {
@@ -1927,6 +1970,21 @@ summary:focus-visible {
   .activity-table-head,
   .activity-record summary {
     grid-template-columns: 4rem minmax(8rem, 1fr) 5rem 3rem 4rem;
+  }
+}
+
+@media (max-width: 620px) {
+  .smartedu-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .smartedu-book-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .smartedu-book-row .primary-button {
+    margin-left: 3rem;
   }
 }
 

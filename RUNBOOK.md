@@ -3,8 +3,17 @@
 ## 1. 服务概览
 
 - 服务：家庭 AI 学习助手（目标包括 Flutter 孩子端、Web/PWA、FastAPI/Worker、PostgreSQL、Redis、S3/MinIO 和 AI Provider）。
-- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.17.2`/`0038_classical_poem_options`；API/Web/worker 健康，已审核语文教材只保留标题、连续诗句和全部选项均通过确定性目录的六首 21 道古诗题。2026-09-09 已切换到代码提交 `f6ae9a2` 的 GHCR `sha-f6ae9a2` 镜像。没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
+- 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.17.2`/`0039_smartedu_curriculum_source`；API/Web/worker 健康，已审核语文教材只保留标题、连续诗句和全部选项均通过确定性目录的六首 21 道古诗题。2026-09-10 已部署 SmartEdu 家长教材加载增量，当前 API/Web 使用远端构建的 `study-local-*:smartedu-20260910` 镜像；没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
 - Owner/值班：`TBD（项目 Owner/运维负责人在 staging 前确认）`。
+
+## 2026-09-10 SmartEdu 家长教材加载部署
+
+- 范围：将当前工作区的 SmartEdu 目录选择、资源 ID 下载、私有 PDF 草稿加载、`0039_smartedu_curriculum_source` 迁移和既有解析队列部署到 Ubuntu；没有推送 GitHub、发布 GHCR、导入真实教材或修改儿童学习事实。
+- 备份：部署前 `/home/syin/study-backups/20260910T004753Z` 已完成；`verify-restore.sh` 隔离恢复报告 39 张 PostgreSQL public 表和 739 个 MinIO 快照文件。旧 API/Web 源码、Compose 和远端 `.env` 备份在 `/home/syin/study-source-backups/20260910T005300Z-smartedu/`。
+- 构建：远端 `x86_64` 使用 `DOCKER_BUILDKIT=0` 构建 API `study-local-api:smartedu-20260910`（`sha256:e4e41ce1f391178cab9807ea90573c212a2746716e9478ef1a8cf2454d27c11b`）和 Web `study-local-web:smartedu-20260910`（`sha256:f7ea872d12a03b73b4b755f220d8c20f161157518a85ff7bb3bd25839cadb67e`）。
+- 运行：远端 `.env` 已指向上述标签，应用服务的 Compose `pull_policy` 为 `never`；`docker compose config --quiet`、`up -d --no-build`、迁移、API/Web 本机和 LAN health、SmartEdu API 路由/适配器运行时检查均通过。迁移为 `0039_smartedu_curriculum_source (head)`，API/Web/四个 worker running，最近 100 行应用日志错误计数为 0，MinIO `9000` 未映射宿主端口。
+- 回滚：保留 PostgreSQL/MinIO/Redis 卷和 `0039` 版本；使用备份目录中的旧 Compose/`.env` 与旧 API/Web 镜像恢复应用，并以 `--no-deps` 方式启动前向兼容的旧应用服务，避免让不认识 `0039` 的旧 `migrate` 镜像执行迁移。数据库不 downgrade；若旧应用不兼容，恢复当前 SmartEdu API 镜像后再做前向修复。
+- 未执行：真实 SmartEdu 目录/PDF、平台登录/条款、版权/教研签核、真实 Provider 质量/成本、真实家长浏览器、四端设备、GHCR 发布和公网/商业生产验收。
 
 ## 2026-09-05 GitHub Actions 服务镜像发布
 
@@ -205,7 +214,7 @@ STUDY_LOCAL_MODEL_BASE_URL=http://local-model:8080/v1
 - [ ] ADR-0028 本地 Qwen：Ubuntu 已完成首次下载、health/models、文本 JSON、路由、内存和私有端口核验；`question-extraction.v1` synthetic 大图在 600 秒内不收敛，视觉质量门禁失败。模型来源最终核对、chat template/Schema 修复、固定质量评测和真实设备回归尚未完成。
 - [ ] ADR-0018 上传收敛：本地与 Ubuntu OpenAPI/Flutter/API/Compose 已切换为单一有界流式上传；公开 MinIO 配置和 `9000` 映射已删除，相关本地回归及远端端口复核通过；断连/超限/超时/并发现场压测和真机验证待执行。
 - [ ] ADR-0019/PLAN-0013：孩子聚合原子创建/幂等/唯一约束、孩子选择/服务端过滤、反向授权和 API/Web 成对部署已通过；隔离 Chromium 双孩子已通过，旧数据审计、真实 PostgreSQL 浏览器和设备回归仍待执行。
-- [ ] PLAN-0016/0017/0018、ADR-0021/0022/0023：Ubuntu 已实施 `0.17.2`/`0038` 的 PDF-only、错题 closeout/ReviewAttempt、私有原页、多模态知识图谱、家长批准、批准知识点推荐和孩子端原页入口；真实 118 页 PDF 已完成机器解析并批准，备份恢复、迁移头、健康和私有端口烟雾通过。仍须完成正式版权/教研、真实 Provider 质量/成本、Ubuntu 真实账号/iPad/完整设备验收和个人信息门禁后才可勾选。
+- [ ] PLAN-0016/0017/0018、ADR-0021/0022/0023：Ubuntu 已实施 `0.17.2`/`0039` 的 PDF-only、SmartEdu 私有草稿加载、错题 closeout/ReviewAttempt、私有原页、多模态知识图谱、家长批准、批准知识点推荐和孩子端原页入口；真实 118 页 PDF 已完成机器解析并批准，备份恢复、迁移头、健康和私有端口烟雾通过。仍须完成正式版权/教研、真实 Provider 质量/成本、Ubuntu 真实账号/iPad/完整设备验收和个人信息门禁后才可勾选。
 - [ ] 发布、停止、回滚和前滚负责人明确，真实数据不来自开发环境。
 
 ### 本地/自用 Compose 流程

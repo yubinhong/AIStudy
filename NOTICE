@@ -4,3 +4,8 @@ Copyright 2026 AIStudy contributors
 This product includes third-party software. Those components remain subject
 to their own license terms and notices. See the dependency lock files and
 apps/child_flutter/THIRD_PARTY_NOTICES.md for component-level information.
+
+The SmartEdu textbook source adapter was independently implemented with
+protocol guidance from happycola233/tchMaterial-parser, an MIT-licensed
+project: https://github.com/happycola233/tchMaterial-parser
+This notice does not grant rights to any textbook or downloaded material.

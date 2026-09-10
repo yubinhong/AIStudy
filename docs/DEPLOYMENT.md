@@ -10,7 +10,7 @@
 | API、Web、Worker、可选本地模型 | `infra/compose/compose.yml` | 单家庭自托管；`STUDY_LOCAL_MODEL_ENABLED=true` 时加载 Compose 内部 Qwen3.5-4B Q4_K_M，否则选择已配置云端 NewAPI；不应直接暴露到公网 |
 | PostgreSQL、Redis、MinIO | 同一 Compose | MinIO 只在 Compose 内部可达，不发布 `9000` |
 | 英语口语 | 客户端和 Provider 中立框架 | 真实 Provider 未接入，默认锁定 |
-| 教材 PDF | 家长自行合法取得并通过 Web 上传 | 不进入 Git 仓库，不随 AIStudy 分发，不因 Apache-2.0 获得额外授权 |
+| 教材 PDF | 家长在 Web 选择 SmartEdu 公开目录，或自行合法取得后上传 | 下载内容只进入家庭私有存储和审核链路，不进入 Git 仓库，不随 AIStudy 分发，不因 Apache-2.0 获得额外授权 |
 
 ## 2. 推送到 GitHub
 
@@ -216,16 +216,15 @@ docker compose -f infra/compose/compose.yml logs --tail=100 migrate api web
 
 ## 7. 获取和导入电子教材
 
-[tchMaterial-parser](https://github.com/happycola233/tchMaterial-parser) 是独立的 MIT 开源桌面工具，可从国家中小学智慧教育平台解析和下载电子课本 PDF，并支持批量下载、自动命名和书签。它不是 AIStudy 的依赖、子模块或内置下载器，AIStudy 不调用它、不接收它的 Access Token，也不随仓库分发它下载的教材。
+家长 Web 的“选择教材并加载”已内置 SmartEdu 公开目录适配器，参考了 [tchMaterial-parser](https://github.com/happycola233/tchMaterial-parser)（MIT）对目录版本文件、资源详情和 PDF 存储候选的解析方式。AIStudy 自己实现适配器，不安装或调用上游工具，不接收/保存/返回 Access Token，不向浏览器暴露第三方 PDF 直链；服务端只返回受限元数据，并把固定主机、50 MiB 上限、PDF 文件头和 SHA-256 校验后的内容写入家庭私有存储。若平台要求登录、目录或下载暂时不可用，请改用本地 PDF 上传。
 
 推荐流程：
 
-1. 从该项目的 [Releases](https://github.com/happycola233/tchMaterial-parser/releases) 获取适合自己系统的版本，或按其 README 从源码运行。
-2. 按上游说明使用工具，并遵守国家中小学智慧教育平台条款、教材版权和所在地法律。
-3. Access Token 只保留在本地工具中，不写入 AIStudy `.env`，不上传 GitHub，也不粘贴到日志或 Issue。
-4. 下载后确认 PDF 来源合法、仅用于获准的个人学习或教学场景，并确认文件不含儿童姓名、个人批注或其他个人信息。
-5. 登录 AIStudy 家长 Web，在当前孩子作用域上传 PDF，等待私有解析和教材理解，再逐页审核并明确发布。
-6. 不把 PDF、派生页图、解析结果或教材题库提交到 AIStudy 仓库，也不对外二次分发。
+1. 登录 AIStudy 家长 Web，选择当前孩子、学科和年级，在“公共教材目录”搜索并点击“加载为草稿”。
+2. 在确认框中确认自己有权使用教材、不对外分发，并确认文件不含儿童姓名、个人批注或其他个人信息；跨家庭精确复用另行勾选。
+3. 等待私有下载和本地解析完成，在“教材快照”查看原页/知识图谱，家长审核后再发布；发布前 Tutor/任务不会引用。
+4. 如果目录或资源需要平台登录，AIStudy 不收集 Access Token，请从自己有权使用的来源取得 PDF 后使用原有上传入口。
+5. 不把 PDF、派生页图、解析结果或教材题库提交到 AIStudy 仓库，也不对外二次分发。
 
 上游项目明确说明它不托管教材，资源版权属于原平台和相关权利人，并要求用户遵守平台条款。AIStudy 的 Apache-2.0 只覆盖本仓库贡献者有权授权的代码和文档，不覆盖下载工具、教材或用户导入数据。
 

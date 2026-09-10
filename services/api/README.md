@@ -7,10 +7,16 @@ private MinIO, the parent Web, and durable image-analysis, material-parse,
 curriculum-analysis, and data-lifecycle workers. See
 `infra/compose/README.md` for the self-hosted deployment procedure.
 
-The current `0.17.2` API exposes `/healthz` and Household-scoped routes. All
+The current `0.17.3` API exposes `/healthz` and Household-scoped routes. All
 Household routes require a revocable session created by `/auth/login` with a
 username and password. Web sends the session as an HttpOnly cookie; Flutter
 sends the same opaque session type as a Bearer token.
+
+Parent curriculum routes include a bounded SmartEdu catalog/source adapter.
+It accepts only a catalog resource ID, stores the verified PDF in private
+MinIO, and reuses the existing local parser and parent approval flow. It never
+accepts or returns a SmartEdu Access Token, source URL, object key, or storage
+URL; local PDF upload remains available when the public source requires login.
 
 Example local request:
 

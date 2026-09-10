@@ -2,10 +2,10 @@
 
 ## 文档信息
 
-- 状态：`ACTIVE`（本地和 Ubuntu API/OpenAPI 均为 0.17.2/0038；古诗抽查仅发布并读取标题、连续诗句和全部选项均通过确定性目录的经典古诗，Nova 9 已完成 12 轮全六首抽查；数学今日任务已支持指定题目按序执行、服务端/端侧题号恢复、跳过和断网排队；家长首页已移除语文技能报告并只展示上海自然日当天到期错题，Ubuntu Web 已完成受控部署；用户已确认并完成远端同一家庭两个孩子的学习历史清理，账号/档案/教材/审核/设备设置/审计记录保留；正式内容、真实 Provider 和其他完整设备验收仍待完成）
+- 状态：`ACTIVE`（本地与 Ubuntu API/OpenAPI 均为 0.17.2/0039；家长后台已增加 SmartEdu 目录选择和私有 PDF 草稿加载，并于 2026-09-10 以远端本地构建镜像部署 Ubuntu；古诗抽查仅发布并读取标题、连续诗句和全部选项均通过确定性目录的经典古诗，Nova 9 已完成 12 轮全六首抽查；数学今日任务已支持指定题目按序执行、服务端/端侧题号恢复、跳过和断网排队；家长首页已移除语文技能报告并只展示上海自然日当天到期错题，Ubuntu Web 已完成受控部署；用户已确认并完成远端同一家庭两个孩子的学习历史清理，账号/档案/教材/审核/设备设置/审计记录保留；正式内容、真实 Provider 和其他完整设备验收仍待完成）
 - Owner：`TBD（项目发起人确认）`
-- 最后更新：`2026-09-07`
-- 项目仓库：本地 Git 仓库 `/Users/ybh/PycharmProjects/study`；`origin` 为 `git@github.com:yubinhong/AIStudy.git`；最后远端标签为 `v0.17.2`，Ubuntu 运行 `0.17.2/0038`，GitHub 质量/Android Actions 和 Release 已通过
+- 最后更新：`2026-09-10`
+- 项目仓库：本地 Git 仓库 `/Users/ybh/PycharmProjects/study`；`origin` 为 `git@github.com:yubinhong/AIStudy.git`；最后远端标签为 `v0.17.2`，Ubuntu 运行 `0.17.2/0039` 的 SmartEdu 自用增量，当前载荷为远端本地构建镜像，GitHub 质量/Android Actions 和既有 Release 已通过
 - 设计基线：`家庭AI学习助手_架构设计_v1.0.docx`
 
 ## 1. 项目概述
@@ -67,7 +67,7 @@
 ### 当前范围（P0 + P1）
 
 - 仓库与 CI 基础、OpenAPI 契约、家庭账号/孩子账号/设备身份模型和可观测性。
-- 每个孩子的数学年级/学期/教材版本、家庭材料导入、章节/知识点来源审核和版本化发布。
+- 每个孩子的数学年级/学期/教材版本、家庭材料导入、章节/知识点来源审核和版本化发布；家长可从受控的 SmartEdu 公开教材目录选择资源并加载为同一审核草稿。
 - 每个孩子显式 `math/chinese` 学科设置；语文首版使用版本化原创/授权内容、确定性评分与追加写复习事实，答案规范不下发孩子。
 - 数学学科页的错题讲解、复习错题、今日任务三个入口；数学单题拍照与人工裁切、本地 PrivacySanitizer、脱敏预览/手动涂抹、单一获批云视觉 Provider 结构化与人工校正。
 - Tutor Policy 约束下的练习/复习分级提示，以及已确认 `worked` 或 `blank` 后匹配作答状态的完整错题讲解、来源引用和确定性校验。
@@ -95,8 +95,8 @@
 | 层 | 选型 | 版本 | 说明 |
 | --- | --- | --- | --- |
 | 孩子/移动端 | Flutter（iOS/Android） | Flutter stable `3.44.6`（`ADR-0007` Accepted）；`image_picker 1.2.3`、`crypto 3.0.7`、`flutter_secure_storage 9.2.4`、`sqflite 2.4.3` | iPad 为孩子主端；任务/拍题/提示、安全会话、数学三入口、视觉四态自动候选与人工校正、长文本确认、上传进度、完整解答和账号切换已实现；实际相机闭环与设备回归待完成 |
-| Web/PWA | Next.js + TypeScript | Next.js `16.2.10`（`ADR-0007` Accepted） | 家长后台和 Windows 首版入口；登录、统一孩子管理/切换、家庭权限、教材审核发布、任务建议审批、导出及数学/语文学习记录已实现，数学记录详情可显示仍在保留期内的拍题原图；Ubuntu 真实账号浏览器待验收 |
-| API/Worker | Python + FastAPI + 异步 Worker | Python `3.12.x`、FastAPI `0.136.3`、boto3 `1.43.46`、Pillow `12.3.0`、pdfplumber `0.11.7`、pypdfium2 `5.11.0`、PaddleOCR `3.7.0`、PaddlePaddle CPU `3.3.1` | 模块化单体；PDF 文本辅助解析、私有页图渲染、多模态教材知识图谱、Tutor、Mistake/Review/Recommendation worker 已有本地实现 |
+| Web/PWA | Next.js + TypeScript | Next.js `16.2.10`（`ADR-0007` Accepted） | 家长后台和 Windows 首版入口；登录、统一孩子管理/切换、家庭权限、SmartEdu 目录选择、PDF 教材审核发布、任务建议审批、导出及数学/语文学习记录已实现；Ubuntu 真实账号浏览器待验收 |
+| API/Worker | Python + FastAPI + 异步 Worker | Python `3.12.x`、FastAPI `0.136.3`、boto3 `1.43.46`、Pillow `12.3.0`、pdfplumber `0.11.7`、pypdfium2 `5.11.0`、PaddleOCR `3.7.0`、PaddlePaddle CPU `3.3.1` | 模块化单体；SmartEdu 元数据/PDF 有界适配器、PDF 文本辅助解析、私有页图渲染、多模态教材知识图谱、Tutor、Mistake/Review/Recommendation worker 已有本地实现 |
 | 视觉/推理 Provider | Provider Adapter + 固定 JSON Schema / Tutor Policy | `STUDY_LOCAL_MODEL_ENABLED=true` 时使用 Compose 内部 Qwen3.5-4B Q4_K_M；否则使用自用 NewAPI URL/key/model | 图片解析与 Tutor 分离；本地/云端由同一 `NewApiConfig` 选择且不自动跨 Provider 回退；服务端只保存未确认 Extraction，人工确认后才生成 VerifiedQuestion；英语真实 Provider 未接入 |
 | 业务数据 | PostgreSQL + pgvector | PostgreSQL `16.10`（Compose） | PostgreSQL 是业务事实来源；Profile/Learning/Capture/Identity/Tutor/Report/Mistake/Review、CurriculumSnapshot、来源证据和 TaskRecommendation 已持久化；pgvector 只做已发布知识检索，不替代关系/审批事实 |
 | 缓存/队列 | Redis | `TBD（P0 锁定）` | 不作为长期业务事实来源 |
@@ -112,7 +112,7 @@
 | staging | 集成、设备、AI 评测和迁移/恢复验证 | `TBD（P0/P1 建立）` | sanitized/synthetic | CI 产物，禁止从个人工作区直接发布 |
 | production | 家庭正式使用 | `TBD（发布方案和 RUNBOOK 批准后建立）` | restricted | 仅允许已通过发布门槛的版本化产物 |
 
-当前事实：Git 位于 `master`；本地和 Ubuntu API/OpenAPI 均为 `0.17.2`、迁移头 `0038_classical_poem_options`，家长首页已移除语文技能报告并只展示上海自然日当天到期错题；独立学习记录页默认近 30 个上海自然日并支持 180 天窗口内单日筛选，更早逾期项仍可从学习记录/复习入口访问。用户已确认并完成远端同一家庭两个孩子的全部学习历史清理，目标学习表和已登记拍题对象均为 0；保留账号、孩子档案、教材/快照/已审核内容、设备设置和审计记录。PostgreSQL 已有私有页图元数据、页级 AI 分析、全书知识图谱、规范化知识点及语文 Content/Attempt/Review；同一孩子可并行发布多份教材，推荐遍历全部已发布且已批准的知识图谱，并继续为每条题目保留确切教材/页码来源。全实例只有一个超级管理员 `super_admin`，它可开通独立亲戚家庭及其普通家长；普通家长只能管理自己名下孩子。只有显式声明为国家公开教材、完整内容指纹匹配且来源图谱已批准的 PDF 可跨家庭复用私有 PDF/页图/解析草稿，目标家庭仍独立审核发布。2026-09-05 已完成 Ubuntu `0.17.2`/`0038` 前向部署，备份与恢复校验、迁移、健康、worker、OpenAPI、古诗题库和局域网 smoke 均通过；隔离 Chromium 已验证跨家庭登录态、Cookie/CSRF/撤销及双孩子学科/切换。孩子英语框架保持关闭，正式教研/版权、真实 Provider/PDF、Ubuntu 真实账号浏览器与设备验收仍未执行。
+当前事实：Git 位于 `master`；本地与 Ubuntu API/OpenAPI 均为 `0.17.2`，迁移 head 均为 `0039_smartedu_curriculum_source`；家长首页已移除语文技能报告并只展示上海自然日当天到期错题。SmartEdu 目录和来源加载代码、契约、迁移与自动化测试已部署 Ubuntu，远端载荷为 `study-local-api:smartedu-20260910`/`study-local-web:smartedu-20260910`，未推送 GHCR。SmartEdu 不接收 Access Token，只向客户端返回受控元数据，下载 PDF 进入现有私有草稿/解析/家长审核链路。用户已确认并完成远端同一家庭两个孩子的全部学习历史清理，目标学习表和已登记拍题对象均为 0；保留账号、孩子档案、教材/快照/已审核内容、设备设置和审计记录。PostgreSQL 已有私有页图元数据、页级 AI 分析、全书知识图谱、规范化知识点及语文 Content/Attempt/Review；同一孩子可并行发布多份教材，推荐遍历全部已发布且已批准的知识图谱，并继续为每条题目保留确切教材/页码来源。全实例只有一个超级管理员 `super_admin`，它可开通独立亲戚家庭及其普通家长；普通家长只能管理自己名下孩子。只有显式声明为国家公开教材、完整内容指纹匹配且来源图谱已批准的 PDF 可跨家庭复用私有 PDF/页图/解析草稿，目标家庭仍独立审核发布。2026-09-10 已完成 Ubuntu `0.17.2`/`0039` SmartEdu 前向部署，备份与恢复校验、迁移、健康、worker、OpenAPI 和局域网 smoke 均通过；隔离 Chromium 已验证跨家庭登录态、Cookie/CSRF/撤销及双孩子学科/切换。孩子英语框架保持关闭，正式教研/版权、真实 Provider/PDF、Ubuntu 真实账号浏览器与设备验收仍未执行。
 
 2026-09-04/05 新增并部署家长后台分学科学习记录：侧栏学习记录展开为数学和语文两个子菜单；数学页继续读取已确认数学题/讲解，语文页通过家长专用查询读取 `chinese_attempts` 并展示孩子答案、对错、错误时正确答案、耗时及复习状态。新增查询为兼容式 API 扩展，API/Web 完整回归、登录态浏览器 E2E、Ubuntu 备份恢复、API/Web health 和运行源码核验已通过；没有数据库迁移。版本 `v0.17.2` 已提交并推送，Ubuntu 真实账号/设备验收仍待执行。
 

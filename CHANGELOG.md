@@ -1,5 +1,9 @@
 # Changelog
 
+- 2026-09-10：按用户要求将 SmartEdu 家长教材目录选择和私有 PDF 草稿加载部署到 Ubuntu `192.168.1.4`。部署前备份 `/home/syin/study-backups/20260910T004753Z` 已通过隔离恢复；远端 x86_64 本地构建 API/Web 镜像，前滚至 `0039_smartedu_curriculum_source`，API/Web、四个 worker、SmartEdu 运行时路由、本机/LAN health 和近期日志检查均通过。远端 `.env` 与 Compose 已保留备份，旧 GHCR 镜像仍可作为回滚载荷；本次未提交/推送 GitHub、未发布 GHCR，真实 SmartEdu PDF、Provider、版权/教研、账号浏览器和设备验收仍未执行。
+
+- 2026-09-09：家长后台新增 SmartEdu 电子教材目录选择和“加载为草稿”。API 通过受控资源 ID 下载固定主机上的 PDF，校验大小/文件头并写入家庭私有 MinIO，沿用现有解析、家长审核和发布门禁；Web 保留本地 PDF 上传备用，不暴露 Access Token、第三方直链或对象键。新增 `0039_smartedu_curriculum_source`，本轮仅完成本地实现与回归，未部署 Ubuntu，也未完成真实教材、Provider、版权/教研和设备验收。
+
 - 2026-09-09：按用户授权将家长拍题图片展示提交 `f6ae9a2` 推送 GitHub 并部署 Ubuntu。GitHub Actions `quality` run `34301914666` 及 API/Web GHCR 发布成功；远端固定 `sha-f6ae9a2`，部署前备份 `/home/syin/study-backups/20260909T021709Z` 已通过隔离恢复，API/Web、四个 worker、迁移、媒体 OpenAPI 路由和本机/LAN health 均通过。没有数据库迁移或业务数据删除；真实账号/设备、真实 Provider/PDF、staging/production 仍未验收。
 
 - 2026-09-08：家长数学学习记录展开详情现在显示对应的拍题原图。新增家长/Household-scoped 私有 Capture 媒体流和 Web 同源代理；学习记录 JSON 不暴露对象键、存储 URL 或图片字节，图片过期/删除时显示不可用状态。API/Web/契约测试、类型、Lint、构建和运行时路由对比通过；该功能已于 2026-09-09 随 `sha-f6ae9a2` 部署 Ubuntu，未新增数据库迁移。

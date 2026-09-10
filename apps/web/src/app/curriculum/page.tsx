@@ -3,9 +3,11 @@
 import {
   BookOpenText,
   CheckCircle,
+  CloudArrowDown,
   FileArrowUp,
   Files,
   MagicWand,
+  MagnifyingGlass,
   SealCheck,
   Trash,
   UploadSimple,
@@ -43,6 +45,15 @@ type Snapshot = {
     chapter: string;
     learning_objectives: string[];
   }>;
+};
+
+type SmartEduTextbook = {
+  resource_id: string;
+  title: string;
+  subject: "math" | "chinese";
+  grade: number;
+  edition: string;
+  term: string;
 };
 
 const maxCurriculumDocumentBytes = 50 * 1024 * 1024;
@@ -134,6 +145,13 @@ function CurriculumPageContent() {
   const [publicReusable, setPublicReusable] = useState(false);
   const [subject, setSubject] = useState<"math" | "chinese">("math");
   const [uploading, setUploading] = useState(false);
+  const [smartEduBooks, setSmartEduBooks] = useState<SmartEduTextbook[]>([]);
+  const [smartEduQuery, setSmartEduQuery] = useState("");
+  const [smartEduLoading, setSmartEduLoading] = useState(false);
+  const [smartEduImporting, setSmartEduImporting] = useState(false);
+  const [smartEduRightsConfirmed, setSmartEduRightsConfirmed] = useState(false);
+  const [smartEduPublicReusable, setSmartEduPublicReusable] = useState(false);
+  const [smartEduError, setSmartEduError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [previewSnapshot, setPreviewSnapshot] = useState<Snapshot | null>(null);
   const [previewPages, setPreviewPages] = useState<ParsedPage[]>([]);
@@ -189,6 +207,87 @@ function CurriculumPageContent() {
     }
   }
 
+  async function loadSmartEduCatalog(
+    grade: number,
+    selectedSubject: "math" | "chinese",
+    query: string,
+  ) {
+    setSmartEduLoading(true);
+    setSmartEduError(null);
+    try {
+      const params = new URLSearchParams({
+        grade: String(grade),
+        subject: selectedSubject,
+        limit: "30",
+      });
+      if (query.trim()) params.set("q", query.trim());
+      const response = await fetch(
+        `/api/curriculum/sources/smartedu?${params.toString()}`,
+        { cache: "no-store" },
+      );
+      if (!response.ok) {
+        setSmartEduBooks([]);
+        setSmartEduError(
+          "公共教材目录暂时无法加载，请检查服务连接或使用本地 PDF 上传。",
+        );
+        return;
+      }
+      setSmartEduBooks((await response.json()) as SmartEduTextbook[]);
+    } catch {
+      setSmartEduBooks([]);
+      setSmartEduError(
+        "公共教材目录暂时无法加载，请稍后重试或使用本地 PDF 上传。",
+      );
+    } finally {
+      setSmartEduLoading(false);
+    }
+  }
+
+  async function loadSmartEduTextbook(book: SmartEduTextbook) {
+    if (!childId || smartEduImporting || !smartEduRightsConfirmed) return;
+    const child = children.find((item) => item.id === childId);
+    if (!child) return;
+    const confirmed = window.confirm(
+      `确认加载“${book.title}”到${child.display_name}的教材草稿吗？\n\n请确认你有权使用该公开教材，且不会对外分发，并确认本次仅用于家庭学习。`,
+    );
+    if (!confirmed) return;
+    setSmartEduImporting(true);
+    try {
+      const response = await fetch(`/api/curriculum/${childId}/smartedu`, {
+        method: "POST",
+        headers: {
+          "Idempotency-Key": idempotencyKey("web-curriculum-smartedu"),
+          "Content-Type": "application/json",
+          ...csrfHeaders(),
+        },
+        body: JSON.stringify({
+          resource_id: book.resource_id,
+          subject: book.subject,
+          grade: book.grade,
+          authorization_statement:
+            "家庭自用教材，已确认公开来源和使用授权，并确认文件不含儿童姓名、个人批注或其他个人信息",
+          is_public_reusable: smartEduPublicReusable,
+        }),
+      });
+      const failure = (await response.json().catch(() => null)) as {
+        detail?: string;
+        message?: string;
+      } | null;
+      setMessage(
+        response.ok
+          ? `已加载“${book.title}”，教材正在本地解析，完成后请审核并发布。`
+          : failure?.detail === "smartedu_source_requires_authentication"
+            ? "该教材暂时需要平台登录凭据，AIStudy 不接收此类凭据；请改用有权使用的本地 PDF 上传。"
+            : "教材加载失败，请稍后重试或使用本地 PDF 上传。",
+      );
+      if (response.ok) await loadData(childId);
+    } catch {
+      setMessage("教材加载失败，请检查服务连接后重试。");
+    } finally {
+      setSmartEduImporting(false);
+    }
+  }
+
   useEffect(() => {
     const timer = window.setTimeout(() => void loadChildren(), 0);
     return () => window.clearTimeout(timer);
@@ -206,6 +305,23 @@ function CurriculumPageContent() {
     return () => window.clearTimeout(timer);
     // Every current-child transition discards the previous child's transient view.
   }, [childId]);
+
+  useEffect(() => {
+    const child = children.find((item) => item.id === childId);
+    if (!childId || !child) return;
+    const selectedSubject =
+      subject === "chinese" && child.subjects.includes("chinese")
+        ? "chinese"
+        : "math";
+    const timer = window.setTimeout(() => {
+      setSmartEduQuery("");
+      setSmartEduBooks([]);
+      setSmartEduRightsConfirmed(false);
+      setSmartEduPublicReusable(false);
+      void loadSmartEduCatalog(child.grade, selectedSubject, "");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [childId, children, subject]);
 
   useEffect(() => {
     const hasActiveAnalysis = Object.values(knowledgeMaps).some(
@@ -435,6 +551,122 @@ function CurriculumPageContent() {
       ) : null}
 
       <section className="curriculum-grid">
+        <article className="dashboard-panel upload-panel full-grid-panel">
+          <div className="section-heading">
+            <div>
+              <p className="section-kicker">公共教材目录</p>
+              <h2>选择教材并加载</h2>
+            </div>
+            <span className="section-icon">
+              <CloudArrowDown size={22} />
+            </span>
+          </div>
+          <form
+            className="smartedu-filters"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const child = children.find((item) => item.id === childId);
+              if (!child) return;
+              void loadSmartEduCatalog(
+                child.grade,
+                effectiveSubject,
+                smartEduQuery,
+              );
+            }}
+          >
+            <label>
+              教材学科
+              <select
+                value={effectiveSubject}
+                onChange={(event) =>
+                  setSubject(event.target.value as "math" | "chinese")
+                }
+                disabled={!childId || smartEduLoading || smartEduImporting}
+              >
+                <option value="math">数学</option>
+                {currentChild?.subjects.includes("chinese") ? (
+                  <option value="chinese">语文</option>
+                ) : null}
+              </select>
+            </label>
+            <label className="smartedu-search-field">
+              搜索教材
+              <input
+                value={smartEduQuery}
+                onChange={(event) => setSmartEduQuery(event.target.value)}
+                placeholder="版本或教材名称"
+                maxLength={80}
+                disabled={!childId || smartEduLoading || smartEduImporting}
+              />
+            </label>
+            <button
+              className="secondary-button compact-button"
+              type="submit"
+              disabled={!childId || smartEduLoading || smartEduImporting}
+            >
+              <MagnifyingGlass size={17} />
+              {smartEduLoading ? "目录加载中" : "搜索目录"}
+            </button>
+          </form>
+          <p className="upload-boundary-note">
+            目录只展示国家中小学智慧教育平台的公开教材元数据；选择后由服务端取得
+            PDF，仍会进入本地解析、家长审核和发布流程。
+          </p>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              required
+              checked={smartEduRightsConfirmed}
+              onChange={(event) =>
+                setSmartEduRightsConfirmed(event.target.checked)
+              }
+              disabled={smartEduImporting}
+            />
+            我确认自己有权使用该教材，文件不含儿童个人信息，且仅用于家庭学习
+          </label>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={smartEduPublicReusable}
+              onChange={(event) =>
+                setSmartEduPublicReusable(event.target.checked)
+              }
+              disabled={smartEduImporting || !smartEduRightsConfirmed}
+            />
+            允许完全一致的公开文件跨家庭复用已审核结果
+          </label>
+          {smartEduError ? (
+            <p className="error-copy" role="alert">
+              {smartEduError}
+            </p>
+          ) : smartEduBooks.length === 0 && !smartEduLoading ? (
+            <p className="muted-copy">当前筛选没有可加载的教材。</p>
+          ) : null}
+          <div className="smartedu-book-list" aria-live="polite">
+            {smartEduBooks.map((book) => (
+              <article className="smartedu-book-row" key={book.resource_id}>
+                <span className="snapshot-icon">
+                  <BookOpenText size={20} />
+                </span>
+                <div className="task-details">
+                  <strong>{book.title}</strong>
+                  <span>
+                    {book.edition} · {book.term} · 小学{book.grade}年级
+                  </span>
+                </div>
+                <button
+                  className="primary-button compact-button"
+                  type="button"
+                  onClick={() => void loadSmartEduTextbook(book)}
+                  disabled={smartEduImporting || !smartEduRightsConfirmed}
+                >
+                  <CloudArrowDown size={17} />
+                  {smartEduImporting ? "加载中" : "加载为草稿"}
+                </button>
+              </article>
+            ))}
+          </div>
+        </article>
         <article className="dashboard-panel upload-panel full-grid-panel">
           <div className="section-heading">
             <div>

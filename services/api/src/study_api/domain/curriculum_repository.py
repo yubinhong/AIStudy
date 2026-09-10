@@ -37,6 +37,13 @@ class ImportCurriculumRequest(BaseModel):
     sections: tuple[CurriculumSection, ...] = Field(min_length=1, max_length=200)
 
 
+class CurriculumImportRequest(ImportCurriculumRequest):
+    """Internal import data, including server-attested source identity."""
+
+    source_provider: str | None = Field(default=None, max_length=40)
+    source_resource_id: str | None = Field(default=None, max_length=120)
+
+
 class CurriculumMaterial(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -53,6 +60,8 @@ class CurriculumMaterial(BaseModel):
     status: str
     created_at: datetime
     object_key: str | None = Field(default=None, exclude=True)
+    source_provider: str | None = None
+    source_resource_id: str | None = None
 
 
 class CurriculumSnapshot(BaseModel):
@@ -116,14 +125,14 @@ class CurriculumRepository(Protocol):
         self,
         household_id: UUID,
         child_id: UUID,
-        request: ImportCurriculumRequest,
+        request: CurriculumImportRequest,
         idempotency_key: str,
         object_key: str | None = None,
         reused_from_snapshot_id: UUID | None = None,
     ) -> tuple[CurriculumImportResult, bool]: ...
 
     def find_public_reusable_snapshot(
-        self, request: ImportCurriculumRequest
+        self, request: CurriculumImportRequest
     ) -> CurriculumImportResult | None: ...
 
     def clone_parsed_content(
@@ -185,7 +194,7 @@ class InMemoryCurriculumRepository:
         self,
         household_id: UUID,
         child_id: UUID,
-        request: ImportCurriculumRequest,
+        request: CurriculumImportRequest,
         idempotency_key: str,
         object_key: str | None = None,
         reused_from_snapshot_id: UUID | None = None,
@@ -216,6 +225,8 @@ class InMemoryCurriculumRepository:
             status="uploaded" if object_key else "parsed",
             created_at=now,
             object_key=object_key,
+            source_provider=request.source_provider,
+            source_resource_id=request.source_resource_id,
         )
         version = (
             sum(
@@ -248,7 +259,7 @@ class InMemoryCurriculumRepository:
         return CurriculumImportResult(material=material, snapshot=snapshot), False
 
     def find_public_reusable_snapshot(
-        self, request: ImportCurriculumRequest
+        self, request: CurriculumImportRequest
     ) -> CurriculumImportResult | None:
         for snapshot in self._snapshots.values():
             material = self._materials[snapshot.material_id]
@@ -437,7 +448,7 @@ class PostgresCurriculumRepository:
         self,
         household_id: UUID,
         child_id: UUID,
-        request: ImportCurriculumRequest,
+        request: CurriculumImportRequest,
         idempotency_key: str,
         object_key: str | None = None,
         reused_from_snapshot_id: UUID | None = None,
@@ -491,6 +502,8 @@ class PostgresCurriculumRepository:
                     status="uploaded" if object_key else "parsed",
                     created_at=now,
                     object_key=object_key,
+                    source_provider=request.source_provider,
+                    source_resource_id=request.source_resource_id,
                 )
             )
             connection.execute(
@@ -525,7 +538,7 @@ class PostgresCurriculumRepository:
             return self._read(connection, snapshot_id), False
 
     def find_public_reusable_snapshot(
-        self, request: ImportCurriculumRequest
+        self, request: CurriculumImportRequest
     ) -> CurriculumImportResult | None:
         # No caller receives the source identity. It is only used internally to
         # attach an already approved public textbook to a new private snapshot.

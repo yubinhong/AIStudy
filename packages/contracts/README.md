@@ -4,8 +4,8 @@ This directory is the single source for the public OpenAPI contract and AI JSON
 Schemas. Generated client SDKs belong in build output directories and are not
 hand-maintained in application code.
 
-The current `0.17.2` contract contains 70 path entries (including one WebSocket
-extension), 82 HTTP operations, and 99 component schemas. It covers health,
+The current `0.17.3` contract contains 70 path entries (including one WebSocket
+extension), 84 HTTP operations, and 101 component schemas. It covers health,
 authentication, household/child/device administration, learning tasks and
 sessions, Capture upload/correction/delete, OCR and image-analysis confirmation,
 Tutor/mistake/review/report/export, private curriculum analysis and approval,
@@ -24,6 +24,11 @@ rows, and requests outside the 180-day detailed-history window are rejected.
 Curriculum PDF contracts also expose authenticated private page images and
 parent-reviewed whole-book knowledge maps. They never expose a MinIO object key,
 storage URL, or presigned upload URL.
+
+Parents can also list bounded SmartEdu textbook metadata and load one selected
+resource ID as a private reviewable PDF draft. The contract never accepts or
+returns an upstream Access Token or PDF URL; the server validates the fixed
+source host, PDF header, size and SHA-256 before queueing the existing parser.
 
 The curriculum contract is PDF-only for binary uploads. Multiple PDFs up to
 50 MiB each enter a private reviewable draft and are parsed by the local bounded

@@ -117,6 +117,7 @@ from study_api.routes.picture_writing import router as picture_writing_router
 from study_api.routes.profiles import router as profile_router
 from study_api.routes.recommendations import router as recommendations_router
 from study_api.routes.tutor import router as tutor_router
+from study_api.smartedu_source import SmartEduSource
 
 
 def create_app(
@@ -142,6 +143,7 @@ def create_app(
     english_live_provider: EnglishLiveProvider | None = None,
     chinese_practice_repository: ChinesePracticeRepository | None = None,
     picture_writing_repository: PictureWritingRepository | None = None,
+    smartedu_source: SmartEduSource | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="家庭 AI 学习助手 API",
@@ -156,6 +158,7 @@ def create_app(
         app.state.learning_repository
     )
     app.state.object_storage = object_storage or _default_object_storage()
+    app.state.smartedu_source = smartedu_source or SmartEduSource()
     app.state.capture_upload_semaphore = asyncio.Semaphore(_capture_upload_concurrency())
     app.state.capture_upload_timeout_seconds = _capture_upload_timeout_seconds()
     app.state.ocr_job_queue = ocr_job_queue or _default_ocr_job_queue()

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: 家庭 AI 学习助手 API
-  version: 0.17.2
+  version: 0.17.3
   description: Self-hosted Household account/session, multi-subject learning, Chinese practice, and gated English speaking contracts.
 servers:
   - url: http://localhost:8000
@@ -1840,6 +1840,85 @@ paths:
           $ref: '#/components/responses/InvalidRequest'
         '503':
           description: Private object storage is temporarily unavailable.
+  /households/{household_id}/curriculum/sources/smartedu/catalog:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+    get:
+      operationId: listSmartEduCurriculumCatalog
+      summary: List selectable public SmartEdu textbooks
+      description: Returns bounded metadata for elementary math or Chinese textbooks. The API never returns a third-party PDF URL or access token.
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - name: grade
+          in: query
+          required: true
+          schema: {type: integer, minimum: 1, maximum: 6}
+        - name: subject
+          in: query
+          required: true
+          schema: {type: string, enum: [math, chinese]}
+        - name: q
+          in: query
+          required: false
+          schema: {type: string, maxLength: 80, default: ''}
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 50, default: 50}
+      responses:
+        '200':
+          description: Safe catalog metadata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/SmartEduTextbook'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/InvalidRequest'}
+        '503':
+          description: SmartEdu metadata is temporarily unavailable.
+  /households/{household_id}/children/{child_id}/curriculum/imports/smartedu:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: child_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+    post:
+      operationId: importSmartEduCurriculum
+      summary: Load one SmartEdu textbook as a parent-reviewable draft
+      description: The server resolves the selected resource ID, validates a fixed SmartEdu HTTPS source, downloads one bounded PDF into private storage, and queues the existing local parser. It does not accept or return an Access Token or source URL.
+      security:
+        - SessionCookie: []
+        - BearerSession: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ImportSmartEduCurriculumRequest'}
+      responses:
+        '201':
+          description: Downloaded PDF draft.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CurriculumImportResult'}
+        '200':
+          description: Idempotent replay.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CurriculumImportResult'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/IdempotencyConflict'}
+        '422': {$ref: '#/components/responses/InvalidRequest'}
+        '503':
+          description: SmartEdu or private object storage is temporarily unavailable.
   /households/{household_id}/children/{child_id}/curriculum:
     parameters:
       - $ref: '#/components/parameters/HouseholdId'
@@ -2930,7 +3009,7 @@ components:
           const: study-api
         version:
           type: string
-          const: 0.17.2
+          const: 0.17.3
     CreateChildRequest:
       type: object
       additionalProperties: false
@@ -3937,6 +4016,27 @@ components:
           minItems: 1
           maxItems: 200
           items: {$ref: '#/components/schemas/CurriculumSection'}
+    SmartEduTextbook:
+      type: object
+      additionalProperties: false
+      required: [resource_id, title, subject, grade, edition, term]
+      properties:
+        resource_id: {type: string, minLength: 1, maxLength: 120}
+        title: {type: string, minLength: 1, maxLength: 120}
+        subject: {type: string, enum: [math, chinese]}
+        grade: {type: integer, minimum: 1, maximum: 6}
+        edition: {type: string, maxLength: 80}
+        term: {type: string, maxLength: 80}
+    ImportSmartEduCurriculumRequest:
+      type: object
+      additionalProperties: false
+      required: [resource_id, authorization_statement, grade]
+      properties:
+        resource_id: {type: string, pattern: '^[A-Za-z0-9_-]{1,120}$'}
+        subject: {type: string, enum: [math, chinese], default: math}
+        grade: {type: integer, minimum: 1, maximum: 6}
+        authorization_statement: {type: string, minLength: 1, maxLength: 500}
+        is_public_reusable: {type: boolean, default: false}
     CurriculumMaterial:
       type: object
       additionalProperties: false
@@ -3952,6 +4052,8 @@ components:
         content_sha256: {type: string, pattern: '^[a-f0-9]{64}$'}
         authorization_statement: {type: string}
         is_public_reusable: {type: boolean}
+        source_provider: {type: string, maxLength: 40, nullable: true}
+        source_resource_id: {type: string, maxLength: 120, nullable: true}
         status: {type: string, enum: [draft, uploaded, queued, parsing, needs_review, needs_ocr, failed, quarantined, unsupported_for_learning_content, parsed, published, rejected]}
         created_at: {type: string, format: date-time}
     CurriculumSnapshot:

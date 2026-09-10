@@ -1,3 +1,57 @@
+# PLANS.md — PLAN-0045 SmartEdu GHCR 发布与 Ubuntu 拉取式部署
+
+## 计划元数据
+
+- 计划 ID：`PLAN-0045`
+- 关联：`PLAN-0044`、`TASK-0012`、`RUNBOOK.md`、`.github/workflows/ci.yml`、`infra/compose/compose.yml`
+- 状态：`IN_PROGRESS`
+- 优先级：`P1 / RELEASE / SELF-HOSTED DEPLOYMENT`
+- Owner：Codex（提交、推送、发布、备份、部署和验收）
+- 创建：`2026-09-10`
+
+## 目标、边界与里程碑
+
+将 PLAN-0044 的 SmartEdu 家长教材目录与私有 PDF 草稿加载作为 `v0.17.3` 发布，推送 `master` 和 annotated tag，等待 GitHub Actions 质量门槛及 GHCR API/Web 镜像发布成功，再把 Ubuntu 自用 Compose 从远端本地构建切换为同一提交的 GHCR 镜像。保留远端 `.env`、数据卷和学习事实；不进行数据库 downgrade、真实教材导入、版权/教研签核或设备回归。
+
+- [ ] M1 — 版本、代码、契约、迁移、测试和文档完成最终审查；仅提交本轮相关文件。
+- [ ] M2 — `master`、`v0.17.3` 已推送，GitHub Actions `quality` 的质量 job 与 API/Web GHCR 发布均成功；两镜像使用同一提交 revision。
+- [ ] M3 — Ubuntu 切换前完成备份与隔离恢复验证；Compose 恢复 `pull_policy: always`，API/Web 固定到同一 GHCR `sha-*` 标签并 `pull`/`up --no-build`。
+- [ ] M4 — 迁移、容器状态、API/Web 本机与 LAN health、运行时 revision、SmartEdu 路由、worker、日志和 MinIO 私有端口检查通过；更新任务、发布和部署文档。
+
+## 兼容性、风险与回滚
+
+本次为 `0.17.2` 的向后兼容 API/Web 增量，新增可空来源字段迁移 `0039_smartedu_curriculum_source`。部署失败时恢复此前已验证的 GHCR `sha-f6ae9a2` API/Web 组合；数据库保留 `0039`，不让不认识该迁移的旧 `migrate` 镜像执行 downgrade。若 GHCR 发布失败，Ubuntu 保持当前本地构建载荷，不宣称已完成拉取式部署。
+
+---
+
+# PLANS.md — PLAN-0044 家长后台选择并加载 SmartEdu 电子教材
+
+## 计划元数据
+
+- 计划 ID：`PLAN-0044`
+- 关联：`TASK-0012`、`ADR-0029`、`packages/contracts/openapi.yaml`、`services/api/src/study_api/routes/curriculum.py`
+- 状态：`COMPLETE`
+- 优先级：`P1 / WEB / API / CURRICULUM SOURCE`
+- Owner：Codex（实现与验证）
+- 创建：`2026-09-09`
+
+## 目标、边界与里程碑
+
+在家长教材后台增加国家中小学智慧教育平台的可选目录和“加载为草稿”操作，复用现有私有 PDF、SHA-256、解析队列、原页审核和发布链路。适配器只接受受控的资源 ID，不接收或保存用户 Access Token，不向 Web 返回第三方 PDF 直链，不把未审核内容提供给孩子端、Tutor 或 Provider；本轮不抓取或提交真实教材正文，不改变英语范围，不推送 GHCR。
+
+- [x] M1 — 增加 SmartEdu 目录/详情/PDF 下载适配器、固定域名与响应大小校验，并增加来源元数据迁移。
+- [x] M2 — 增加家长 API/Web 目录查询和导入入口，导入后生成现有 `uploaded` 草稿并排队本地解析。
+- [x] M3 — 增加适配器/API/Web/契约/迁移回归；同步文档并完成静态质量门槛。
+- [x] M4 — 2026-09-10 已完成 Ubuntu 自用部署：备份/隔离恢复、远端 amd64 API/Web 构建、0039 前滚、Compose、运行时路由和健康检查通过；未推送 GHCR，真实 SmartEdu 资源、Provider 质量、Ubuntu 真实账号和四端设备验收仍未执行。
+
+## 兼容性、风险与回滚
+
+新增 GET/POST API 与可选 `CurriculumMaterial` 来源字段向后兼容；`0039_smartedu_curriculum_source` 只增加可空列和索引，回滚应先移除入口与适配器，数据库采用前向修复，不删除教材、解析事实或学习记录。SmartEdu 内容版权、平台条款、网络可用性和资源需要登录的情况仍由家长确认；适配失败时保留本地 PDF 上传路径，不自动切换其他 Provider 或来源。
+
+Ubuntu 部署载荷：`study-local-api:smartedu-20260910`（`sha256:e4e41ce1f391178cab9807ea90573c212a2746716e9478ef1a8cf2454d27c11b`）和 `study-local-web:smartedu-20260910`（`sha256:f7ea872d12a03b73b4b755f220d8c20f161157518a85ff7bb3bd25839cadb67e`）。备份 `/home/syin/study-backups/20260910T004753Z` 已隔离恢复为 39 张 PostgreSQL public 表和 739 个 MinIO 快照文件；旧源码、Compose 和 `.env` 保存在 `/home/syin/study-source-backups/20260910T005300Z-smartedu/`。回滚应用时保留 `0039`，优先用前向兼容的旧 API/Web 组合，不执行数据库 downgrade。
+
+---
+
 # PLANS.md — PLAN-0043 家长拍题图片 GitHub/Ubuntu 发布
 
 ## 计划元数据

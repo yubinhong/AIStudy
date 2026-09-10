@@ -1,5 +1,6 @@
 """Parent-reviewed curriculum import and publication routes."""
 
+import asyncio
 from hashlib import sha256
 from pathlib import Path
 from typing import Annotated
@@ -12,6 +13,7 @@ from fastapi import (
     Form,
     Header,
     HTTPException,
+    Query,
     Request,
     UploadFile,
     status,
@@ -32,6 +34,7 @@ from study_api.curriculum_analysis_jobs import CurriculumKnowledgeRepository
 from study_api.curriculum_limits import MAX_DOCUMENT_BYTES, MAX_TOTAL_DOCUMENT_BYTES
 from study_api.domain.curriculum_knowledge import CurriculumKnowledgeMap, KnowledgeMapStatus
 from study_api.domain.curriculum_repository import (
+    CurriculumImportRequest,
     CurriculumImportResult,
     CurriculumParsedPage,
     CurriculumRepository,
@@ -43,6 +46,14 @@ from study_api.domain.models import AccountRole, Subject
 from study_api.domain.repository import IdempotencyConflictError
 from study_api.material_parser import provisional_textbook_title
 from study_api.object_storage import CaptureObjectStorage, ObjectStorageError
+from study_api.smartedu_source import (
+    SMARTEDU_PROVIDER,
+    DownloadedSmartEduTextbook,
+    ImportSmartEduCurriculumRequest,
+    SmartEduSource,
+    SmartEduSourceError,
+    SmartEduTextbook,
+)
 
 router = APIRouter(prefix="/households/{household_id}", tags=["curriculum"])
 Principal = Annotated[AuthenticatedPrincipal, Depends(get_principal)]
@@ -64,6 +75,13 @@ def get_object_storage(request: Request) -> CaptureObjectStorage:
 
 
 ObjectStorage = Annotated[CaptureObjectStorage, Depends(get_object_storage)]
+
+
+def get_smartedu_source(request: Request) -> SmartEduSource:
+    return request.app.state.smartedu_source
+
+
+SmartEdu = Annotated[SmartEduSource, Depends(get_smartedu_source)]
 
 
 def get_knowledge_repository(request: Request) -> CurriculumKnowledgeRepository:
@@ -96,6 +114,45 @@ def _require_subject_enabled(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="subject is not enabled")
 
 
+def _smartedu_http_error(error: SmartEduSourceError) -> HTTPException:
+    if error.code == "smartedu_resource_not_found":
+        code = status.HTTP_404_NOT_FOUND
+    elif error.code == "smartedu_source_unavailable":
+        code = status.HTTP_503_SERVICE_UNAVAILABLE
+    else:
+        code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    return HTTPException(status_code=code, detail=error.code)
+
+
+async def _document_bytes(data: bytes):
+    yield data
+
+
+@router.get(
+    "/curriculum/sources/smartedu/catalog",
+    response_model=list[SmartEduTextbook],
+)
+def list_smartedu_catalog(
+    household_id: UUID,
+    principal: Principal,
+    source: SmartEdu,
+    grade: Annotated[int, Query(ge=1, le=6)],
+    subject: Annotated[Subject, Query()],
+    q: Annotated[str, Query(max_length=80)] = "",
+    limit: Annotated[int, Query(ge=1, le=50)] = 50,
+) -> list[SmartEduTextbook]:
+    require_parent(require_household(principal, household_id))
+    if subject not in {Subject.MATH, Subject.CHINESE}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="smartedu_subject_not_supported",
+        )
+    try:
+        return source.list_textbooks(grade=grade, subject=subject, query=q, limit=limit)
+    except SmartEduSourceError as error:
+        raise _smartedu_http_error(error) from error
+
+
 @router.post(
     "/children/{child_id}/curriculum/imports",
     response_model=CurriculumImportResult,
@@ -114,7 +171,12 @@ def import_curriculum(
     _require_child(principal, app_request, household_id, child_id)
     _require_subject_enabled(app_request, household_id, child_id, request.subject)
     try:
-        result, replayed = repository.import_draft(household_id, child_id, request, idempotency_key)
+        result, replayed = repository.import_draft(
+            household_id,
+            child_id,
+            CurriculumImportRequest.model_validate(request.model_dump()),
+            idempotency_key,
+        )
     except IdempotencyConflictError as error:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -229,7 +291,7 @@ async def import_curriculum_files(
         suffix = Path(filename).suffix.lower()
         safe_name = filename[:160] or f"document{suffix}"
         section_title = Path(safe_name).stem[:160] or "待解析文档"
-        import_request = ImportCurriculumRequest(
+        import_request = CurriculumImportRequest(
             subject=subject,
             filename=safe_name,
             media_type=media_type,
@@ -330,6 +392,161 @@ async def import_curriculum_files(
             ) from error
         results.append(result)
     return results
+
+
+@router.post(
+    "/children/{child_id}/curriculum/imports/smartedu",
+    response_model=CurriculumImportResult,
+    status_code=status.HTTP_201_CREATED,
+)
+async def import_smartedu_curriculum(
+    household_id: UUID,
+    child_id: UUID,
+    request: ImportSmartEduCurriculumRequest,
+    app_request: Request,
+    idempotency_key: IdempotencyKey,
+    principal: Principal,
+    repository: Repository,
+    object_storage: ObjectStorage,
+    knowledge_repository: KnowledgeRepository,
+    source: SmartEdu,
+) -> JSONResponse:
+    """Load one public SmartEdu PDF into the same parent-reviewed draft flow."""
+
+    require_parent(require_household(principal, household_id))
+    _require_child(principal, app_request, household_id, child_id)
+    _require_subject_enabled(app_request, household_id, child_id, request.subject)
+    try:
+        downloaded: DownloadedSmartEduTextbook = await asyncio.to_thread(
+            source.download_pdf, request.resource_id
+        )
+    except SmartEduSourceError as error:
+        raise _smartedu_http_error(error) from error
+    resource = downloaded.resource.textbook
+    if resource.subject is not request.subject or resource.grade != request.grade:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="smartedu_resource_does_not_match_selection",
+        )
+    import_request = CurriculumImportRequest(
+        subject=request.subject,
+        filename=downloaded.filename,
+        media_type="application/pdf",
+        byte_size=downloaded.byte_size,
+        content_sha256=downloaded.content_sha256,
+        authorization_statement=request.authorization_statement,
+        is_public_reusable=request.is_public_reusable,
+        grade=request.grade,
+        textbook_version=resource.title,
+        term=(resource.term or "待识别")[:40],
+        sections=(
+            CurriculumSection(
+                title=resource.title,
+                chapter="待解析文档",
+                learning_objectives=("等待文档解析和家长审核",),
+            ),
+        ),
+        source_provider=SMARTEDU_PROVIDER,
+        source_resource_id=resource.resource_id,
+    )
+    object_key = (
+        f"curriculum/{household_id}/{child_id}/"
+        f"{downloaded.content_sha256}-{resource.resource_id[:32]}"
+    )
+    file_key = sha256(
+        f"{idempotency_key}:{resource.resource_id}:{downloaded.content_sha256}".encode()
+    ).hexdigest()
+    try:
+        reusable_source = (
+            repository.find_public_reusable_snapshot(import_request)
+            if request.is_public_reusable
+            else None
+        )
+        if reusable_source is not None:
+            source_map = knowledge_repository.get_map(
+                reusable_source.snapshot.household_id,
+                reusable_source.snapshot.child_id,
+                reusable_source.snapshot.id,
+            )
+            if source_map is None or source_map.status is not KnowledgeMapStatus.APPROVED:
+                reusable_source = None
+        if reusable_source is not None and reusable_source.material.object_key is not None:
+            result, replayed = repository.import_draft(
+                household_id,
+                child_id,
+                import_request,
+                file_key,
+                object_key=reusable_source.material.object_key,
+                reused_from_snapshot_id=reusable_source.snapshot.id,
+            )
+            if not replayed:
+                repository.clone_parsed_content(reusable_source.snapshot.id, result)
+                knowledge_repository.clone_approved_public_map(
+                    reusable_source.snapshot.id,
+                    result.material.id,
+                    result.snapshot.id,
+                    household_id,
+                    child_id,
+                )
+            result = result.model_copy(
+                update={
+                    "material": result.material.model_copy(update={"status": "needs_review"}),
+                    "snapshot": result.snapshot.model_copy(
+                        update={
+                            "sections": reusable_source.snapshot.sections,
+                            "textbook_version": reusable_source.snapshot.textbook_version,
+                            "term": reusable_source.snapshot.term,
+                        }
+                    ),
+                }
+            )
+            return JSONResponse(
+                status_code=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
+                content=result.model_dump(mode="json"),
+                headers={"Idempotency-Replayed": "true"} if replayed else {},
+            )
+        await object_storage.stream_document_upload(
+            object_key,
+            "application/pdf",
+            downloaded.byte_size,
+            downloaded.content_sha256,
+            _document_bytes(downloaded.data),
+        )
+        result, replayed = repository.import_draft(
+            household_id,
+            child_id,
+            import_request,
+            file_key,
+            object_key=object_key,
+        )
+        if not replayed:
+            parse_repository = getattr(app_request.app.state, "material_parse_repository", None)
+            if parse_repository is not None:
+                parse_repository.enqueue(
+                    household_id,
+                    child_id,
+                    result.material.id,
+                    result.snapshot.id,
+                )
+    except ObjectStorageError as error:
+        raise HTTPException(
+            status_code=(
+                status.HTTP_503_SERVICE_UNAVAILABLE
+                if error.retryable
+                else status.HTTP_422_UNPROCESSABLE_CONTENT
+            ),
+            detail=str(error),
+        ) from error
+    except IdempotencyConflictError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="idempotency key reused with a different payload",
+        ) from error
+    return JSONResponse(
+        status_code=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
+        content=result.model_dump(mode="json"),
+        headers={"Idempotency-Replayed": "true"} if replayed else {},
+    )
 
 
 @router.get("/children/{child_id}/curriculum", response_model=list[CurriculumSnapshot])

@@ -42,7 +42,7 @@ AIStudy 是给一个家庭自己使用的小学生学习助手。孩子在平板
 | 英语 | 暂未开放 |
 | 自用部署 | 已在家庭 Ubuntu 服务器运行；不等同于公开网站或商业服务 |
 
-Ubuntu 当前运行 API/OpenAPI `0.17.2`、迁移 `0038_classical_poem_options`。服务器配有 12 GB 内存和 8 个 CPU 核心；本地 `Qwen3.5-4B Q4_K_M` 已完成测试但因视觉质量门禁失败而停止，当前 AI 请求使用现有 NewAPI 云端配置。跨设备任务位置、每天最多 3 项、未来任务保护、家长撤销、语文教材批准后自动古诗出题和看图写话安全降级已由版本标签固化。`v0.17.2` 与家长拍题图片提交 `f6ae9a2` 的 GitHub Actions/GHCR 服务镜像 workflow 已成功完成；2026-09-09 Ubuntu 已切换为代码提交 `f6ae9a2` 的固定 `sha-f6ae9a2` GHCR 镜像。备份、恢复校验、模型测试、健康检查和仍待完成的设备/Provider 验证见 [RUNBOOK.md](RUNBOOK.md) 和 [TESTING.md](TESTING.md)。
+Ubuntu 当前运行 API/OpenAPI `0.17.2`、迁移 `0039_smartedu_curriculum_source`。服务器配有 12 GB 内存和 8 个 CPU 核心；本地 `Qwen3.5-4B Q4_K_M` 已完成测试但因视觉质量门禁失败而停止，当前 AI 请求使用现有 NewAPI 云端配置。跨设备任务位置、每天最多 3 项、未来任务保护、家长撤销、语文教材批准后自动古诗出题和看图写话安全降级已由版本标签固化。`v0.17.2` 与家长拍题图片提交 `f6ae9a2` 的 GitHub Actions/GHCR 服务镜像 workflow 已成功完成；2026-09-09 Ubuntu 已切换为 `sha-f6ae9a2`，2026-09-10 又以远端本地构建镜像部署 SmartEdu 家长教材加载和 `0039` 迁移，未推送 GHCR。备份、恢复校验、模型测试、健康检查和仍待完成的设备/Provider 验证见 [RUNBOOK.md](RUNBOOK.md) 和 [TESTING.md](TESTING.md)。
 
 ## 家庭使用流程
 
@@ -104,7 +104,7 @@ Compose 支持在本地 Qwen 和现有 NewAPI 云端模型之间进行显式切�
 
 ## 电子教材
 
-项目可配合独立的 [tchMaterial-parser](https://github.com/happycola233/tchMaterial-parser) 获取国家中小学智慧教育平台电子课本 PDF。该工具不是 AIStudy 依赖，AIStudy 不接收其 Access Token，也不包含或分发下载的教材。请只下载和导入自己有权使用的资料，并遵守平台条款、教材版权和当地法律；完整安全导入步骤见 [部署指南的教材章节](docs/DEPLOYMENT.md#7-获取和导入电子教材)。
+家长后台现可直接查询并选择国家中小学智慧教育平台的电子课本，服务端会按资源 ID 有界取得 PDF 并进入私有解析/审核流程；本功能参考 [tchMaterial-parser](https://github.com/happycola233/tchMaterial-parser) 的 MIT 协议解析方式，但 AIStudy 不接收其 Access Token，也不包含或分发下载的教材。平台需要登录的资源仍需改用本地 PDF 上传。请只加载或导入自己有权使用的资料，并遵守平台条款、教材版权和当地法律；完整安全边界见 [部署指南的教材章节](docs/DEPLOYMENT.md#7-获取和导入电子教材)。
 
 ## 本地开发与验证
 

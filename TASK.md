@@ -8,6 +8,21 @@
 - Owner：Codex（执行）；项目 Owner（2026-08-15 明确要求先多学科、再语文、英语最后）
 - 关联：`PLAN-0034`、`PLAN-0031`、`PLAN-0030`、`PLAN-0007`、`ADR-0017`、`ADR-0027`、`ADR-0028`、`docs/deep-research-report.md`
 
+## 2026-09-09/10 家长后台选择并加载 SmartEdu 电子教材（PLAN-0044）
+
+- [x] 增加受控 SmartEdu 目录/详情/PDF 适配器：只接受资源 ID，固定 HTTPS 主机，限制响应大小和 PDF 文件头，计算 SHA-256，不接收 Access Token 或向客户端返回第三方直链。
+- [x] 家长 Web 增加年级/学科目录筛选和“加载为草稿”入口；下载文件进入现有私有 MinIO、`uploaded` 草稿、解析队列、家长审核和发布门禁，原有本地 PDF 上传保留。
+- [x] 增加 `0039_smartedu_curriculum_source` 来源元数据迁移、OpenAPI、API/Web BFF、授权/幂等回归和 ADR-0029；来源只记录 `smartedu` 与资源 ID。
+- [x] 验证通过：SmartEdu/API 定向回归、API 非集成全量、API Ruff/Mypy、Web Vitest `41` 项、Prettier/ESLint/TypeScript/production build、迁移离线 SQL、契约路由检查和 `git diff --check`。
+
+部署记录：2026-09-10 已部署到 `syin@192.168.1.4:/home/syin/study`。部署前备份 `/home/syin/study-backups/20260910T004753Z` 已隔离恢复验证（39 张 PostgreSQL public 表、739 个 MinIO 快照文件）；远端 x86_64 以当前工作区构建 API/Web 镜像，镜像分别为 `study-local-api:smartedu-20260910`（`sha256:e4e41ce1f391178cab9807ea90573c212a2746716e9478ef1a8cf2454d27c11b`）和 `study-local-web:smartedu-20260910`（`sha256:f7ea872d12a03b73b4b755f220d8c20f161157518a85ff7bb3bd25839cadb67e`）。远端 `.env` 先备份到 `/home/syin/study-source-backups/20260910T005300Z-smartedu/.env`，持久化 Compose 继续保留数据卷和密钥边界；迁移为 `0039_smartedu_curriculum_source (head)`，API/Web 本机与 LAN health 均返回 200，四个 worker running，SmartEdu 运行时路由和适配器边界检查通过，最近 100 行应用日志错误计数为 0，MinIO `9000` 未映射宿主端口。
+
+未执行：真实 SmartEdu 目录/登录要求/PDF 正文下载、版权和教研签核、真实 Provider 质量与成本、真实账号浏览器和四端设备回归、GHCR 发布。远端使用本地构建标签而非 GHCR，当前 Git 工作区仍有未提交改动。
+
+回滚：停止使用 SmartEdu 目录和导入路由，保留本地 PDF 上传及已导入教材；数据库采用前向修复清理来源字段，不执行 downgrade，不删除教材、解析事实或学习记录。
+
+部署回滚：旧远端源码、Compose 和 `.env` 位于 `/home/syin/study-source-backups/20260910T005300Z-smartedu/`；应用回滚须保留 `0039` 数据库版本，使用前向兼容的旧 API/Web 组合并执行健康检查，不让不认识 `0039` 的旧 `migrate` 镜像重新执行迁移；不执行数据库 downgrade。
+
 ## 2026-09-08 家长学习记录显示拍题图片（PLAN-0042）
 
 - [x] API 增加家长/Household-scoped `GET /households/{household_id}/captures/{capture_id}/media`，复用已确认题目的 `capture_id` 和现有私有对象；孩子角色、跨家庭、上传中、已删除或无对象均拒绝，不把对象键、存储 URL 或图片字节加入学习记录 JSON。
