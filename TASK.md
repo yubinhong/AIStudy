@@ -8,6 +8,26 @@
 - Owner：Codex（执行）；项目 Owner（2026-08-15 明确要求先多学科、再语文、英语最后）
 - 关联：`PLAN-0034`、`PLAN-0031`、`PLAN-0030`、`PLAN-0007`、`ADR-0017`、`ADR-0027`、`ADR-0028`、`docs/deep-research-report.md`
 
+## 2026-09-11 README 简化与 v0.17.6 发布
+
+- [x] 根 README 改为普通用户易懂的项目介绍，只保留功能、适用范围、界面预览、开始使用、注意事项和文档入口。
+- [x] 已尝试通过 iPad/Flutter/Xcode 获取真实截图；当前 iPad 原生截图不支持且 Xcode 调试连接超时，未提交伪造的真机截图，README 使用仓库已有界面预览和 synthetic 拍题图。
+- [x] CHANGELOG 增加唯一 `v0.17.6 - 2026-09-11` 区块，包含本轮 iPad 修复和 README 变化。
+- [x] 发布前检查通过并创建/推送 `master` 与 `v0.17.6`；tag 质量和 Android 发布结果以 GitHub Actions 为准。
+
+回滚：恢复 README 和文档的上一版本即可；tag 不移动、不覆盖，不涉及 API、数据库、Capture 或学习事实。
+
+## 2026-09-11 iPad 解题完成后返回学习桌黑屏修复
+
+- [x] 定位根因：真实孩子端路由为“学科选择 → 学习桌 → 拍题/确认/讲解”，讲解页使用 `popUntil(route.isFirst)` 会把学习桌和学科选择一起弹出；原有 Widget 测试从根路由直接打开讲解页，未覆盖该层级。
+- [x] 为数学学习桌路由增加稳定名称，讲解页返回时优先回到学习桌，并保留无命名路由预览/测试场景的根路由回退。
+- [x] 增加嵌套导航 Widget 回归，覆盖“学科选择 → 学习桌 → 讲解 → 完成本题 → 返回学习桌”。
+- [x] Flutter 全量测试 `78 passed`、`flutter analyze`、iOS Release 构建、代码签名校验和修复包安装到已连接 iPad 均通过。
+- [x] iPad 已解锁，修复包成功启动；设备进程检查通过，显示背光开启且设备保持横屏。
+- [x] 通过 Flutter `integration_test` 在真实 iPad 自动完成“学科选择 → 学习桌 → 拍题 → 确认 → 解题 → 完成 → 返回学习桌”，结果为 `All tests passed`；随后恢复并启动 Release 修复包，Bundle ID 为 `com.yubinhong.aistudy.child`。
+
+回滚：恢复 `SubjectSelectionScreen` 的数学路由设置和 `TutorHintScreen._returnToLearningDesk` 的旧实现，并移除对应 Widget 回归；不涉及 API、数据库、学习事实或 Capture 文件。
+
 ## 2026-09-11 iPad 拍题图片入口权限恢复
 
 - [x] 定位“暂时无法打开图片入口”为 Flutter 将 `image_picker` 的全部 `PlatformException` 折叠成同一文案；iPad 当前安装包包含 `image_picker_ios`，`Info.plist` 也已有相机/照片用途声明，因此不是插件缺失或用途声明缺失。

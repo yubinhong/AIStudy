@@ -12,6 +12,8 @@
 - 当前版本：本地与 Ubuntu API/OpenAPI 均为 `0.17.5`，迁移头均为 `0039_smartedu_curriculum_source`；Ubuntu 当前运行 `sha-374a798`，API/Web digest 和发布证据见 `RUNBOOK.md`。SmartEdu 真实 Bearer、路径编码和有界 CDN 重试已部署，真实浏览器 PDF 仍待项目 Owner 重试。
 - 最近更新：`2026-09-11`
 
+- 2026-09-11 README 与发布整理：根 README 已改为普通用户易懂的简短说明，加入家长工作台和 synthetic 拍题界面预览，移除服务器规格、模型评测、迁移和 CI 细节；iPad 原生截图接口不支持且 Xcode 调试连接未建立，因此未提交伪造的真机截图。当前修复和 README 变化作为 `v0.17.6` 发布，API/OpenAPI 仍保持 `0.17.5`。
+- 2026-09-11 iPad 解题返回学习桌黑屏修复：真实路由为“学科选择 → 学习桌 → 拍题/确认/讲解”，此前讲解页 `popUntil(route.isFirst)` 会把学习桌路由一并弹出；数学路由现在带稳定名称，返回逻辑优先回到该路由。Flutter 全量 `78 passed`、Analyze、iOS Release 签名/安装/启动和真实 iPad `integration_test` 完整点击流程均通过，最终 Release 包已恢复安装。
 - 2026-09-11 iPad 图片入口修复：数学拍题和语文看图选择不再请求完整照片元数据；`image_picker` 权限拒绝/系统限制/无相机等错误会显示具体恢复方式，iOS 拒绝态可直接打开 App 系统设置。Flutter Analyze、全量 `77 passed`、iOS Release 构建和签名通过，修复包已覆盖安装并在 iPad 前台启动；设置直达和当前相机 `authorized` 状态已真机确认，实际拍照/相册选择仍待人工点击验收。
 - 2026-09-11 数学拍题含图题修复：孩子端以前在题目确认页展示脱敏题图，但进入 Tutor 时只传递文字。客户端现在继续在讲解页显示同一份确认图；服务端 Tutor L1/L2/L3 会从 Household/Child 授权的 Capture 读取并校验同一份已确认脱敏图，以 `text + image_url(data:)` 发送给单一 Provider，图中数字/关系因此可参与解题。`has_diagram=true` 且图不可用时返回 409，不做文字-only 云端解答；不发送 URL、对象键或未确认 Extraction。Provider/Tutor 定向回归通过，真实含图题 Provider 质量和真机回归仍未执行。
 - 2026-09-11 Tutor 含图题服务端修复已部署：最终 API/Web GHCR `sha-374a798` 运行在 Ubuntu；API digest `sha256:65c2f170f3e8dfc704db19eca486c2388fdd7b88a7c14fb683fe39aebf03944c`、Web digest `sha256:887844a5f41c5bdb46f9b17d0fa479afecf0eb8f2ac509d21fc4924553f5f121`，OCI revision `374a798c46978b7f19cd94176a3c698ddd1cd81d`。备份 `/home/syin/study-backups/20260911T024702Z`、人工显式建库隔离恢复（39 张 public 表、888 个 MinIO 文件）和最终 health/迁移/源码检查通过。真实含图题 Provider 质量、真实账号浏览器和实体设备回归仍待执行。

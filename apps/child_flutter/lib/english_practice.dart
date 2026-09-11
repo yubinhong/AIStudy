@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_soloud/flutter_soloud.dart';
 import 'package:record/record.dart';
 
+const studyLearningDeskRouteName = '/study/learning-desk';
+
 class EnglishPracticeException implements Exception {
   const EnglishPracticeException(this.message);
 
@@ -257,6 +259,7 @@ class SubjectSelectionScreen extends StatefulWidget {
     super.key,
     required this.displayName,
     required this.mathBuilder,
+    this.mathRouteName = studyLearningDeskRouteName,
     this.chineseBuilder,
     this.enabledSubjects = const {'math'},
     this.englishGateway,
@@ -264,6 +267,7 @@ class SubjectSelectionScreen extends StatefulWidget {
 
   final String displayName;
   final WidgetBuilder mathBuilder;
+  final String mathRouteName;
   final WidgetBuilder? chineseBuilder;
   final Set<String> enabledSubjects;
   final EnglishPracticeGateway? englishGateway;
@@ -308,7 +312,10 @@ class _SubjectSelectionScreenState extends State<SubjectSelectionScreen> {
                       title: '数学',
                       subtitle: '错题讲解、复习错题、今日任务',
                       onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(builder: widget.mathBuilder),
+                        MaterialPageRoute<void>(
+                          settings: RouteSettings(name: widget.mathRouteName),
+                          builder: widget.mathBuilder,
+                        ),
                       ),
                     ),
                     if (widget.enabledSubjects.contains('chinese') &&

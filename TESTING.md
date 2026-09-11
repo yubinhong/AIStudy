@@ -1,5 +1,12 @@
 # TESTING.md
 
+## 2026-09-11 iPad 解题完成后返回学习桌黑屏修复
+
+- Flutter：`cd apps/child_flutter && flutter test` 全量 `78 passed`；`flutter analyze` 和 Dart format 通过。新增 Widget 回归覆盖学科选择、学习桌、拍题、确认、讲解、完成和返回学习桌的嵌套路由。
+- 真机集成：`flutter drive --driver=test_driver/integration_test.dart --target=integration_test/learning_desk_return_test.dart -d 00008110-0011356E0E41801E --device-connection=attached --no-pub` 在 iPad mini 6（iOS 26.6.1）通过，输出 `All tests passed`；测试自动点击真实设备上的完整流程，最终断言学习桌可见且“错题讲解”入口存在。
+- iOS Release：`flutter build ios --release --dart-define=STUDY_API_URL=http://192.168.1.4:8000`、`codesign --verify --deep --strict build/ios/iphoneos/Runner.app` 和 `xcrun devicectl device install app --device 00008110-0011356E0E41801E build/ios/iphoneos/Runner.app` 通过；Release 包随后成功启动，设备显示保持活动横屏。
+- 边界：本轮无 API、OpenAPI、数据库、Capture 对象或学习事实变化；集成测试结束后已重新安装 Release 包，未保留调试测试包作为最终用户安装包。
+
 ## 2026-09-11 iPad 拍题图片入口权限恢复
 
 - 定向：相机拒绝回归验证 `camera_access_denied` 显示具体提示并调用 `study/app_settings.open`；相册回归验证 `requestFullMetadata=false`，两项均通过。

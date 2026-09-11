@@ -3288,7 +3288,10 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
   }
 
   void _returnToLearningDesk() {
-    Navigator.of(context).popUntil((route) => route.isFirst);
+    Navigator.of(context).popUntil(
+      (route) =>
+          route.settings.name == studyLearningDeskRouteName || route.isFirst,
+    );
   }
 
   @override
