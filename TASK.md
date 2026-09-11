@@ -8,6 +8,25 @@
 - Owner：Codex（执行）；项目 Owner（2026-08-15 明确要求先多学科、再语文、英语最后）
 - 关联：`PLAN-0034`、`PLAN-0031`、`PLAN-0030`、`PLAN-0007`、`ADR-0017`、`ADR-0027`、`ADR-0028`、`docs/deep-research-report.md`
 
+## 2026-09-11 iPad 拍题图片入口权限恢复
+
+- [x] 定位“暂时无法打开图片入口”为 Flutter 将 `image_picker` 的全部 `PlatformException` 折叠成同一文案；iPad 当前安装包包含 `image_picker_ios`，`Info.plist` 也已有相机/照片用途声明，因此不是插件缺失或用途声明缺失。
+- [x] 数学拍题与语文看图选择图片时显式设置 `requestFullMetadata=false`，避免为不使用且后续会清除的完整照片元数据请求额外权限。
+- [x] 按相机/照片权限拒绝、系统限制、无相机和重复请求显示可操作错误；iOS 权限被拒绝时可直接打开当前 App 的系统设置页，结构化日志只记录错误码和入口类型。
+- [x] 权限恢复与相册最小权限 Widget 回归通过；Flutter Analyze 通过，全量测试 `77 passed`；Release iOS 构建、插件符号/设置通道检查和代码签名通过，修复包已覆盖安装到 iPad 且保留 App 数据。
+- [x] iPad 解锁后修复包成功前台启动；权限错误后的“打开设置”真机操作启动了系统 `Preferences`，LLDB 只读确认当前相机授权为 `authorized`（枚举值 `3`）、照片库为 `notDetermined`（枚举值 `0`），与相册无需完整照片权限的实现一致。
+- [ ] 两次等待后 App 最上层仍只有 `FlutterViewController`，未观察到用户实际点开后的 `UIImagePickerController`；还需在 iPad 上完成人工拍照/取消、相册选图/取消及返回 App 验收，不拍摄或留存真实儿童图片。
+
+回滚：移除 `image_picker_access.dart`、`study/app_settings` MethodChannel、图片入口错误映射和 `requestFullMetadata=false` 即可；不涉及服务端、数据库、Capture 对象或学习事实回滚。
+
+## 2026-09-11 数学含图拍题进入讲解页时保留题图
+
+- [x] 修复题目确认页进入 `TutorHintScreen` 时只传题干文字、丢失当前脱敏题图的客户端问题；当已确认识别结果 `has_diagram=true` 时，讲解页会在题干上方展示同一份当前内存中的脱敏图片。
+- [x] 增加完整 Widget 跳转回归，覆盖 `QuestionExtraction(has_diagram=true) -> 人工确认 -> Tutor 题图+题干`；Flutter Analyze 通过，全量测试 `75 passed`。
+- [ ] 未连接 Nova 9/iPad 执行真实相机、横竖屏和弱网验收；本轮不增加 API、数据库或图片持久化，也不改变 Provider 只接收用户确认脱敏副本的边界。
+
+回滚：移除 `TutorHintScreen` 的 `questionImageBytes/hasDiagram` 参数、题图控件和确认页跳转传值即可；不涉及服务端数据、Capture 对象或学习事实回滚。
+
 ## 2026-09-10 SmartEdu 真实凭据下载重试修复（PLAN-0048）
 
 - [x] 对照上游当前实现，修复有凭据时 `Authorization` 仍错误发送 `Bearer 0` 的移植缺口；现在同时发送实际 Bearer 与按当前 URL 生成的 `X-ND-AUTH`。

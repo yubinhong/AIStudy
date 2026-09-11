@@ -15,12 +15,19 @@ address is persisted on-device, and changing it clears the previous server's
 session before any credentials are sent.
 A selected local image passes through the local sanitization preview before the
 confirmed derivative reaches the review screen. The reusable `CaptureApiClient`
+requests no full photo metadata when opening the platform picker. On iOS,
+denied camera or photo access is reported with a direct route to this app's
+system settings; restricted access and unavailable hardware remain explicit
+fail-closed states. Picker failure logs contain only the stable error code and
+the camera/gallery source, never a path or image content. The client then
 loads real tasks or creates a child-bound ad-hoc StudySession, resumes an active
 session, streams the confirmed derivative through the authenticated API,
 starts ImageAnalysis, polls the bounded Job, displays the
-QuestionExtraction and persists explicit edits as a VerifiedQuestion. Tutor
-then sends only the VerifiedQuestion ID; the server reloads the trusted fact
-and persists an append-only TutorTurn. The app
+QuestionExtraction and persists explicit edits as a VerifiedQuestion. When the
+confirmed extraction reports a diagram, the current in-memory sanitized image
+continues into the Tutor question panel beside the confirmed text. Tutor still
+sends only the VerifiedQuestion ID; the server reloads the trusted fact and
+persists an append-only TutorTurn. No image is added to that Tutor request. The app
 boundary references the shared contract at
 `packages/contracts/openapi.yaml`; ChildProfile and Device types must be
 generated from that contract after ADR-0002 is approved, not hand-copied here.

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,6 +11,7 @@ import 'auth_client.dart';
 import 'english_practice.dart';
 import 'features/chinese/chinese_home_page.dart';
 import 'features/chinese/data/chinese_api_client.dart';
+import 'image_picker_access.dart';
 import 'privacy_sanitization_preview.dart';
 import 'startup_transition.dart';
 import 'task_progress_store.dart';
@@ -2309,6 +2311,7 @@ class CaptureInputScreen extends StatefulWidget {
     this.taskExerciseIndex,
     this.taskExerciseCount,
     this.taskProgressStore,
+    this.imagePicker,
   });
 
   final CaptureApiClient? captureClient;
@@ -2317,13 +2320,14 @@ class CaptureInputScreen extends StatefulWidget {
   final int? taskExerciseIndex;
   final int? taskExerciseCount;
   final TaskProgressStore? taskProgressStore;
+  final ImagePicker? imagePicker;
 
   @override
   State<CaptureInputScreen> createState() => _CaptureInputScreenState();
 }
 
 class _CaptureInputScreenState extends State<CaptureInputScreen> {
-  final ImagePicker _picker = ImagePicker();
+  late final ImagePicker _picker = widget.imagePicker ?? ImagePicker();
   bool _isPicking = false;
 
   Future<void> _pickImage(ImageSource source) async {
@@ -2334,6 +2338,7 @@ class _CaptureInputScreenState extends State<CaptureInputScreen> {
         maxWidth: 2400,
         maxHeight: 2400,
         imageQuality: 90,
+        requestFullMetadata: false,
       );
       if (!mounted || image == null) return;
       final sanitized = await Navigator.of(context)
@@ -2378,14 +2383,9 @@ class _CaptureInputScreenState extends State<CaptureInputScreen> {
       if (mounted && result != null) {
         Navigator.of(context).pop(result);
       }
-    } on PlatformException {
+    } on PlatformException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('暂时无法打开图片入口，请稍后再试。'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showImagePickerFailure(context, error, source);
     } finally {
       if (mounted) setState(() => _isPicking = false);
     }
@@ -2531,6 +2531,7 @@ class _PictureWritingCaptureScreenState
         maxWidth: 2400,
         maxHeight: 2400,
         imageQuality: 90,
+        requestFullMetadata: false,
       );
       if (!mounted || image == null) return;
       final sanitized = await Navigator.of(context)
@@ -2563,16 +2564,13 @@ class _PictureWritingCaptureScreenState
           ),
         ),
       );
-    } on PlatformException {
+    } on PlatformException catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('暂时无法打开图片入口，请稍后再试。'),
-          action: SnackBarAction(
-            label: '从观察问题开始',
-            onPressed: _openFallbackGuide,
-          ),
-        ),
+      _showImagePickerFailure(
+        context,
+        error,
+        source,
+        fallbackAction: _openFallbackGuide,
       );
     } on Exception {
       if (!mounted) return;
@@ -2658,6 +2656,46 @@ class _PictureWritingCaptureScreenState
       ),
     );
   }
+}
+
+void _showImagePickerFailure(
+  BuildContext context,
+  PlatformException error,
+  ImageSource source, {
+  VoidCallback? fallbackAction,
+}) {
+  final presentation = describeImagePickerFailure(error, source);
+  debugPrint(
+    'capture_image_picker_failed code=${error.code} source=${source.name}',
+  );
+  final messenger = ScaffoldMessenger.of(context);
+  final canOpenIosSettings =
+      presentation.canOpenSettings &&
+      defaultTargetPlatform == TargetPlatform.iOS;
+  messenger.showSnackBar(
+    SnackBar(
+      content: Text(presentation.message),
+      behavior: SnackBarBehavior.floating,
+      action: canOpenIosSettings
+          ? SnackBarAction(
+              label: '打开设置',
+              onPressed: () async {
+                final opened = await openStudyAppSettings();
+                if (!opened) {
+                  messenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('无法自动打开设置，请在系统设置中找到 Study Child。'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              },
+            )
+          : fallbackAction == null
+          ? null
+          : SnackBarAction(label: '从观察问题开始', onPressed: fallbackAction),
+    ),
+  );
 }
 
 class PictureWritingGuideScreen extends StatefulWidget {
@@ -3026,6 +3064,8 @@ class TutorHintScreen extends StatefulWidget {
     super.key,
     this.displayName = '小禾',
     this.questionText = '3/4 + 1/8 = ?',
+    this.questionImageBytes,
+    this.hasDiagram = false,
     this.verifiedQuestionId,
     this.captureClient,
     this.answerState = 'unclear',
@@ -3038,6 +3078,8 @@ class TutorHintScreen extends StatefulWidget {
 
   final String displayName;
   final String questionText;
+  final Uint8List? questionImageBytes;
+  final bool hasDiagram;
   final String? verifiedQuestionId;
   final CaptureApiClient? captureClient;
   final String answerState;
@@ -3393,6 +3435,22 @@ class _TutorHintScreenState extends State<TutorHintScreen> {
             ),
           ),
           SizedBox(height: compact ? 34 : 72),
+          if (widget.hasDiagram && widget.questionImageBytes != null) ...[
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: SizedBox(
+                width: double.infinity,
+                height: compact ? 220 : 320,
+                child: Image.memory(
+                  widget.questionImageBytes!,
+                  key: const ValueKey('tutor-question-image'),
+                  fit: BoxFit.contain,
+                  semanticLabel: '题目配图',
+                ),
+              ),
+            ),
+            SizedBox(height: compact ? 24 : 34),
+          ],
           if (widget.questionText == '3/4 + 1/8 = ?')
             _FractionEquation(compact: compact)
           else
@@ -4211,6 +4269,9 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
       );
       return;
     }
+    final hasDiagram =
+        _verifiedQuestion?['has_diagram'] == true ||
+        _questionExtraction?['has_diagram'] == true;
     final result = await Navigator.of(context).push<String>(
       MaterialPageRoute<String>(
         builder: (context) => TutorHintScreen(
@@ -4219,6 +4280,8 @@ class _OcrConfirmationScreenState extends State<OcrConfirmationScreen> {
               ? widget.captureClient!.accountUsername!.trim()
               : '同学',
           questionText: _textController.text.trim(),
+          questionImageBytes: hasDiagram ? widget.imageBytes : null,
+          hasDiagram: hasDiagram,
           verifiedQuestionId: verifiedQuestionId,
           captureClient: widget.captureClient,
           answerState:

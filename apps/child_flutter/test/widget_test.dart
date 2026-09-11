@@ -1,14 +1,16 @@
 import 'dart:convert';
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'package:study_child/auth_client.dart';
 import 'package:study_child/capture_api_client.dart';
+import 'package:study_child/image_picker_access.dart';
 import 'package:study_child/main.dart';
 import 'package:study_child/privacy_sanitization_preview.dart';
 import 'package:study_child/startup_transition.dart';
@@ -103,6 +105,82 @@ class _IntermediateTaskCaptureClient extends CaptureApiClient {
   }) async {
     completions += 1;
     return <String, dynamic>{'outcome': outcome};
+  }
+}
+
+class _DiagramQuestionCaptureClient extends CaptureApiClient {
+  _DiagramQuestionCaptureClient()
+    : super(
+        baseUrl: 'http://localhost:8000',
+        householdId: '00000000-0000-0000-0000-000000000001',
+        childId: '00000000-0000-0000-0000-000000000101',
+        authorizationToken: 'test-session',
+      );
+
+  @override
+  Future<Map<String, dynamic>?> waitForQuestionExtraction(
+    CaptureUploadReceipt receipt, {
+    Duration timeout = const Duration(seconds: 60),
+    Duration pollInterval = const Duration(seconds: 2),
+  }) async => <String, dynamic>{
+    'extraction': <String, dynamic>{
+      'question_text': '数一数图中有多少个正方形？',
+      'options': <String>[],
+      'formulas': <String>[],
+      'has_diagram': true,
+      'has_handwriting': false,
+      'answer_state': 'unclear',
+      'answer_state_confidence': 0.8,
+      'answer_steps': <String>[],
+    },
+  };
+
+  @override
+  Future<Map<String, dynamic>> verifyQuestionExtraction({
+    required CaptureUploadReceipt receipt,
+    required String questionText,
+    required Map<String, dynamic> extraction,
+    String answerState = 'unclear',
+    bool evidenceConfirmed = false,
+  }) async => <String, dynamic>{
+    'id': 'verified-diagram-question',
+    'has_diagram': extraction['has_diagram'] == true,
+    'answer_state': answerState,
+    'evidence_confirmed': evidenceConfirmed,
+  };
+
+  @override
+  Future<Map<String, dynamic>> createTutorHint({
+    required String verifiedQuestionId,
+    required int level,
+    String mode = 'guided_practice',
+    String? answerState,
+    bool evidenceConfirmed = false,
+  }) async => <String, dynamic>{'prompt': '先观察配图中的形状。'};
+}
+
+class _TestImagePicker extends ImagePicker {
+  _TestImagePicker({this.errorCode});
+
+  final String? errorCode;
+  ImageSource? requestedSource;
+  bool? requestedFullMetadata;
+
+  @override
+  Future<XFile?> pickImage({
+    required ImageSource source,
+    double? maxWidth,
+    double? maxHeight,
+    int? imageQuality,
+    CameraDevice preferredCameraDevice = CameraDevice.rear,
+    bool requestFullMetadata = true,
+  }) async {
+    requestedSource = source;
+    requestedFullMetadata = requestFullMetadata;
+    if (errorCode != null) {
+      throw PlatformException(code: errorCode!);
+    }
+    return null;
   }
 }
 
@@ -620,6 +698,60 @@ void main() {
     expect(find.text('题目已确认，可以开始学习。'), findsOneWidget);
   });
 
+  testWidgets('opens iOS settings after camera access is denied', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final picker = _TestImagePicker(errorCode: 'camera_access_denied');
+    MethodCall? settingsCall;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(studyAppSettingsChannel, (call) async {
+          settingsCall = call;
+          return true;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(studyAppSettingsChannel, null),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(home: CaptureInputScreen(imagePicker: picker)),
+    );
+    final cameraButton = find.text('拍照');
+    await tester.ensureVisible(cameraButton);
+    await tester.tap(cameraButton);
+    await tester.pumpAndSettle();
+
+    expect(picker.requestedSource, ImageSource.camera);
+    expect(picker.requestedFullMetadata, isFalse);
+    expect(
+      find.text('相机权限已关闭。请打开“设置”，允许 Study Child 使用相机后重试。'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('打开设置'));
+    await tester.pumpAndSettle();
+    expect(settingsCall?.method, 'open');
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('opens the gallery without requesting full photo metadata', (
+    tester,
+  ) async {
+    final picker = _TestImagePicker();
+    await tester.pumpWidget(
+      MaterialApp(home: CaptureInputScreen(imagePicker: picker)),
+    );
+
+    final galleryButton = find.text('从相册选择');
+    await tester.ensureVisible(galleryButton);
+    await tester.tap(galleryButton);
+    await tester.pump();
+
+    expect(picker.requestedSource, ImageSource.gallery);
+    expect(picker.requestedFullMetadata, isFalse);
+  });
+
   testWidgets('renders the thinking practice', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(home: TutorHintScreen(displayName: 'xiaotangyuan')),
@@ -923,6 +1055,60 @@ void main() {
     expect(field.expands, isTrue);
     expect(field.maxLines, isNull);
     expect(find.text('题目较长时可在框内上下拖动查看，确认前请逐字核对。'), findsOneWidget);
+  });
+
+  testWidgets('carries a sanitized diagram image into the tutor screen', (
+    tester,
+  ) async {
+    final imageBytes = Uint8List.fromList(
+      base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      ),
+    );
+    const receipt = CaptureUploadReceipt(
+      captureId: '00000000-0000-0000-0000-000000000811',
+      captureVersion: 2,
+      mediaType: 'image/png',
+      byteSize: 68,
+      contentSha256:
+          '0000000000000000000000000000000000000000000000000000000000000000',
+      ocrJobId: '',
+      ocrJobStatus: 'not_started',
+      imageAnalysisJobId: '00000000-0000-0000-0000-000000000812',
+      imageAnalysisStatus: 'succeeded',
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: OcrConfirmationScreen(
+          imageBytes: imageBytes,
+          uploadReceipt: receipt,
+          captureClient: _DiagramQuestionCaptureClient(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final confirmButton = find.widgetWithText(FilledButton, '确认题目');
+    await tester.ensureVisible(confirmButton);
+    await tester.tap(confirmButton);
+    await tester.pumpAndSettle();
+    final startButton = find.widgetWithText(FilledButton, '开始学习');
+    await tester.ensureVisible(startButton);
+    await tester.tap(startButton);
+    await tester.pumpAndSettle();
+
+    final tutor = tester.widget<TutorHintScreen>(find.byType(TutorHintScreen));
+    expect(tutor.hasDiagram, isTrue);
+    expect(tutor.questionImageBytes, same(imageBytes));
+    expect(find.byKey(const ValueKey('tutor-question-image')), findsOneWidget);
+    expect(find.text('数一数图中有多少个正方形？'), findsOneWidget);
+
+    await tester.binding.setSurfaceSize(const Size(1180, 820));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('tutor-question-image')), findsOneWidget);
+    expect(find.text('数一数图中有多少个正方形？'), findsOneWidget);
   });
 
   testWidgets('keeps upload progress visible until the upload finishes', (

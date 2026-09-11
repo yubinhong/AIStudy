@@ -1,5 +1,19 @@
 # TESTING.md
 
+## 2026-09-11 iPad 拍题图片入口权限恢复
+
+- 定向：相机拒绝回归验证 `camera_access_denied` 显示具体提示并调用 `study/app_settings.open`；相册回归验证 `requestFullMetadata=false`，两项均通过。
+- Flutter：Dart format 无改动，`flutter analyze` 通过，全量 `flutter test` 为 `77 passed`。
+- iOS Release：`flutter build ios --release --dart-define=STUDY_API_URL=http://192.168.1.4:8000` 通过；arm64 二进制含 `FLTImagePickerPlugin` 和 `study/app_settings`，系统钥匙串环境 `codesign --verify --deep --strict` 通过。
+- 真机：iPad mini 6（iOS 26.6.1）有线连接，修复包已覆盖安装到 `com.yubinhong.aistudy.child`；覆盖安装不卸载 App、不清除会话或本地数据。解锁后 App 成功前台启动，“打开设置”实际启动系统 `Preferences`；LLDB 只读确认相机 `authorized`（`3`）、照片库 `notDetermined`（`0`）后立即分离。两次等待均未观察到 `UIImagePickerController`，实际拍照/取消、相册选图/取消和返回 App 仍需人工点击验收。
+
+## 2026-09-11 数学含图拍题讲解页回归
+
+- 定向：`cd apps/child_flutter && flutter test test/widget_test.dart --plain-name 'carries a sanitized diagram image into the tutor screen'` 通过；回归覆盖视觉识别返回 `has_diagram=true`、人工确认、开始学习与讲解页同时显示脱敏题图和题干，并在默认紧凑视口与 `1180x820` 横屏视口各渲染一次。
+- Flutter：`flutter analyze` 通过，全量 `flutter test` 为 `75 passed`；Dart format 检查无改动。
+- 边界：测试只使用 1x1 synthetic PNG；没有读取或保存真实儿童图片，没有改变 API/OpenAPI、Capture 保留或 Provider 路由。
+- 未执行：Nova 9/iPad 真实相机/相册、横竖屏、弱网和进程重启回归。
+
 ## 2026-09-10 SmartEdu 真实凭据下载重试修复
 
 - 失败复现：Ubuntu 连续两次真实页面导入均到达 API 并返回 `503`；同时间目录、认证会话和 API/Web health 正常，且没有进入私有对象写入或解析队列。控制台 `startTime` TypeError 来自页面外辅助脚本，与接口 503 无关。

@@ -10,7 +10,10 @@
 - 主要用户：小学阶段孩子与家长/监护人；辅助角色为家庭内容维护者和项目维护者。
 - 生产状态：`SELF_HOSTED_DEPLOYED`（Ubuntu 自用 Compose 运行 API/OpenAPI `0.17.5`/`0039_smartedu_curriculum_source`，应用通过同一提交的 GHCR API/Web 镜像提供；`STUDY_LOCAL_MODEL_ENABLED=false` 时基础拓扑不创建 `local-model`，当前 AI 路由为现有 NewAPI 云端配置；API/Web、迁移和四个常驻 worker 健康，不等同于公网/商业生产批准）
 - 当前版本：本地与 Ubuntu API/OpenAPI 均为 `0.17.5`，迁移头均为 `0039_smartedu_curriculum_source`；Ubuntu 固定 GHCR `v0.17.5`，API/Web digest 和发布证据见 `RUNBOOK.md`。SmartEdu 真实 Bearer、路径编码和有界 CDN 重试已部署，真实浏览器 PDF 仍待项目 Owner 重试。
-- 最近更新：`2026-09-10`
+- 最近更新：`2026-09-11`
+
+- 2026-09-11 iPad 图片入口修复：数学拍题和语文看图选择不再请求完整照片元数据；`image_picker` 权限拒绝/系统限制/无相机等错误会显示具体恢复方式，iOS 拒绝态可直接打开 App 系统设置。Flutter Analyze、全量 `77 passed`、iOS Release 构建和签名通过，修复包已覆盖安装并在 iPad 前台启动；设置直达和当前相机 `authorized` 状态已真机确认，实际拍照/相册选择仍待人工点击验收。
+- 2026-09-11 数学拍题含图题修复：孩子端以前在题目确认页展示脱敏题图，但进入 Tutor 时只传递文字。现在 `has_diagram=true` 的已确认视觉结果会把同一份当前内存脱敏图传入讲解页，与题干一同显示；不新增图片持久化、缓存、API 或 Provider 外发。Flutter Analyze 和全量 `77 passed` 通过，真机回归未执行。
 
 - 2026-09-09/10 PLAN-0044/0045：家长教材页新增 SmartEdu 公开教材目录查询和“加载为草稿”入口，并已随 `v0.17.3` 发布到 Ubuntu。API 只接收资源 ID，适配器固定 SmartEdu 元数据/CDN 主机、无环境代理、60 秒超时、三镜像候选、50 MiB/PDF 文件头/SHA-256 校验；下载文件进入现有私有 MinIO、`uploaded` 草稿和 material-parse 队列，材料保存 `source_provider/source_resource_id`。Web 不显示第三方 PDF URL/对象键；默认免配置，私有资源需要时家长可在页面粘贴一次性 JSON。API/Web/契约/迁移自动化、Ubuntu 备份恢复、0039 前滚、API/Web/worker 和运行时路由检查已通过；tag quality、Android 和 GHCR 发布均成功，真实 SmartEdu PDF、平台登录要求、版权/教研、Provider 和设备验收仍未执行，ADR-0029 为 Proposed。
 - 2026-09-10 PLAN-0046/0048：复现真实 SmartEdu 教材私有 CDN 对占位认证返回 `400 InvalidArgument`，随后真实页面在填写 JSON 后仍返回 `503`。保持一次性 JSON 与当前标签页 `sessionStorage` 边界，补齐实际 Bearer、URL 绑定 MAC、中文/空格路径编码、400 新 nonce 重签和固定 r1/r2/r3 镜像重试；API SmartEdu 定向 `20 passed`、非集成全量、Web `44 passed`、格式、Lint、类型和 production build 通过。追加修复已由提交 `13d72bb` 和 tag `v0.17.5` 发布并部署 Ubuntu；Actions、GHCR、备份恢复、迁移、健康、worker、运行时 revision 和关闭态无 `local-model` 均通过，真实 `PDF -> 私有草稿 -> 解析队列` 尚待浏览器重试。

@@ -40,6 +40,24 @@ import UIKit
       }
       self?.prepareLocalNetworkAccess(host: host, port: port, result: result)
     }
+
+    let settingsChannel = FlutterMethodChannel(
+      name: "study/app_settings",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    settingsChannel.setMethodCallHandler { call, result in
+      guard call.method == "open" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else {
+        result(false)
+        return
+      }
+      UIApplication.shared.open(settingsURL, options: [:]) { opened in
+        result(opened)
+      }
+    }
   }
 
   private func prepareLocalNetworkAccess(
