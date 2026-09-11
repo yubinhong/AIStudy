@@ -13,7 +13,7 @@
 - 修复视觉识别为含图题后，进入讲解页只显示题干文字、丢失当前脱敏题图的问题；题图现与题干在当前学习会话中一同显示。
 - Tutor 服务端现在从已确认 Capture 重新校验同一份脱敏题图，在 L1/L2/L3 的单一 Provider 请求中以有界多模态片段发送；图中数字/数量关系可被模型使用。已确认含图但对象缺失时返回 409，不静默回退文字-only；不发送对象 URL、对象键或未确认 Extraction。
 - Provider 与 Tutor 路由 synthetic 回归已通过；真实含图题 Provider 质量、真实账号浏览器和实体设备回归仍待执行。
-- 提交 `4317cdd` 及最终文档对齐提交 `9516370` 已通过 contracts/API/Web/browser-e2e/release-notes 与 API/Web GHCR 发布，并完成 Ubuntu 备份、隔离恢复和最终 `sha-9516370` 拉取式部署；运行时 Tutor 源码已确认包含题图多模态传递。
+- 提交 `4317cdd` 及最终文档对齐提交 `9516370`、`374a798` 已通过 contracts/API/Web/browser-e2e/release-notes 与 API/Web GHCR 发布，并完成 Ubuntu 备份、隔离恢复和最终 `sha-374a798` 拉取式部署；运行时 Tutor 源码已确认包含题图多模态传递。
 
 ### 家长学习记录拍题图片
 

@@ -8,13 +8,13 @@
 - 一句话目标：复用家庭现有设备，以数学错题闭环为主线，并通过显式多学科核心逐步增加语文确定性练习。
 - 当前阶段：`P1 MULTISUBJECT FOUNDATION / CHINESE MVP / GATED ENGLISH LAST`
 - 主要用户：小学阶段孩子与家长/监护人；辅助角色为家庭内容维护者和项目维护者。
-- 生产状态：`SELF_HOSTED_DEPLOYED`（Ubuntu 自用 Compose 运行 API/OpenAPI `0.17.5`/`0039_smartedu_curriculum_source`，当前 API/Web/worker 固定 GHCR `sha-9516370`；`STUDY_LOCAL_MODEL_ENABLED=false` 时基础拓扑不创建 `local-model`，当前 AI 路由为现有 NewAPI 云端配置；API/Web、迁移和四个常驻 worker 健康，不等同于公网/商业生产批准）
-- 当前版本：本地与 Ubuntu API/OpenAPI 均为 `0.17.5`，迁移头均为 `0039_smartedu_curriculum_source`；Ubuntu 当前运行 `sha-9516370`，API/Web digest 和发布证据见 `RUNBOOK.md`。SmartEdu 真实 Bearer、路径编码和有界 CDN 重试已部署，真实浏览器 PDF 仍待项目 Owner 重试。
+- 生产状态：`SELF_HOSTED_DEPLOYED`（Ubuntu 自用 Compose 运行 API/OpenAPI `0.17.5`/`0039_smartedu_curriculum_source`，当前 API/Web/worker 固定 GHCR `sha-374a798`；`STUDY_LOCAL_MODEL_ENABLED=false` 时基础拓扑不创建 `local-model`，当前 AI 路由为现有 NewAPI 云端配置；API/Web、迁移和四个常驻 worker 健康，不等同于公网/商业生产批准）
+- 当前版本：本地与 Ubuntu API/OpenAPI 均为 `0.17.5`，迁移头均为 `0039_smartedu_curriculum_source`；Ubuntu 当前运行 `sha-374a798`，API/Web digest 和发布证据见 `RUNBOOK.md`。SmartEdu 真实 Bearer、路径编码和有界 CDN 重试已部署，真实浏览器 PDF 仍待项目 Owner 重试。
 - 最近更新：`2026-09-11`
 
 - 2026-09-11 iPad 图片入口修复：数学拍题和语文看图选择不再请求完整照片元数据；`image_picker` 权限拒绝/系统限制/无相机等错误会显示具体恢复方式，iOS 拒绝态可直接打开 App 系统设置。Flutter Analyze、全量 `77 passed`、iOS Release 构建和签名通过，修复包已覆盖安装并在 iPad 前台启动；设置直达和当前相机 `authorized` 状态已真机确认，实际拍照/相册选择仍待人工点击验收。
 - 2026-09-11 数学拍题含图题修复：孩子端以前在题目确认页展示脱敏题图，但进入 Tutor 时只传递文字。客户端现在继续在讲解页显示同一份确认图；服务端 Tutor L1/L2/L3 会从 Household/Child 授权的 Capture 读取并校验同一份已确认脱敏图，以 `text + image_url(data:)` 发送给单一 Provider，图中数字/关系因此可参与解题。`has_diagram=true` 且图不可用时返回 409，不做文字-only 云端解答；不发送 URL、对象键或未确认 Extraction。Provider/Tutor 定向回归通过，真实含图题 Provider 质量和真机回归仍未执行。
-- 2026-09-11 Tutor 含图题服务端修复已部署：最终 API/Web GHCR `sha-9516370` 运行在 Ubuntu；API digest `sha256:38cab483774f95bff840db81637f26e0f92d3abe9b6e9c5e17e3b52e6e74a2d2`、Web digest `sha256:6c03f48c7f2fad44a2bd3c076c0ef574abfad8b982ce44e8b3bae8792f3ce941`，OCI revision `9516370e0b79f7bd516d1008bf1b3dceb1839e50`。备份 `/home/syin/study-backups/20260911T024702Z`、人工显式建库隔离恢复（39 张 public 表、888 个 MinIO 文件）和最终 health/迁移/源码检查通过。真实含图题 Provider 质量、真实账号浏览器和实体设备回归仍待执行。
+- 2026-09-11 Tutor 含图题服务端修复已部署：最终 API/Web GHCR `sha-374a798` 运行在 Ubuntu；API digest `sha256:65c2f170f3e8dfc704db19eca486c2388fdd7b88a7c14fb683fe39aebf03944c`、Web digest `sha256:887844a5f41c5bdb46f9b17d0fa479afecf0eb8f2ac509d21fc4924553f5f121`，OCI revision `374a798c46978b7f19cd94176a3c698ddd1cd81d`。备份 `/home/syin/study-backups/20260911T024702Z`、人工显式建库隔离恢复（39 张 public 表、888 个 MinIO 文件）和最终 health/迁移/源码检查通过。真实含图题 Provider 质量、真实账号浏览器和实体设备回归仍待执行。
 - 2026-09-11 家长学习记录拍题图片保留修复：定位到 NewAPI image-analysis worker 在成功/失败路径删除了 Capture 原对象，导致同源媒体代理显示“暂不可用”。现改由既有 Capture 生命周期 worker 统一清理，分析 worker 在原图 24 小时、OCR failure 7 天或家长保存窗口内保留对象；worker 6 项、Capture/生命周期 10 项回归通过。旧 Ubuntu 对象已被删除且无法恢复，部署后需用新拍题记录做真实浏览器验收。
 - 2026-09-11 Ubuntu 已完成最终 `sha-9543088` 的 GHCR 拉取式部署：备份 `/home/syin/study-backups/20260911T020415Z`、Compose 校验、镜像 pull/up、0039 head、API/Web health、四个 worker、OCI revision、近期错误计数 0 和 MinIO 私有端口检查通过；真实家长新拍题图片、真实账号浏览器、真实 SmartEdu PDF 及 iPad 实际拍照/相册选择仍待人工验收。
 

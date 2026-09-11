@@ -33,7 +33,7 @@
 - [x] API 从 Household/Child 授权的已确认 Capture 私有对象读取图片，重新校验大小、SHA-256、JPEG/PNG 和完整解码后，使用现有有界图片准备逻辑把 `text + image_url(data:)` 放入同一 Provider 请求；不发送 URL、对象键、原始存储地址或未确认 Extraction。
 - [x] `has_diagram=true` 且 Provider 开启时如果对象缺失或校验失败，返回统一 `409` 并阻断云端文字-only 解答；无图请求保留 text-only 兼容路径。
 - [x] 增加 Provider 有图/无图载荷和 Tutor 路由正常传图/缺图阻断回归；新增 ADR-0030，并同步 PRD、PROJECT、ARCHITECTURE、SECURITY、OpenAPI、TESTING、AI_CONTEXT、RUNBOOK、CHANGELOG。
-- [x] 发布质量与 Ubuntu 拉取式部署完成：提交 `4317cdd` 的 quality run `34555617183` 及文档对齐提交 `9516370` 的 contracts/API/Web/browser-e2e/release-notes、API/Web GHCR 均成功；Ubuntu 最终固定 `sha-9516370`，备份/隔离恢复、health、OpenAPI Tutor 路由、`0039` head、worker、digest/revision、MinIO 私有端口和容器源码检查通过。
+- [x] 发布质量与 Ubuntu 拉取式部署完成：提交 `4317cdd` 的 quality run `34555617183` 及文档对齐提交 `9516370`、`374a798` 的 contracts/API/Web/browser-e2e/release-notes、API/Web GHCR 均成功；Ubuntu 最终固定 `sha-374a798`，备份/隔离恢复、health、OpenAPI Tutor 路由、`0039` head、worker、digest/revision、MinIO 私有端口和容器源码检查通过。
 - [ ] 待执行：真实含图题（关键数字只在配图中）的 Provider 质量验收、真实 iPad/Ubuntu 账号浏览器设备回归。
 
 回滚：恢复上一 API/Web GHCR 镜像会回到 text-only Tutor；不执行数据库 downgrade，不删除 Capture、VerifiedQuestion、TutorTurn 或学习事实。
