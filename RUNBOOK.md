@@ -14,6 +14,13 @@
 - 回滚：把 `/home/syin/study-source-backups/20260911T011153Z-ca770cd/.env` 中 API/Web 同时恢复到此前已验证的镜像标签，再运行 `docker compose pull` 与 `docker compose up -d --no-build`；保留 `0039`、学习事实和数据卷，不执行 downgrade。iPad 回滚使用上一份已签名安装包，不影响服务端数据。
 - 最终对齐：部署记录提交 `3844abc6d383d9accc50737f672fb8423064fd8d` 仅更新文档，没有业务代码变化；为使运行来源与最终 `origin/master` 一致，Ubuntu 随后再次备份 `/home/syin/study-backups/20260911T012302Z` 并切换到 API/Web `sha-3844abc`。最终容器 OCI revision 为 `3844abc6d383d9accc50737f672fb8423064fd8d`，回滚配置副本在 `/home/syin/study-source-backups/20260911T012302Z-3844abc/.env`；迁移、health、worker、错误计数和 MinIO 私有端口检查再次通过。
 
+## 2026-09-11 家长学习记录拍题图片保留修复（PLAN-0050）
+
+- 根因：旧 image-analysis worker 在分析成功后删除了 Capture 原对象，家长学习记录的私有媒体流随后返回 404；失败路径也会删除对象。旧 Ubuntu 记录对应对象已不存在，不能通过数据库状态重建图片字节。
+- 修复：分析 worker 不再调用对象删除；Capture 生命周期 worker 继续负责原图 24 小时、OCR failure 7 天和家长保存策略的到期清理。API/Web 合同、数据库迁移、MinIO 暴露边界均未改变。
+- 验证：本地 worker `6 passed`、Capture/生命周期 `10 passed`，`git diff --check` 通过。提交、GHCR 发布、备份和 Ubuntu 拉取式部署证据在本段完成后补记；部署后需用新拍题记录做真实家长浏览器图片显示验收。
+- 回滚：仅在紧急情况下将 API/Web 同时固定回前一已验证镜像并重新 `pull/up`；不执行迁移 downgrade，不删除 Capture、VerifiedQuestion、学习记录或数据卷。
+
 ## 2026-09-10 SmartEdu v0.17.5 真实凭据下载修复部署
 
 - 载荷：提交 `13d72bb06b7f606cf3d162eab06678fbcd058d71` 的 GHCR `v0.17.5`。API digest 为 `sha256:b10742c7af1e5529fa58efa6dc7e0d1d7b0e1efd1710e4362b20aa2d546e0040`，Web digest 为 `sha256:b443615f05acf4ac4f9a4c89c6d7c56ac5f1fc7e4c24afbbf5b9a39fecc81122`，两者 OCI revision 与提交一致。

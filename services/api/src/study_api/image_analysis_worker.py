@@ -30,7 +30,11 @@ class ImageAnalysisRunner(Protocol):
 
 
 class NewApiImageAnalysisRunner:
-    """Read one private derivative, validate it, call NewAPI, and persist only schema data."""
+    """Read one private Capture, validate it, and persist only schema data.
+
+    Capture media is retained by the lifecycle worker so an authorized parent can
+    view the original in learning history during its bounded retention window.
+    """
 
     def __init__(
         self,
@@ -67,22 +71,11 @@ class NewApiImageAnalysisRunner:
                 extraction,
             )
         except Exception:
-            # A failed parse is retained only as a bounded lifecycle marker;
-            # the private derivative itself is never kept for retry here.
-            self._delete_derivative(pending.object_key, job)
+            # Keep the source object until the lifecycle policy removes it. This
+            # lets parents inspect the same capture after analysis failures.
             self._captures.mark_capture_ocr_failed(job.household_id, job.capture_id)
             raise
-        self._delete_derivative(pending.object_key, job)
         return record.id
-
-    def _delete_derivative(self, object_key: str, job: ImageAnalysisJob) -> None:
-        try:
-            self._storage.delete_object(object_key)
-        except Exception:
-            # Keep a retryable seven-day failure marker if storage deletion is
-            # temporarily unavailable; never report the object as deleted.
-            self._captures.mark_capture_ocr_failed(job.household_id, job.capture_id)
-            raise
 
 
 @dataclass(frozen=True)

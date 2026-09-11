@@ -164,10 +164,9 @@ class _CaptureRepository:
 
 
 class _Storage:
-    def __init__(self, data: bytes, fail_delete: bool = False) -> None:
+    def __init__(self, data: bytes) -> None:
         self.data = data
         self.deleted: list[str] = []
-        self.fail_delete = fail_delete
 
     def read_object(self, object_key: str, max_bytes: int) -> bytes:
         assert max_bytes == 8_000_000
@@ -175,8 +174,6 @@ class _Storage:
 
     def delete_object(self, object_key: str) -> None:
         self.deleted.append(object_key)
-        if self.fail_delete:
-            raise RuntimeError("synthetic storage failure")
 
 
 class _Provider:
@@ -193,7 +190,7 @@ class _Provider:
         )
 
 
-def test_newapi_runner_deletes_sanitized_derivative_after_success() -> None:
+def test_newapi_runner_preserves_capture_media_after_success() -> None:
     data = _synthetic_png()
     captures = _CaptureRepository(data)
     storage = _Storage(data)
@@ -221,14 +218,14 @@ def test_newapi_runner_deletes_sanitized_derivative_after_success() -> None:
 
     runner.run(claimed)
 
-    assert storage.deleted == [captures.pending.object_key]
+    assert storage.deleted == []
     assert captures.ocr_failures == []
 
 
-def test_newapi_runner_marks_bounded_failure_when_derivative_delete_fails() -> None:
+def test_newapi_runner_marks_bounded_failure_without_deleting_capture_media() -> None:
     data = _synthetic_png()
     captures = _CaptureRepository(data)
-    storage = _Storage(data, fail_delete=True)
+    storage = _Storage(data)
     jobs = InMemoryImageAnalysisJobRepository()
     request = _request().model_copy(
         update={
@@ -248,11 +245,17 @@ def test_newapi_runner_marks_bounded_failure_when_derivative_delete_fails() -> N
     )
     claimed = jobs.claim_next()
     assert claimed is not None
+
+    class _ProviderFailure:
+        def analyze_sanitized_image(self, *_args, **_kwargs):
+            raise RuntimeError("synthetic provider failure")
+
     runner = NewApiImageAnalysisRunner(
-        captures, storage, _Provider(), InMemoryQuestionExtractionRepository()
+        captures, storage, _ProviderFailure(), InMemoryQuestionExtractionRepository()
     )
 
     with pytest.raises(RuntimeError):
         runner.run(claimed)
 
     assert captures.ocr_failures == [(captures.capture.household_id, captures.capture.id)]
+    assert storage.deleted == []

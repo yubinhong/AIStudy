@@ -14,6 +14,13 @@
 - 边界：测试只使用 1x1 synthetic PNG；没有读取或保存真实儿童图片，没有改变 API/OpenAPI、Capture 保留或 Provider 路由。
 - 未执行：Nova 9/iPad 真实相机/相册、横竖屏、弱网和进程重启回归。
 
+## 2026-09-11 家长学习记录拍题图片保留修复
+
+- API worker：`services/api/.venv/bin/pytest -q services/api/tests/test_image_analysis_worker.py`，`6 passed`；成功分析和 Provider 失败均断言 Capture 对象未被删除。
+- Capture 生命周期：`services/api/.venv/bin/pytest -q services/api/tests/test_captures.py services/api/tests/test_media_lifecycle.py`，`10 passed`；继续覆盖家庭授权、媒体读取、到期清理、家长保存和失败保留策略。
+- 静态：`git diff --check` 通过；没有 OpenAPI、数据库迁移或客户端契约变更。
+- 未执行：旧 Ubuntu Capture 对象已经被前一版本 worker 删除，无法从 MinIO 恢复；部署后仍需使用新拍题记录完成真实家长浏览器图片显示验收。
+
 ## 2026-09-10 SmartEdu 真实凭据下载重试修复
 
 - 失败复现：Ubuntu 连续两次真实页面导入均到达 API 并返回 `503`；同时间目录、认证会话和 API/Web health 正常，且没有进入私有对象写入或解析队列。控制台 `startTime` TypeError 来自页面外辅助脚本，与接口 503 无关。

@@ -1,3 +1,23 @@
+# PLANS.md — PLAN-0050 保留拍题原图供家长学习记录查看
+
+- 状态：`IN_PROGRESS`
+- 创建：`2026-09-11`
+- 关联：`TASK-0012`、`ADR-0018`、`RUNBOOK.md`、`TESTING.md`
+
+## 目标
+
+修复家长学习记录中拍题原图显示为“暂不可用”的问题。现状是 image-analysis worker 在分析成功后删除了 Capture 原对象，而 Web 家长记录通过同一私有对象代理读取图片。分析 worker 不再提前删除 Capture；由已有 Capture 生命周期按原图 24 小时、OCR failure 7 天和家长保存策略统一清理。
+
+## 验收与回滚
+
+- [ ] API worker 回归确认成功和失败分析都保留 Capture 对象，生命周期测试继续覆盖到期删除、家长保存和家庭授权。
+- [ ] 本地 Flutter/Web/API 相关测试、契约检查和 `git diff --check` 通过；Ubuntu 备份后使用同一 API/Web GHCR revision 拉取式部署并检查 health、worker、迁移、对象私有性。
+- [ ] 真实家长学习记录中的新拍题原图可显示；已经被旧 worker 删除的历史对象无法从 MinIO 恢复，需明确记录。
+
+## 回滚
+
+恢复上一 API/Web 镜像会重新启用提前删除行为，因此只作为紧急回滚；不执行数据库 downgrade，不删除或重写现有学习事实。
+
 # PLANS.md — PLAN-0048 SmartEdu 真实凭据下载重试修复
 
 ## 计划元数据

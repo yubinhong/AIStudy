@@ -27,6 +27,15 @@
 
 回滚：移除 `TutorHintScreen` 的 `questionImageBytes/hasDiagram` 参数、题图控件和确认页跳转传值即可；不涉及服务端数据、Capture 对象或学习事实回滚。
 
+## 2026-09-11 家长学习记录拍题图片保留修复（PLAN-0050）
+
+- [x] 定位根因：NewAPI image-analysis worker 在成功分析后删除了 Capture 原对象，家长学习记录的 Household-scoped 私有媒体代理因此只能显示“暂不可用”；旧对象已从 Ubuntu MinIO 删除，服务器端没有可恢复字节。
+- [x] 移除分析 worker 的成功/失败删除动作；成功和失败都保留 Capture 原对象，由既有 Capture 生命周期按原图 24 小时、OCR failure 7 天和家长保存策略统一清理。
+- [x] 增加 worker 回归，覆盖成功分析和 Provider 失败时对象均未删除；worker 6 项、Capture/生命周期相关 10 项定向测试通过，`git diff --check` 通过。
+- [ ] 推送并部署同一 API/Web GHCR revision 后，用新拍题记录完成家长浏览器图片显示验收；本轮不伪造旧图片恢复证据。
+
+回滚：恢复上一 API/Web 镜像会重新启用分析后删除 Capture 的问题，只作为紧急回滚；不执行数据库 downgrade，不删除或重写 Capture、VerifiedQuestion 或学习事实。
+
 ## 2026-09-10 SmartEdu 真实凭据下载重试修复（PLAN-0048）
 
 - [x] 对照上游当前实现，修复有凭据时 `Authorization` 仍错误发送 `Bearer 0` 的移植缺口；现在同时发送实际 Bearer 与按当前 URL 生成的 `X-ND-AUTH`。

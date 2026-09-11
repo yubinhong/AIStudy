@@ -14,6 +14,7 @@
 
 - 2026-09-11 iPad 图片入口修复：数学拍题和语文看图选择不再请求完整照片元数据；`image_picker` 权限拒绝/系统限制/无相机等错误会显示具体恢复方式，iOS 拒绝态可直接打开 App 系统设置。Flutter Analyze、全量 `77 passed`、iOS Release 构建和签名通过，修复包已覆盖安装并在 iPad 前台启动；设置直达和当前相机 `authorized` 状态已真机确认，实际拍照/相册选择仍待人工点击验收。
 - 2026-09-11 数学拍题含图题修复：孩子端以前在题目确认页展示脱敏题图，但进入 Tutor 时只传递文字。现在 `has_diagram=true` 的已确认视觉结果会把同一份当前内存脱敏图传入讲解页，与题干一同显示；不新增图片持久化、缓存、API 或 Provider 外发。Flutter Analyze 和全量 `77 passed` 通过，真机回归未执行。
+- 2026-09-11 家长学习记录拍题图片保留修复：定位到 NewAPI image-analysis worker 在成功/失败路径删除了 Capture 原对象，导致同源媒体代理显示“暂不可用”。现改由既有 Capture 生命周期 worker 统一清理，分析 worker 在原图 24 小时、OCR failure 7 天或家长保存窗口内保留对象；worker 6 项、Capture/生命周期 10 项回归通过。旧 Ubuntu 对象已被删除且无法恢复，部署后需用新拍题记录做真实浏览器验收。
 - 2026-09-11 Ubuntu 已完成 `sha-3844abc` 的 GHCR 拉取式部署：备份、Compose 校验、镜像 pull/up、0039 head、API/Web health、四个 worker、OCI revision 和 MinIO 私有端口检查通过；真实账号浏览器、真实 SmartEdu PDF 及 iPad 实际拍照/相册选择仍待人工验收。
 
 - 2026-09-09/10 PLAN-0044/0045：家长教材页新增 SmartEdu 公开教材目录查询和“加载为草稿”入口，并已随 `v0.17.3` 发布到 Ubuntu。API 只接收资源 ID，适配器固定 SmartEdu 元数据/CDN 主机、无环境代理、60 秒超时、三镜像候选、50 MiB/PDF 文件头/SHA-256 校验；下载文件进入现有私有 MinIO、`uploaded` 草稿和 material-parse 队列，材料保存 `source_provider/source_resource_id`。Web 不显示第三方 PDF URL/对象键；默认免配置，私有资源需要时家长可在页面粘贴一次性 JSON。API/Web/契约/迁移自动化、Ubuntu 备份恢复、0039 前滚、API/Web/worker 和运行时路由检查已通过；tag quality、Android 和 GHCR 发布均成功，真实 SmartEdu PDF、平台登录要求、版权/教研、Provider 和设备验收仍未执行，ADR-0029 为 Proposed。
@@ -41,7 +42,7 @@
 
 - 2026-08-23 继续实现：数学“今日任务”每道题仍必须有指定题干并将当前题目和教材来源传入拍题/确认页；多题任务在同一会话内按序执行，中间题追加 Attempt、最后一题关闭任务；端侧 SQLite 保存服务端/家庭/孩子范围内的下一题号，进程重开后可继续；已确认作答、任务完成、复习收口和跳过在断网时进入结构化 SQLite 队列，联网后先按最多 50 条批次幂等同步 Attempt，再按顺序重放终态事件；服务端拒绝第二个活动会话。语文首页只保留“古诗抽查”和“看图写话”，古诗题库为空时也显示受限入口。语文 scorer golden 覆盖八类技能，正式原创内容必须有项目 Owner 审核、审核时间和权利凭证摘要才可被孩子读取；古诗抽查先均匀抽取诗目再抽相邻句题；服务端已持久化跨设备题号、每日容量、未来日期/逾期边界和家长撤销规则；教材批准自动生成古诗题、看图写话空句阻断和安全通用降级已补回归；完整 PostgreSQL 集成为 `32 passed`，API 非集成为 `244 passed`，Flutter 为 `70 passed`，Web 为 `35 passed`。本轮不连接手机/平板；真实 Provider/PDF、正式签核、Ubuntu 真实账号浏览器和设备 E2E 仍未完成。
 
-- 活动计划：`TASK-0012` 继续跟踪多学科与语文剩余验收；`PLAN-0031` 的隔离 Chromium 登录态 E2E、`PLAN-0032/0033` 的语文复习/古诗/看图写话、`PLAN-0038` 的分学科学习记录、`PLAN-0039` 的 GHCR 发布、`PLAN-0042` 的家长学习记录拍题图片展示和 `PLAN-0047` 的可选本地模型拓扑/Ubuntu 容器清理均已完成代码和对应自动化。`PLAN-0040` 复核代码、OpenAPI 与文档一致性。正式教研/版权签核、真实 Provider 质量/成本、Ubuntu 真实账号浏览器和完整设备 E2E 仍待完成；英语保持供应商中立锁定框架并排最后。
+- 活动计划：`TASK-0012` 继续跟踪多学科与语文剩余验收；`PLAN-0031` 的隔离 Chromium 登录态 E2E、`PLAN-0032/0033` 的语文复习/古诗/看图写话、`PLAN-0038` 的分学科学习记录、`PLAN-0039` 的 GHCR 发布、`PLAN-0042`/`PLAN-0050` 的家长学习记录拍题图片展示与对象保留、`PLAN-0047` 的可选本地模型拓扑/Ubuntu 容器清理均已完成代码和对应自动化，PLAN-0050 的新拍题真实浏览器验收待部署后执行。`PLAN-0040` 复核代码、OpenAPI 与文档一致性。正式教研/版权签核、真实 Provider 质量/成本、Ubuntu 真实账号浏览器和完整设备 E2E 仍待完成；英语保持供应商中立锁定框架并排最后。
 - 任务状态：ADR-0018/PLAN-0012 已完成本地与 Ubuntu API/Flutter/Compose/契约迁移；Ubuntu 不再依赖预签名直传，MinIO `9000` 未向宿主/LAN 暴露。最终真机仍未回归。
 - 2026-09-04 iPhone 11：重新签名安装后复现 iOS 本地网络权限未登记导致的 `errno 65`；Flutter/iOS 已在健康检查前用 `NWConnection` 对实际家庭服务器触发授权并等待结果。修复包覆盖安装后，Ubuntu 收到 iPhone `192.168.1.100` 的 `/healthz` 并返回 200。登录、相机/相册、弱网和完整设备生命周期仍未验收。
 - 当前分支：`master`；本地和 Ubuntu API/OpenAPI 均为 `0.17.5`，迁移均为 `0039_smartedu_curriculum_source`。Ubuntu 当前 SmartEdu 部署载荷为 GHCR `ghcr.io/yubinhong/aistudy-api:v0.17.5` 与 `ghcr.io/yubinhong/aistudy-web:v0.17.5`；发布提交 `13d72bb` 和 tag 已推送，中文 Release 与镜像发布成功。
