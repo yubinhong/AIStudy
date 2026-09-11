@@ -1575,8 +1575,8 @@ paths:
       - $ref: '#/components/parameters/HouseholdId'
     post:
       operationId: createTutorHint
-      summary: Return a provider-free graduated hint for a verified question
-      description: The client submits only a server-issued VerifiedQuestion ID. The API reloads the child-owned confirmed fact, persists an append-only TutorTurn, and returns a deterministic zero-cost local hint without a direct answer or Provider call.
+      summary: Return a graduated hint or verified solution for a confirmed question
+      description: The client submits only a server-issued VerifiedQuestion ID. The API reloads the child-owned confirmed fact and Capture, persists an append-only TutorTurn, and returns a bounded hint or verified solution. When a confirmed sanitized Capture contains a diagram, the server may include its bounded image bytes in the single approved Provider request for visual grounding; object-storage URLs, object keys, original URLs and unconfirmed extraction are never exposed to the client or Provider. If a confirmed diagram is unavailable, the cloud solve is rejected and the client must recapture.
       security:
         - SessionCookie: []
         - BearerSession: []

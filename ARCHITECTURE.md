@@ -6,14 +6,14 @@
 - Owner：`TBD（技术负责人确认）`
 - 最后更新：`2026-09-10`
 - 设计基线：`家庭AI学习助手_架构设计_v1.0.docx`
-- 相关决策：`DECISIONS.md`（ADR-0001～0011、0013～0018、0020～0023、0029 已 Accepted，ADR-0019 Proposed；ADR-0012 已被 ADR-0015 替代。ADR-0017 已替代 ADR-0005 的孩子 PIN/设备凭证默认方案和 ADR-0016 的 HMAC 家庭认证部分；NewAPI 决策继续有效）
+- 相关决策：`DECISIONS.md`（ADR-0001～0011、0013～0018、0020～0023、0030 已 Accepted，ADR-0019、0029 Proposed；ADR-0012 已被 ADR-0015 替代，ADR-0030 更新 Tutor 题图输入边界。ADR-0017 已替代 ADR-0005 的孩子 PIN/设备凭证默认方案和 ADR-0016 的 HMAC 家庭认证部分；NewAPI 决策继续有效）
 
 ## 1. 架构目标
 
 - 业务能力：以数学为首科，支撑家庭/孩子、教材与知识范围、错题捕获/详细讲解、错题本/到期复习、可解释今日任务、家长周报和多端同步。
 - 质量属性优先级：儿童安全与隐私 > 数据正确性/可靠性 > 可审计与可替换性 > 可用性 > 性能 > 成本。
 - 规模假设：P0/P1 先服务单一或少量家庭；用户数、峰值 RPS、图片量、AI 调用量和数据保留规模均为 `TBD`，应在原型测量后写入容量模型。
-- 主要约束：复用四类现有设备；华为端不依赖 GMS；模块化单体起步；OpenAPI/Schema 契约优先；离线队列保留学习记录，但图片解析依赖网络；模型可替换；Capture 原图不外发，教材仅允许家长声明无个人信息后的有界页级派生图进入单一 Provider；儿童数据最小化；未授权教材/题库不入库。
+- 主要约束：复用四类现有设备；华为端不依赖 GMS；模块化单体起步；OpenAPI/Schema 契约优先；离线队列保留学习记录，但图片解析依赖网络；模型可替换；Capture 原图不外发，已确认脱敏题图可按 ADR-0030 在 Tutor 请求中进入单一 Provider，教材仅允许家长声明无个人信息后的有界页级派生图进入单一 Provider；儿童数据最小化；未授权教材/题库不入库。
 
 历史实现基线（已由下方 2026-07-16 修订覆盖）：P0 健康端点、Household-scoped ChildProfile/Device 与 P1 Task/StudySession/Attempt/SyncBatch/Capture API、local/CI 家长删除孩子档案 API、OpenAPI `0.5.0` 增量、Flutter 待同步队列边界、八份早期本地 PostgreSQL migration、Learning/Capture/OCR/ImageAnalysis 事务仓储、私有 MinIO 上传签发/服务端确认（含对象实际 SHA-256）和过期对象清理器、按 Household/Child 原子认领的 Capture 对象级联删除编排、PaddleOCR 模型构建期 SHA-256 供应链和 Provider-neutral PrivacySanitizer 核心已实现；该历史快照不再描述当前认证和 VerifiedQuestion 状态。
 
@@ -85,7 +85,7 @@ flowchart LR
 | 跨端契约 | `packages/contracts` | OpenAPI、AI JSON Schema、生成 SDK | 接口/Schema 的唯一事实来源 | API、Flutter、Web、evals | 本地 `0.17.5` 包含 72 个 path 条目、84 个 HTTP operation 和 101 个 component schema；包含 SmartEdu 目录/导入与家长私有 Capture 媒体流等兼容式扩展；Ubuntu 仍为 `0.17.4`，SDK 生成器未实现 |
 | AI 评测 | `evals` | 固定样本与质量/安全/延迟/成本回归 | 合成或脱敏评测数据 | Tutor、CI | OCR、PrivacySanitizer、Tutor Policy 和真实 NewAPI synthetic 大图已实现；自动视觉检测器 eval 待其实现后补充 |
 | 本地基础设施 | `infra/compose` | PostgreSQL、Redis、MinIO、API/Web/Worker 和可切换 llama.cpp/Qwen 服务编排 | 单家庭自用数据与本地模型缓存 | 开发/自托管 | Ubuntu 完整栈、迁移、生命周期 worker、备份和隔离恢复已验证；本地模型首次下载/质量验收待完成 |
-| ADR | `docs/adr` | 不可逆或跨模块决策记录 | 架构决策历史 | `DECISIONS.md` | ADR-0001～0011、0013～0018、0020～0028 Accepted；ADR-0019、0029 Proposed；替代关系见决策索引 |
+| ADR | `docs/adr` | 不可逆或跨模块决策记录 | 架构决策历史 | `DECISIONS.md` | ADR-0001～0011、0013～0018、0020～0028、0030 Accepted；ADR-0019、0029 Proposed；替代关系见决策索引 |
 
 模块间禁止直接绕过业务接口修改其他模块表。模块化单体内部边界和依赖方向需在 P0 代码结构中验证。
 
@@ -277,8 +277,8 @@ flowchart TD
 - 禁止在多个客户端手工复制契约类型；必须从同一 OpenAPI/JSON Schema 生成或验证。
 - 禁止业务模块直接依赖某一 AI 厂商响应；必须通过 Provider Adapter 和 Tutor Policy。
 - 禁止本地模型开关打开时存在隐式云端回退或业务模块绕过统一 Provider 路由；本地模型服务不得发布宿主/LAN 推理端口。
-- 禁止将 Capture 原图、MinIO URL、对象键或敏感 OCR 文本发送到云端；禁止未确认/低置信度脱敏副本外发，禁止把同一图片自动广播给多个 Provider。教材页派生图只能按 ADR-0023 的无个人信息声明、单 Provider、4 页批次和输入上限外发。
-- 禁止把本地 OCR 输出当作最终题目结构，或让 Tutor 直接消费图片/未确认的 `QuestionExtraction`。
+- 禁止将 Capture 原图、MinIO URL、对象键或敏感 OCR 文本发送到云端；Tutor 仅可按 ADR-0030 发送已确认、已安全校验的题图 data URL，禁止未确认/低置信度脱敏副本外发，禁止把同一图片自动广播给多个 Provider。教材页派生图只能按 ADR-0023 的无个人信息声明、单 Provider、4 页批次和输入上限外发。
+- 禁止把本地 OCR 输出当作最终题目结构，或让 Tutor 直接消费未确认的 `QuestionExtraction`；已确认题图如需视觉 grounding 必须经过 ADR-0030 的授权、完整性和有界图片门禁。
 - 禁止“最后写入覆盖”离线学习历史；Attempt/AuditEvent 追加写，状态冲突显式处理。
 - 禁止未经 Household 授权的数据读取、缓存键或对象路径；禁止管理员能力混入孩子账号/会话。
 - 禁止将未授权教材/题库、真实儿童数据、图片、密钥或生产转储提交到仓库/评测集。

@@ -13,7 +13,7 @@
 - 最近更新：`2026-09-11`
 
 - 2026-09-11 iPad 图片入口修复：数学拍题和语文看图选择不再请求完整照片元数据；`image_picker` 权限拒绝/系统限制/无相机等错误会显示具体恢复方式，iOS 拒绝态可直接打开 App 系统设置。Flutter Analyze、全量 `77 passed`、iOS Release 构建和签名通过，修复包已覆盖安装并在 iPad 前台启动；设置直达和当前相机 `authorized` 状态已真机确认，实际拍照/相册选择仍待人工点击验收。
-- 2026-09-11 数学拍题含图题修复：孩子端以前在题目确认页展示脱敏题图，但进入 Tutor 时只传递文字。现在 `has_diagram=true` 的已确认视觉结果会把同一份当前内存脱敏图传入讲解页，与题干一同显示；不新增图片持久化、缓存、API 或 Provider 外发。Flutter Analyze 和全量 `77 passed` 通过，真机回归未执行。
+- 2026-09-11 数学拍题含图题修复：孩子端以前在题目确认页展示脱敏题图，但进入 Tutor 时只传递文字。客户端现在继续在讲解页显示同一份确认图；服务端 Tutor L1/L2/L3 会从 Household/Child 授权的 Capture 读取并校验同一份已确认脱敏图，以 `text + image_url(data:)` 发送给单一 Provider，图中数字/关系因此可参与解题。`has_diagram=true` 且图不可用时返回 409，不做文字-only 云端解答；不发送 URL、对象键或未确认 Extraction。Provider/Tutor 定向回归通过，真实含图题 Provider 质量和真机回归仍未执行。
 - 2026-09-11 家长学习记录拍题图片保留修复：定位到 NewAPI image-analysis worker 在成功/失败路径删除了 Capture 原对象，导致同源媒体代理显示“暂不可用”。现改由既有 Capture 生命周期 worker 统一清理，分析 worker 在原图 24 小时、OCR failure 7 天或家长保存窗口内保留对象；worker 6 项、Capture/生命周期 10 项回归通过。旧 Ubuntu 对象已被删除且无法恢复，部署后需用新拍题记录做真实浏览器验收。
 - 2026-09-11 Ubuntu 已完成最终 `sha-9543088` 的 GHCR 拉取式部署：备份 `/home/syin/study-backups/20260911T020415Z`、Compose 校验、镜像 pull/up、0039 head、API/Web health、四个 worker、OCI revision、近期错误计数 0 和 MinIO 私有端口检查通过；真实家长新拍题图片、真实账号浏览器、真实 SmartEdu PDF 及 iPad 实际拍照/相册选择仍待人工验收。
 

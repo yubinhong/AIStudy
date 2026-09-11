@@ -1,3 +1,24 @@
+# PLANS.md — PLAN-0051 Tutor 解答携带已确认题图
+
+- 状态：`IN_PROGRESS`
+- 创建：`2026-09-11`
+- 关联：`TASK-0012`、`ADR-0022`、`ADR-0030`、`PRD.md`、`SECURITY.md`、`TESTING.md`
+
+## 目标
+
+修复含图数学题在 Tutor L1/L2/L3 请求中只发送题干文字、没有发送题图的问题。API 从已授权孩子的已确认 Capture 读取原始脱敏副本，经过边界校验后把图片作为同一 NewAPI 多模态请求的一部分发送；若已确认 `has_diagram=true` 但图片不可用，必须阻断模型解答并要求重新拍题，不得静默使用文字-only 解法。
+
+## 验收与回滚
+
+- [ ] Provider 单测确认 L1/L2 和 L3 有图请求均含 `image_url`，无图请求仍保持 text-only，且图片经过有界准备。
+- [ ] Tutor 路由回归确认只读取 Household/Child 绑定且已确认 Capture；含图对象缺失时不调用 Provider，跨家庭/未确认状态继续阻断。
+- [ ] API/Flutter/Web 质量门槛、契约检查和 Ubuntu 部署验证通过；运行时检查确认容器中的 Tutor 源码携带图片。
+- [ ] 用题图中数字只出现在配图内的真实题目完成端到端解答验收，确认模型使用配图已知信息。
+
+## 回滚
+
+恢复上一 API/Web 镜像会回到 text-only Tutor，只作为紧急回滚；不执行数据库 downgrade，不删除 Capture、VerifiedQuestion、TutorTurn 或学习事实。关闭 Provider 时保留本地 Tutor 降级，但含图题不把图片字节写入学习记录。
+
 # PLANS.md — PLAN-0050 保留拍题原图供家长学习记录查看
 
 - 状态：`IN_PROGRESS（代码、发布与 Ubuntu 部署完成；新拍题真实家长浏览器验收待执行）`

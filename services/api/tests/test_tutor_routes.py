@@ -1,6 +1,10 @@
+import base64
+from collections.abc import AsyncIterable
 from datetime import UTC, datetime
+from hashlib import sha256
 from uuid import UUID, uuid4
 
+import pytest
 from auth_helpers import session_headers
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -19,6 +23,29 @@ from study_api.tutor_policy import DetailedSolution, GeneratedTutorHint
 
 HOUSEHOLD_A = "00000000-0000-0000-0000-000000000001"
 CHILD_A = "00000000-0000-0000-0000-000000000101"
+PNG_1X1 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+)
+
+
+class TutorCaptureStorage:
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+
+    async def stream_capture_upload(
+        self,
+        object_key: str,
+        content_type: str,
+        byte_size: int,
+        content_sha256: str,
+        chunks: AsyncIterable[bytes],
+    ) -> None:
+        del content_type, byte_size, content_sha256
+        self.objects[object_key] = b"".join([chunk async for chunk in chunks])
+
+    def read_object(self, object_key: str, max_bytes: int) -> bytes:
+        assert max_bytes == 8_000_000
+        return self.objects[object_key]
 
 
 def _principal(
@@ -70,12 +97,60 @@ def _corrected_capture(client: TestClient) -> dict[str, object]:
     return correction.json()
 
 
+def _uploaded_diagram_capture(client: TestClient) -> dict[str, object]:
+    task = client.post(
+        f"/households/{HOUSEHOLD_A}/tasks",
+        headers={**_principal(client), "Idempotency-Key": f"diagram-task-{uuid4()}"},
+        json={
+            "child_id": CHILD_A,
+            "title": "Tutor diagram task",
+            "subject": "math",
+            "scheduled_for": "2026-07-15",
+        },
+    ).json()
+    session = client.post(
+        f"/households/{HOUSEHOLD_A}/tasks/{task['id']}/sessions",
+        headers={
+            **_principal(client, role="child", child_id=CHILD_A),
+            "Idempotency-Key": f"diagram-session-{uuid4()}",
+        },
+        json={"expected_task_version": task["version"]},
+    ).json()
+    uploaded = client.post(
+        f"/households/{HOUSEHOLD_A}/sessions/{session['id']}/captures/upload",
+        headers={
+            **_principal(client, role="child", child_id=CHILD_A),
+            "Idempotency-Key": f"diagram-upload-{uuid4()}",
+            "X-Capture-Media-Type": "image/png",
+            "X-Capture-Byte-Size": str(len(PNG_1X1)),
+            "X-Capture-Content-SHA256": sha256(PNG_1X1).hexdigest(),
+        },
+        content=PNG_1X1,
+    )
+    assert uploaded.status_code == 201
+    correction = client.post(
+        f"/households/{HOUSEHOLD_A}/captures/{uploaded.json()['id']}/corrections",
+        headers={
+            **_principal(client, role="child", child_id=CHILD_A),
+            "Idempotency-Key": f"diagram-correction-{uuid4()}",
+        },
+        json={
+            "expected_capture_version": uploaded.json()["version"],
+            "corrected_text": "图中有多少人？",
+        },
+    )
+    assert correction.status_code == 201
+    return correction.json()
+
+
 def _verified_question(
     app: FastAPI,
     capture_id: str,
     *,
     answer_state: str = "unclear",
     evidence_confirmed: bool = False,
+    has_diagram: bool = False,
+    expected_capture_version: int = 2,
 ) -> str:
     record, _ = app.state.verified_question_repository.create(
         UUID(HOUSEHOLD_A),
@@ -83,9 +158,10 @@ def _verified_question(
         UUID(capture_id),
         uuid4(),
         VerifyQuestionRequest(
-            expected_capture_version=2,
+            expected_capture_version=expected_capture_version,
             question_text="3/4 + 1/8 = ?",
             formulas=("3/4 + 1/8",),
+            has_diagram=has_diagram,
             answer_text="7/8",
             answer_state=answer_state,
             evidence_confirmed=evidence_confirmed,
@@ -416,3 +492,97 @@ def test_cloud_l1_and_l2_are_question_specific_and_progressive(monkeypatch) -> N
     assert second.json()["builds_on_turn_id"] == first.json()["id"]
     assert second.json()["answer_exposure"] == "none"
     assert second.json()["direct_answer"] is None
+
+
+def test_cloud_tutor_passes_confirmed_diagram_to_provider(monkeypatch) -> None:
+    storage = TutorCaptureStorage()
+    app = create_app(object_storage=storage)
+    app.state.newapi_config = NewApiConfig(
+        True, "https://newapi.local", "key", "vision-model", 5, 100_000
+    )
+    client = TestClient(app)
+    correction = _uploaded_diagram_capture(client)
+    verified_question_id = _verified_question(
+        app,
+        str(correction["capture_id"]),
+        answer_state="blank",
+        evidence_confirmed=True,
+        has_diagram=True,
+        expected_capture_version=3,
+    )
+    captured: dict[str, object] = {}
+
+    def fake_solution(
+        self,
+        *,
+        image_bytes: bytes | None,
+        image_media_type: str | None,
+        **_kwargs,
+    ) -> DetailedSolution:
+        del self
+        captured["image_bytes"] = image_bytes
+        captured["image_media_type"] = image_media_type
+        return DetailedSolution(
+            steps=("先读图中的已知数量。",),
+            final_answer="42人",
+            verification="按图中的数量复核。",
+        )
+
+    monkeypatch.setattr(NewApiVisionProvider, "create_detailed_solution", fake_solution)
+    response = client.post(
+        f"/households/{HOUSEHOLD_A}/tutor/hints",
+        headers={
+            **_principal(client, role="child", child_id=CHILD_A),
+            "Idempotency-Key": "tutor-diagram-solution",
+        },
+        json={
+            "verified_question_id": verified_question_id,
+            "level": 3,
+            "mode": "mistake_explanation",
+        },
+    )
+
+    assert response.status_code == 200
+    assert isinstance(captured["image_bytes"], bytes)
+    assert captured["image_bytes"]
+    assert captured["image_media_type"] == "image/png"
+
+
+def test_cloud_tutor_blocks_confirmed_diagram_when_private_image_is_missing(monkeypatch) -> None:
+    storage = TutorCaptureStorage()
+    app = create_app(object_storage=storage)
+    app.state.newapi_config = NewApiConfig(
+        True, "https://newapi.local", "key", "vision-model", 5, 100_000
+    )
+    client = TestClient(app)
+    correction = _uploaded_diagram_capture(client)
+    verified_question_id = _verified_question(
+        app,
+        str(correction["capture_id"]),
+        answer_state="blank",
+        evidence_confirmed=True,
+        has_diagram=True,
+        expected_capture_version=3,
+    )
+    storage.objects.clear()
+
+    def provider_must_not_run(self, **_kwargs):
+        del self
+        pytest.fail("a confirmed diagram must not fall back to a text-only solution")
+
+    monkeypatch.setattr(NewApiVisionProvider, "create_detailed_solution", provider_must_not_run)
+    response = client.post(
+        f"/households/{HOUSEHOLD_A}/tutor/hints",
+        headers={
+            **_principal(client, role="child", child_id=CHILD_A),
+            "Idempotency-Key": "tutor-diagram-missing",
+        },
+        json={
+            "verified_question_id": verified_question_id,
+            "level": 3,
+            "mode": "mistake_explanation",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["message"] == "question image unavailable; recapture required"

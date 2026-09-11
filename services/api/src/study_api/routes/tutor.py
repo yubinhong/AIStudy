@@ -13,15 +13,18 @@ from study_api.auth import (
     require_bound_child,
     require_household,
 )
+from study_api.capture_media import read_safe_capture
 from study_api.curriculum_analysis_jobs import CurriculumKnowledgeRepository
-from study_api.domain.capture_repository import CaptureRepository
+from study_api.domain.capture_repository import CaptureRepository, CaptureStateError
 from study_api.domain.curriculum_knowledge import CurriculumKnowledgePoint
 from study_api.domain.learning_repository import ChildAssignmentError
 from study_api.domain.models import AnswerState, CaptureStatus
 from study_api.domain.repository import IdempotencyConflictError
 from study_api.domain.tutor_turn_repository import TutorTurnRepository
 from study_api.domain.verified_question_repository import VerifiedQuestionRepository
+from study_api.image_safety import ImageSafetyError
 from study_api.newapi_provider import NewApiProviderError, NewApiVisionProvider
+from study_api.object_storage import CaptureObjectStorage, ObjectStorageError
 from study_api.tutor_policy import (
     CurriculumSource,
     StartTutorHintRequest,
@@ -41,6 +44,13 @@ def get_capture_repository(request: Request) -> CaptureRepository:
 
 
 CaptureRepo = Annotated[CaptureRepository, Depends(get_capture_repository)]
+
+
+def get_object_storage(request: Request) -> CaptureObjectStorage:
+    return request.app.state.object_storage
+
+
+ObjectStorage = Annotated[CaptureObjectStorage, Depends(get_object_storage)]
 
 
 def get_verified_question_repository(request: Request) -> VerifiedQuestionRepository:
@@ -143,6 +153,7 @@ def create_tutor_hint(
     verified_questions: VerifiedRepo,
     tutor_turns: TutorTurnRepo,
     knowledge: KnowledgeRepo,
+    object_storage: ObjectStorage,
 ) -> JSONResponse:
     require_household(principal, household_id)
     child_id = require_bound_child(principal)
@@ -221,6 +232,44 @@ def create_tutor_hint(
     if previous is not None:
         content = content.model_copy(update={"builds_on_turn_id": previous.id})
     provider_config = app_request.app.state.newapi_config
+    question_image: tuple[bytes, str] | None = None
+    provider_call_requested = provider_config.enabled and (
+        request.level in {1, 2}
+        or (
+            request.level == 3
+            and evidence_confirmed
+            and answer_state in {AnswerState.WORKED, AnswerState.BLANK}
+        )
+    )
+    if provider_call_requested and verified_question.has_diagram:
+        try:
+            pending_capture = captures.get_capture_upload(
+                household_id, verified_question.capture_id, child_id
+            )
+            safe_capture = read_safe_capture(
+                object_storage,
+                pending_capture.object_key,
+                pending_capture.capture.media_type,
+                pending_capture.capture.byte_size,
+                pending_capture.capture.content_sha256,
+            )
+        except (
+            LookupError,
+            ChildAssignmentError,
+            CaptureStateError,
+            ImageSafetyError,
+            ObjectStorageError,
+        ) as error:
+            if verified_question.has_diagram:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="question image unavailable; recapture required",
+                ) from error
+        else:
+            question_image = (
+                safe_capture.data,
+                "image/jpeg" if safe_capture.metadata.format == "jpeg" else "image/png",
+            )
     if request.level in {1, 2} and provider_config.enabled:
         provider = NewApiVisionProvider(provider_config)
         previous_payload = (
@@ -243,6 +292,8 @@ def create_tutor_hint(
                 previous_hint=previous_payload,
                 curriculum_excerpts=(),
                 curriculum_scope=provider_scope,
+                image_bytes=question_image[0] if question_image is not None else None,
+                image_media_type=question_image[1] if question_image is not None else None,
             )
             validate_generated_hint(
                 generated,
@@ -297,6 +348,8 @@ def create_tutor_hint(
                 answer_text=verified_question.answer_text,
                 answer_steps=verified_question.answer_steps,
                 curriculum_scope=provider_scope,
+                image_bytes=question_image[0] if question_image is not None else None,
+                image_media_type=question_image[1] if question_image is not None else None,
             )
         except NewApiProviderError as error:
             raise HTTPException(

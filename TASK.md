@@ -27,6 +27,16 @@
 
 回滚：移除 `TutorHintScreen` 的 `questionImageBytes/hasDiagram` 参数、题图控件和确认页跳转传值即可；不涉及服务端数据、Capture 对象或学习事实回滚。
 
+## 2026-09-11 Tutor 含图解题 Provider grounding（PLAN-0051）
+
+- [x] 定位严重缺陷：孩子端虽能在讲解页显示题图，但 API 的 L1/L2/L3 NewAPI 请求只有已确认题干和作答证据，图片中独有的数字/数量关系没有进入模型。
+- [x] API 从 Household/Child 授权的已确认 Capture 私有对象读取图片，重新校验大小、SHA-256、JPEG/PNG 和完整解码后，使用现有有界图片准备逻辑把 `text + image_url(data:)` 放入同一 Provider 请求；不发送 URL、对象键、原始存储地址或未确认 Extraction。
+- [x] `has_diagram=true` 且 Provider 开启时如果对象缺失或校验失败，返回统一 `409` 并阻断云端文字-only 解答；无图请求保留 text-only 兼容路径。
+- [x] 增加 Provider 有图/无图载荷和 Tutor 路由正常传图/缺图阻断回归；新增 ADR-0030，并同步 PRD、PROJECT、ARCHITECTURE、SECURITY、OpenAPI、TESTING、AI_CONTEXT、RUNBOOK、CHANGELOG。
+- [ ] 待执行：真实含图题（关键数字只在配图中）的 Provider 质量验收、真实 iPad/Ubuntu 账号浏览器设备回归、发布质量与 Ubuntu 拉取式部署证据。
+
+回滚：恢复上一 API/Web GHCR 镜像会回到 text-only Tutor；不执行数据库 downgrade，不删除 Capture、VerifiedQuestion、TutorTurn 或学习事实。
+
 ## 2026-09-11 家长学习记录拍题图片保留修复（PLAN-0050）
 
 - [x] 定位根因：NewAPI image-analysis worker 在成功分析后删除了 Capture 原对象，家长学习记录的 Household-scoped 私有媒体代理因此只能显示“暂不可用”；旧对象已从 Ubuntu MinIO 删除，服务器端没有可恢复字节。

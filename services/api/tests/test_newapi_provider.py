@@ -473,6 +473,89 @@ def test_newapi_provider_returns_validated_detailed_solution_without_image() -> 
     assert user_payload["approved_curriculum_scope"]["knowledge_key"] == "kp-subtraction"
 
 
+def test_newapi_provider_sends_confirmed_question_image_with_detailed_solution() -> None:
+    provider = NewApiVisionProvider(_config())
+    captured: dict[str, Any] = {}
+
+    def fake_post(payload: dict[str, Any]) -> dict[str, Any]:
+        captured.update(payload)
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            '{"steps":["看图中的已知数量。"],"final_answer":"42人",'
+                            '"verification":"按图中数量复核。"}'
+                        )
+                    }
+                }
+            ]
+        }
+
+    provider._post_json = fake_post  # type: ignore[method-assign]
+    provider.create_detailed_solution(
+        question_text="一共有多少人？",
+        answer_state="blank",
+        answer_text=None,
+        answer_steps=(),
+        curriculum_scope=None,
+        image_bytes=base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        ),
+        image_media_type="image/png",
+    )
+
+    content = captured["messages"][1]["content"]
+    assert isinstance(content, list)
+    assert content[0]["type"] == "text"
+    data_url = content[1]["image_url"]["url"]
+    assert data_url.startswith("data:image/png;base64,")
+    assert base64.b64decode(data_url.split(",", maxsplit=1)[1])
+
+
+def test_newapi_provider_sends_confirmed_question_image_with_tutor_hint() -> None:
+    provider = NewApiVisionProvider(_config())
+    captured: dict[str, Any] = {}
+
+    def fake_post(payload: dict[str, Any]) -> dict[str, Any]:
+        captured.update(payload)
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            '{"prompt":"先找图中表示总人数的数字。",'
+                            '"next_step":"指出已知数量之间的关系。",'
+                            '"child_action":"说出图里最关键的已知量。",'
+                            '"revealed_elements":["known_and_unknown","key_relationship"]}'
+                        )
+                    }
+                }
+            ]
+        }
+
+    provider._post_json = fake_post  # type: ignore[method-assign]
+    provider.create_tutor_hint(
+        question_text="根据图示回答问题。",
+        level=1,
+        answer_state="unclear",
+        answer_text=None,
+        answer_steps=(),
+        previous_hint=None,
+        curriculum_excerpts=(),
+        curriculum_scope=None,
+        image_bytes=base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        ),
+        image_media_type="image/png",
+    )
+
+    content = captured["messages"][1]["content"]
+    assert isinstance(content, list)
+    assert content[1]["type"] == "image_url"
+    assert content[1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
 def test_newapi_provider_solves_unmatched_questions_without_claiming_a_source() -> None:
     provider = NewApiVisionProvider(_config())
     captured: dict[str, Any] = {}

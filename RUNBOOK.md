@@ -5,6 +5,14 @@
 - 服务：家庭 AI 学习助手（目标包括 Flutter 孩子端、Web/PWA、FastAPI/Worker、PostgreSQL、Redis、S3/MinIO 和 AI Provider）。
 - 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.17.5`/`0039_smartedu_curriculum_source`；API/Web/worker 健康，已审核语文教材只保留标题、连续诗句和全部选项均通过确定性目录的六首 21 道古诗题。2026-09-10 SmartEdu 真实 Bearer、路径编码及有界 CDN 重试已切换为同一提交的 GHCR `v0.17.5` API/Web 镜像；没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
 
+## 2026-09-11 Tutor 含图解题 Provider grounding（PLAN-0051）
+
+- 根因：客户端确认页和讲解页可以显示题图，但 Tutor API 的 L1/L2/L3 Provider 请求只有文字题干，配图中的已知数字和关系没有进入模型。
+- 修复：服务端只在 VerifiedQuestion 已确认且 Provider 已启用时，从同一 Household/Child 授权的 Capture 私有对象读取题图；有界校验后在同一请求中发送 `text + image_url(data:)`。不发送对象 URL、对象键、PDF 或未确认 Extraction。
+- 安全失败：`has_diagram=true` 且对象缺失/哈希不符/图片无法安全解码时返回统一 409，不调用 Provider 生成文字-only 解答；无图调用保持兼容。
+- 本地证据：Provider 与 Tutor 路由定向测试共 20 项通过，Ruff 通过；真实含图题 Provider 质量、完整质量门禁和 Ubuntu 拉取式部署仍待本轮发布后补证。
+- 回滚：恢复上一 API/Web GHCR 镜像并执行 `docker compose pull`、`docker compose up -d --no-build`；不执行数据库 downgrade，不删除 Capture、VerifiedQuestion、TutorTurn 或学习事实。
+
 ## 2026-09-11 iPad 图片入口修复与 Ubuntu GHCR 部署
 
 - 载荷：提交 `ca770cd0f753f83886bc7e185ee3bebc3e69f971` 已推送 `master`；GitHub Actions quality run `34549281146` 的 contracts、API、Web、browser-e2e、release-notes 和 API/Web 多架构 GHCR 发布 job 均成功。Ubuntu API/Web/worker 固定 `ghcr.io/yubinhong/aistudy-api:sha-ca770cd` 与 `ghcr.io/yubinhong/aistudy-web:sha-ca770cd`，运行容器 OCI revision 与该提交一致；镜像 index digest 分别为 `sha256:0998e486134c797949540c5dec12d91ceb5f908ffe665cb788669676a6e602ff` 和 `sha256:08c88a009755632679e9000f53ed70e7fedf12cad1daf8a920e1a4333fea2298`。
