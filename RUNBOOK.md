@@ -5,6 +5,14 @@
 - 服务：家庭 AI 学习助手（目标包括 Flutter 孩子端、Web/PWA、FastAPI/Worker、PostgreSQL、Redis、S3/MinIO 和 AI Provider）。
 - 当前状态：`SELF_HOSTED_DEPLOYED`。Ubuntu 24.04 x86_64 VM `192.168.1.4` 正运行自用 Compose `0.17.5`/`0039_smartedu_curriculum_source`；API/Web/worker 健康，已审核语文教材只保留标题、连续诗句和全部选项均通过确定性目录的六首 21 道古诗题。2026-09-10 SmartEdu 真实 Bearer、路径编码及有界 CDN 重试已切换为同一提交的 GHCR `v0.17.5` API/Web 镜像；没有 staging/production、Dashboard 或日志平台，本 Runbook 仍不构成生产部署批准。`ADR-0008` 已 Accepted。
 
+## 2026-09-11 iPad 图片入口修复与 Ubuntu GHCR 部署
+
+- 载荷：提交 `ca770cd0f753f83886bc7e185ee3bebc3e69f971` 已推送 `master`；GitHub Actions quality run `34549281146` 的 contracts、API、Web、browser-e2e、release-notes 和 API/Web 多架构 GHCR 发布 job 均成功。Ubuntu API/Web/worker 固定 `ghcr.io/yubinhong/aistudy-api:sha-ca770cd` 与 `ghcr.io/yubinhong/aistudy-web:sha-ca770cd`，运行容器 OCI revision 与该提交一致；镜像 index digest 分别为 `sha256:0998e486134c797949540c5dec12d91ceb5f908ffe665cb788669676a6e602ff` 和 `sha256:08c88a009755632679e9000f53ed70e7fedf12cad1daf8a920e1a4333fea2298`。
+- 备份：切换前 `/home/syin/study-backups/20260911T011153Z` 已完成；远端 Compose `.env` 回滚副本在 `/home/syin/study-source-backups/20260911T011153Z-ca770cd/.env`。未修改 PostgreSQL、MinIO、Redis 数据卷，没有执行数据删除或数据库降级。
+- 发布：远端 `infra/compose/.env` 的 API/Web 镜像固定到上述 `sha-ca770cd`，`docker compose config --quiet`、`docker compose pull` 和 `docker compose up -d --no-build` 成功。迁移容器正常退出，Alembic 为 `0039_smartedu_curriculum_source (head)`；API/Web 和四个常驻 worker 均运行并使用同一 API 镜像。
+- 验收：Ubuntu API `/healthz` 返回 `{"status":"ok","service":"study-api","version":"0.17.5"}`，Web `/healthz` 返回 `{"status":"ok","service":"study-web"}`；最近 10 分钟应用错误计数为 0；MinIO `9000` 没有宿主端口映射。iPad mini 6 已覆盖安装并启动修复包，系统设置直达和当前相机授权状态已确认；实际拍照/相册选择、真实 Ubuntu 账号浏览器和真实 SmartEdu PDF 仍未执行。
+- 回滚：把 `/home/syin/study-source-backups/20260911T011153Z-ca770cd/.env` 中 API/Web 同时恢复到此前已验证的镜像标签，再运行 `docker compose pull` 与 `docker compose up -d --no-build`；保留 `0039`、学习事实和数据卷，不执行 downgrade。iPad 回滚使用上一份已签名安装包，不影响服务端数据。
+
 ## 2026-09-10 SmartEdu v0.17.5 真实凭据下载修复部署
 
 - 载荷：提交 `13d72bb06b7f606cf3d162eab06678fbcd058d71` 的 GHCR `v0.17.5`。API digest 为 `sha256:b10742c7af1e5529fa58efa6dc7e0d1d7b0e1efd1710e4362b20aa2d546e0040`，Web digest 为 `sha256:b443615f05acf4ac4f9a4c89c6d7c56ac5f1fc7e4c24afbbf5b9a39fecc81122`，两者 OCI revision 与提交一致。
