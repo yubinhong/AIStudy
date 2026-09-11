@@ -18,7 +18,9 @@
 
 - 根因：旧 image-analysis worker 在分析成功后删除了 Capture 原对象，家长学习记录的私有媒体流随后返回 404；失败路径也会删除对象。旧 Ubuntu 记录对应对象已不存在，不能通过数据库状态重建图片字节。
 - 修复：分析 worker 不再调用对象删除；Capture 生命周期 worker 继续负责原图 24 小时、OCR failure 7 天和家长保存策略的到期清理。API/Web 合同、数据库迁移、MinIO 暴露边界均未改变。
-- 验证：本地 worker `6 passed`、Capture/生命周期 `10 passed`，`git diff --check` 通过。提交、GHCR 发布、备份和 Ubuntu 拉取式部署证据在本段完成后补记；部署后需用新拍题记录做真实家长浏览器图片显示验收。
+- 验证：本地 worker `6 passed`、Capture/生命周期 `10 passed`、API 非集成全量通过，Ruff/Mypy、契约、浏览器 E2E 和 `git diff --check` 通过。提交 `9a02425` 已推送，API/Web GHCR `sha-9a02425` 发布成功。
+- Ubuntu：备份 `/home/syin/study-backups/20260911T015531Z`；回滚副本 `/home/syin/study-source-backups/20260911T015531Z-capture-media-preserve/`。远端固定 `sha-9a02425`，API/Web OCI revision 均为 `9a0242586d1560ed38f4b9f9c0bec8fcc1a38cd4`；迁移 `0039_smartedu_curriculum_source (head)`、API/Web health、四个 worker、近期错误计数 0、MinIO 私有端口和容器内 worker 源码检查通过。
+- 未执行：用新拍题记录完成真实家长浏览器图片显示验收；旧 worker 已删除的历史对象不可恢复。
 - 回滚：仅在紧急情况下将 API/Web 同时固定回前一已验证镜像并重新 `pull/up`；不执行迁移 downgrade，不删除 Capture、VerifiedQuestion、学习记录或数据卷。
 
 ## 2026-09-10 SmartEdu v0.17.5 真实凭据下载修复部署

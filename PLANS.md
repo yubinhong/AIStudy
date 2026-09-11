@@ -1,6 +1,6 @@
 # PLANS.md — PLAN-0050 保留拍题原图供家长学习记录查看
 
-- 状态：`IN_PROGRESS`
+- 状态：`IN_PROGRESS（代码、发布与 Ubuntu 部署完成；新拍题真实家长浏览器验收待执行）`
 - 创建：`2026-09-11`
 - 关联：`TASK-0012`、`ADR-0018`、`RUNBOOK.md`、`TESTING.md`
 
@@ -10,13 +10,15 @@
 
 ## 验收与回滚
 
-- [ ] API worker 回归确认成功和失败分析都保留 Capture 对象，生命周期测试继续覆盖到期删除、家长保存和家庭授权。
-- [ ] 本地 Flutter/Web/API 相关测试、契约检查和 `git diff --check` 通过；Ubuntu 备份后使用同一 API/Web GHCR revision 拉取式部署并检查 health、worker、迁移、对象私有性。
+- [x] API worker 回归确认成功和失败分析都保留 Capture 对象，生命周期测试继续覆盖到期删除、家长保存和家庭授权。
+- [x] 本地 API 定向/全量非集成测试、Ruff、Mypy、契约、浏览器 E2E 和 `git diff --check` 通过；Ubuntu 已备份后使用同一 API/Web GHCR revision 拉取式部署并检查 health、worker、迁移、对象私有性。
 - [ ] 真实家长学习记录中的新拍题原图可显示；已经被旧 worker 删除的历史对象无法从 MinIO 恢复，需明确记录。
 
 ## 回滚
 
 恢复上一 API/Web 镜像会重新启用提前删除行为，因此只作为紧急回滚；不执行数据库 downgrade，不删除或重写现有学习事实。
+
+部署证据（2026-09-11）：提交 `9a02425` 已推送；quality、contracts、api、web、browser-e2e、版本说明和 API/Web GHCR 发布均成功。备份 `/home/syin/study-backups/20260911T015531Z` 完成，`.env`/Compose 回滚副本在 `/home/syin/study-source-backups/20260911T015531Z-capture-media-preserve/`。Ubuntu 固定 `sha-9a02425`，API/Web index digest 分别为 `sha256:2f9f37e89445c01136055302baabd5677ab5fcf90996cb058634175cc8fda343`、`sha256:280c20b6b3dfaf2987ab0f76a9d2df9f71d758851b664fc5b4d568238b75db23`；容器 OCI revision 均为 `9a0242586d1560ed38f4b9f9c0bec8fcc1a38cd4`。API/Web health、`0039_smartedu_curriculum_source (head)`、四个 worker、近期错误计数 0、MinIO 私有端口和容器内源码检查通过。旧历史 Capture 对象已不存在，无法从 MinIO 恢复。
 
 # PLANS.md — PLAN-0048 SmartEdu 真实凭据下载重试修复
 
