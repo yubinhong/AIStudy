@@ -12,6 +12,7 @@
 - 发布：远端 `infra/compose/.env` 的 API/Web 镜像固定到上述 `sha-ca770cd`，`docker compose config --quiet`、`docker compose pull` 和 `docker compose up -d --no-build` 成功。迁移容器正常退出，Alembic 为 `0039_smartedu_curriculum_source (head)`；API/Web 和四个常驻 worker 均运行并使用同一 API 镜像。
 - 验收：Ubuntu API `/healthz` 返回 `{"status":"ok","service":"study-api","version":"0.17.5"}`，Web `/healthz` 返回 `{"status":"ok","service":"study-web"}`；最近 10 分钟应用错误计数为 0；MinIO `9000` 没有宿主端口映射。iPad mini 6 已覆盖安装并启动修复包，系统设置直达和当前相机授权状态已确认；实际拍照/相册选择、真实 Ubuntu 账号浏览器和真实 SmartEdu PDF 仍未执行。
 - 回滚：把 `/home/syin/study-source-backups/20260911T011153Z-ca770cd/.env` 中 API/Web 同时恢复到此前已验证的镜像标签，再运行 `docker compose pull` 与 `docker compose up -d --no-build`；保留 `0039`、学习事实和数据卷，不执行 downgrade。iPad 回滚使用上一份已签名安装包，不影响服务端数据。
+- 最终对齐：部署记录提交 `3844abc6d383d9accc50737f672fb8423064fd8d` 仅更新文档，没有业务代码变化；为使运行来源与最终 `origin/master` 一致，Ubuntu 随后再次备份 `/home/syin/study-backups/20260911T012302Z` 并切换到 API/Web `sha-3844abc`。最终容器 OCI revision 为 `3844abc6d383d9accc50737f672fb8423064fd8d`，回滚配置副本在 `/home/syin/study-source-backups/20260911T012302Z-3844abc/.env`；迁移、health、worker、错误计数和 MinIO 私有端口检查再次通过。
 
 ## 2026-09-10 SmartEdu v0.17.5 真实凭据下载修复部署
 
