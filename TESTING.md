@@ -19,7 +19,7 @@
 - API worker：`services/api/.venv/bin/pytest -q services/api/tests/test_image_analysis_worker.py`，`6 passed`；成功分析和 Provider 失败均断言 Capture 对象未被删除。
 - Capture 生命周期：`services/api/.venv/bin/pytest -q services/api/tests/test_captures.py services/api/tests/test_media_lifecycle.py`，`10 passed`；继续覆盖家庭授权、媒体读取、到期清理、家长保存和失败保留策略。
 - 静态：`git diff --check` 通过；没有 OpenAPI、数据库迁移或客户端契约变更。
-- 发布/运行时：提交 `9a02425` 的 quality、contracts、API、Web、browser-e2e、版本说明和两个 GHCR job 均成功；Ubuntu 备份 `/home/syin/study-backups/20260911T015531Z` 后固定 `sha-9a02425` 拉取式部署。API/Web health、`0039_smartedu_curriculum_source (head)`、四个 worker、OCI revision `9a0242586d1560ed38f4b9f9c0bec8fcc1a38cd4`、近期错误计数 0、MinIO 无宿主端口和容器内源码检查通过。
+- 发布/运行时：提交 `9a02425` 的 quality、contracts、API、Web、browser-e2e、版本说明和两个 GHCR job 均成功；随后文档提交 `9543088` 的同代码 GHCR 镜像也完成发布。Ubuntu 最终备份 `/home/syin/study-backups/20260911T020415Z` 后固定 `sha-9543088` 拉取式部署；API/Web health、`0039_smartedu_curriculum_source (head)`、四个 worker、OCI revision `954308850cd2b5369f5201f8fa462f6f2b485e66`、近期错误计数 0、MinIO 无宿主端口和容器内源码检查通过。
 - 未执行：旧 Ubuntu Capture 对象已经被前一版本 worker 删除，无法从 MinIO 恢复；部署后仍需使用新拍题记录完成真实家长浏览器图片显示验收。
 
 ## 2026-09-10 SmartEdu 真实凭据下载重试修复

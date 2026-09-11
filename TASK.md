@@ -32,7 +32,7 @@
 - [x] 定位根因：NewAPI image-analysis worker 在成功分析后删除了 Capture 原对象，家长学习记录的 Household-scoped 私有媒体代理因此只能显示“暂不可用”；旧对象已从 Ubuntu MinIO 删除，服务器端没有可恢复字节。
 - [x] 移除分析 worker 的成功/失败删除动作；成功和失败都保留 Capture 原对象，由既有 Capture 生命周期按原图 24 小时、OCR failure 7 天和家长保存策略统一清理。
 - [x] 增加 worker 回归，覆盖成功分析和 Provider 失败时对象均未删除；worker 6 项、Capture/生命周期相关 10 项定向测试通过，`git diff --check` 通过。
-- [x] 提交 `9a02425` 已推送；quality、API/Web GHCR 发布和浏览器 E2E 通过，Ubuntu 已备份并部署同一 `sha-9a02425` API/Web revision，health、迁移、四个 worker、近期错误计数、MinIO 私有端口和容器内 worker 源码检查通过。
+- [x] 提交 `9a02425` 已推送；quality、API/Web GHCR 发布和浏览器 E2E 通过，Ubuntu 已备份并部署同一代码 revision；最终文档提交 `9543088` 的 API/Web `sha-9543088` 也已完成最终拉取式切换，health、迁移、四个 worker、近期错误计数、MinIO 私有端口和容器内 worker 源码检查通过。
 - [ ] 用新拍题记录完成真实家长浏览器图片显示验收；旧 worker 已删除的历史对象不伪造恢复证据。
 
 回滚：恢复上一 API/Web 镜像会重新启用分析后删除 Capture 的问题，只作为紧急回滚；不执行数据库 downgrade，不删除或重写 Capture、VerifiedQuestion 或学习事实。

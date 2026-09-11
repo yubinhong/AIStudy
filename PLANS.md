@@ -18,7 +18,7 @@
 
 恢复上一 API/Web 镜像会重新启用提前删除行为，因此只作为紧急回滚；不执行数据库 downgrade，不删除或重写现有学习事实。
 
-部署证据（2026-09-11）：提交 `9a02425` 已推送；quality、contracts、api、web、browser-e2e、版本说明和 API/Web GHCR 发布均成功。备份 `/home/syin/study-backups/20260911T015531Z` 完成，`.env`/Compose 回滚副本在 `/home/syin/study-source-backups/20260911T015531Z-capture-media-preserve/`。Ubuntu 固定 `sha-9a02425`，API/Web index digest 分别为 `sha256:2f9f37e89445c01136055302baabd5677ab5fcf90996cb058634175cc8fda343`、`sha256:280c20b6b3dfaf2987ab0f76a9d2df9f71d758851b664fc5b4d568238b75db23`；容器 OCI revision 均为 `9a0242586d1560ed38f4b9f9c0bec8fcc1a38cd4`。API/Web health、`0039_smartedu_curriculum_source (head)`、四个 worker、近期错误计数 0、MinIO 私有端口和容器内源码检查通过。旧历史 Capture 对象已不存在，无法从 MinIO 恢复。
+部署证据（2026-09-11）：代码提交 `9a02425` 已推送；quality、contracts、api、web、browser-e2e、版本说明和 API/Web GHCR 发布均成功。首次备份 `/home/syin/study-backups/20260911T015531Z` 完成，`.env`/Compose 回滚副本在 `/home/syin/study-source-backups/20260911T015531Z-capture-media-preserve/`；随后文档提交 `9543088` 也完成 GHCR 发布和最终拉取式切换，备份 `/home/syin/study-backups/20260911T020415Z`，回滚副本在 `/home/syin/study-source-backups/20260911T020415Z-final-docs/`。Ubuntu 当前固定 `sha-9543088`，API/Web index digest 分别为 `sha256:8a39f87d404cc5ead835911e83729611e6afd5e88c915d31815b619051c723d1`、`sha256:d18d9f125045d72a7be3480240eef0dfb84b9ec10a15d93752f7d1823522f536`；容器 OCI revision 均为 `954308850cd2b5369f5201f8fa462f6f2b485e66`。API/Web health、`0039_smartedu_curriculum_source (head)`、四个 worker、近期错误计数 0、MinIO 私有端口和容器内源码检查通过。旧历史 Capture 对象已不存在，无法从 MinIO 恢复。
 
 # PLANS.md — PLAN-0048 SmartEdu 真实凭据下载重试修复
 
