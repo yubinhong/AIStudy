@@ -1,6 +1,6 @@
 # PLANS.md — PLAN-0051 Tutor 解答携带已确认题图
 
-- 状态：`IN_PROGRESS`
+- 状态：`IN_PROGRESS（代码、质量门禁、GHCR 发布与 Ubuntu 部署完成；真实含图题 Provider 质量验收待执行）`
 - 创建：`2026-09-11`
 - 关联：`TASK-0012`、`ADR-0022`、`ADR-0030`、`PRD.md`、`SECURITY.md`、`TESTING.md`
 
@@ -10,9 +10,9 @@
 
 ## 验收与回滚
 
-- [ ] Provider 单测确认 L1/L2 和 L3 有图请求均含 `image_url`，无图请求仍保持 text-only，且图片经过有界准备。
-- [ ] Tutor 路由回归确认只读取 Household/Child 绑定且已确认 Capture；含图对象缺失时不调用 Provider，跨家庭/未确认状态继续阻断。
-- [ ] API/Flutter/Web 质量门槛、契约检查和 Ubuntu 部署验证通过；运行时检查确认容器中的 Tutor 源码携带图片。
+- [x] Provider 单测确认 L1/L2 和 L3 有图请求均含 `image_url`，无图请求仍保持 text-only，且图片经过有界准备。
+- [x] Tutor 路由回归确认只读取 Household/Child 绑定且已确认 Capture；含图对象缺失时不调用 Provider，跨家庭/未确认状态继续阻断。
+- [x] API/Flutter/Web 质量门槛、契约检查和 Ubuntu 部署验证通过；运行时检查确认容器中的 Tutor 源码携带图片。
 - [ ] 用题图中数字只出现在配图内的真实题目完成端到端解答验收，确认模型使用配图已知信息。
 
 ## 回滚

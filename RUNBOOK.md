@@ -10,7 +10,10 @@
 - 根因：客户端确认页和讲解页可以显示题图，但 Tutor API 的 L1/L2/L3 Provider 请求只有文字题干，配图中的已知数字和关系没有进入模型。
 - 修复：服务端只在 VerifiedQuestion 已确认且 Provider 已启用时，从同一 Household/Child 授权的 Capture 私有对象读取题图；有界校验后在同一请求中发送 `text + image_url(data:)`。不发送对象 URL、对象键、PDF 或未确认 Extraction。
 - 安全失败：`has_diagram=true` 且对象缺失/哈希不符/图片无法安全解码时返回统一 409，不调用 Provider 生成文字-only 解答；无图调用保持兼容。
-- 本地证据：Provider 与 Tutor 路由定向测试共 20 项通过，Ruff 通过；真实含图题 Provider 质量、完整质量门禁和 Ubuntu 拉取式部署仍待本轮发布后补证。
+- 本地证据：Provider 与 Tutor 路由定向测试共 20 项通过，API 全量非集成测试、Ruff 全仓、Mypy 64 个源文件、OpenAPI YAML、Alembic 单 head 和 `git diff --check` 通过。
+- 发布/部署证据：提交 `4317cdd` 的 GitHub Actions quality run `34555617183` 的 contracts、API、Web、browser-e2e、release-notes 和 API/Web GHCR job 均成功。切换前备份 `/home/syin/study-backups/20260911T024702Z`，回滚副本在 `/home/syin/study-source-backups/20260911T024702Z-tutor-diagram/`；项目 `verify-restore.sh` 因临时数据库初始化缺失未计为通过，随后使用同一备份在一次性显式建库容器中恢复成功，报告 39 张 PostgreSQL public 表、888 个 MinIO 文件。
+- Ubuntu 当前固定 `ghcr.io/yubinhong/aistudy-api:sha-4317cdd` 与 `ghcr.io/yubinhong/aistudy-web:sha-4317cdd`；API/Web digest 分别为 `sha256:02aec2ef6abc8cd3afb968c37a250f4d13ae5ab1000f1db4ea6bd29a6c75acd7`、`sha256:632609dd86ab176e5f35dff4b0f7c300476f9c886acd412147fdb8922c8cae6b`，OCI revision 均为 `4317cdd93ccd2f97076e16e74c0fcfd58291cc8c`。API/Web health、OpenAPI `0.17.5` Tutor 路由、`0039_smartedu_curriculum_source (head)`、五个 API/worker 容器、MinIO 无宿主端口和容器内 `_provider_message_content`/`question_image` 源码检查通过。
+- 未执行：真实含图题 Provider 质量、真实账号浏览器、iPad 实际拍照/相册选择和完整设备弱网回归；近期日志没有异常堆栈，生命周期 `media_failed=0` 只是正常计数。
 - 回滚：恢复上一 API/Web GHCR 镜像并执行 `docker compose pull`、`docker compose up -d --no-build`；不执行数据库 downgrade，不删除 Capture、VerifiedQuestion、TutorTurn 或学习事实。
 
 ## 2026-09-11 iPad 图片入口修复与 Ubuntu GHCR 部署
